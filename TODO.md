@@ -35,6 +35,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Update `TODO.md` if milestone scope, status, task order, acceptance criteria, blockers, or current plan changed.
 - [ ] Update `TODO.zh-CN.md` whenever `TODO.md` changes; keep it as a reading mirror only.
 - [ ] Update `AGENTS.md` if durable coding rules, architecture constraints, workflow rules, or do-not rules changed.
+- [ ] Update the private `agent-companion-repo` companion repo if the change affects requirements, TODO status, agent workflow, or tool usage context.
 - [ ] Add an entry to the Change Log at the bottom of this file.
 - [ ] Mention changed docs in the final Codex response.
 
@@ -53,6 +54,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Normal release leaves the body detached, floating at the release position, and self-rotating.
 - [ ] Throw release returns the body to its original orbit.
 - [ ] Documentation is updated when requirements or completed scope change, including `TODO.zh-CN.md` whenever `TODO.md` changes.
+- [ ] The private `agent-companion-repo` companion repo is updated whenever the main code repo is committed or agent workflow context changes.
 
 ## Milestone 0 — Repository and Document Setup
 
@@ -649,6 +651,8 @@ Status: `TODO`
 - [ ] Add camera permission error UI.
 - [ ] Add manual test checklist in README.
 - [ ] Add screenshot or short GIF instructions after MVP works.
+- [x] Create private companion repository `<private-companion-repo>` for Codex interaction logs, TODO update notes, and agent workflow context.
+- [x] Add `npm run sync:agent:push` and a versioned `post-commit` hook so each main-repo commit syncs the companion repo.
 
 ## Manual Test Script
 
@@ -702,6 +706,14 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-21 — Private agent companion repository added
+
+- Changed workflow requirement: create and keep a private companion repository named `agent-companion-repo` for Codex/user interaction records, TODO update notes, agent workflow/tooling decisions, and generated main-doc snapshots.
+- Added sync mechanism: `npm run sync:agent:push`, `scripts/sync-agent-repo.mjs`, and `.githooks/post-commit` so each main-repo commit can update, commit, and push the companion repo.
+- Added local workflow rule: main repo should use `core.hooksPath=.githooks`; if automatic sync fails, Codex must run the sync command manually and report the failure.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `package.json`, `scripts/sync-agent-repo.mjs`, `.githooks/post-commit`, and the new private companion repo `agent-companion-repo`.
+- Remaining ambiguity: none for initial setup; future sessions should decide the right level of detail for each interaction note.
 
 ### 2026-06-21 — Milestone 3 startup gesture changed to hand-only and implemented
 

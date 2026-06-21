@@ -35,6 +35,7 @@
 - [ ] 如果里程碑范围、状态、任务顺序、验收标准、阻塞项或当前计划变化，更新 `TODO.md`。
 - [ ] 每当 `TODO.md` 变化时，更新 `TODO.zh-CN.md`；本文件只保持阅读镜像定位。
 - [ ] 如果长期编码规则、架构约束、工作流规则或禁止事项变化，更新 `AGENTS.md`。
+- [ ] 如果变更影响需求、TODO 状态、agent 工作流或工具使用上下文，更新私有 `agent-companion-repo` 伴生仓库。
 - [ ] 在本文件底部的变更日志中增加一条记录。
 - [ ] 在 Codex 最终回复中提到已变更的文档。
 
@@ -53,6 +54,7 @@
 - [ ] 普通释放会让天体保持脱离状态，悬浮在释放位置并自转。
 - [ ] 甩出释放会让天体返回原始轨道。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
+- [ ] 每当主代码仓库提交，或 agent 工作流上下文变化时，私有 `agent-companion-repo` 伴生仓库也必须更新。
 
 ## Milestone 0 — 仓库和文档设置
 
@@ -649,6 +651,8 @@ Done when:
 - [ ] 添加摄像头权限错误 UI。
 - [ ] 在 README 中添加人工测试清单。
 - [ ] MVP 可用后，添加截图或短 GIF 说明。
+- [x] 创建私有伴生仓库 `<private-companion-repo>`，用于 Codex 交互日志、TODO 更新记录和 agent 工作流上下文。
+- [x] 添加 `npm run sync:agent:push` 和版本化 `post-commit` hook，使每次主仓库提交都能同步伴生仓库。
 
 ## 人工测试脚本
 
@@ -702,6 +706,14 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-21 — 新增私有 agent 伴生仓库
+
+- 工作流需求变更：创建并维护名为 `agent-companion-repo` 的私有伴生仓库，用于保存 Codex/用户交互记录、TODO 更新记录、agent 工作流/工具决策，以及生成的主项目文档快照。
+- 添加同步机制：`npm run sync:agent:push`、`scripts/sync-agent-repo.mjs` 和 `.githooks/post-commit`，使每次主仓库提交都能更新、提交并推送伴生仓库。
+- 添加本地工作流规则：主仓库应使用 `core.hooksPath=.githooks`；如果自动同步失败，Codex 必须手动运行同步命令并报告失败。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`package.json`、`scripts/sync-agent-repo.mjs`、`.githooks/post-commit`，以及新的私有伴生仓库 `agent-companion-repo`。
+- 剩余不明确项：初始设置无；后续 session 应根据需求或工作流变更的重要性决定每条交互记录的详细程度。
 
 ### 2026-06-21 — Milestone 3 启动手势改为纯双手并实现
 

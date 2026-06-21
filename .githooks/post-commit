@@ -1,0 +1,18 @@
+#!/bin/sh
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+
+if command -v npm >/dev/null 2>&1; then
+  npm run --silent sync:agent:push
+else
+  node scripts/sync-agent-repo.mjs --commit-agent --push
+fi
+
+status=$?
+if [ "$status" -ne 0 ]; then
+  echo "[sync-agent] Warning: agent repo sync failed. Run npm run sync:agent:push manually." >&2
+fi
+
+exit 0

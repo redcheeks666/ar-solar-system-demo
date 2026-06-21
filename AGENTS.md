@@ -33,6 +33,25 @@ Read these files before making product or architecture decisions:
 
 If the current uploaded PRD has a temporary filename, copy or rename it to `ar_solar_system_prd.md` in the repository root before development starts.
 
+## Agent Companion Repository
+
+This project has a private companion repository for Codex and agent-development memory:
+
+- GitHub repo: `<private-companion-repo>`
+- Local sibling path: `~/CodeXProject/agent-companion-repo`
+
+Use the companion repo for agent-related records, including Codex/user requirement interactions, TODO update notes, workflow/tooling decisions, and generated snapshots of source-of-truth docs.
+
+Do not move product source code into the companion repo. Do not store secrets, tokens, raw webcam captures, or unrelated personal data there.
+
+Whenever the main code repo is committed, the companion repo must be updated in the same working session. The main repo provides:
+
+```bash
+npm run sync:agent:push
+```
+
+The local git config should use `.githooks/post-commit` through `core.hooksPath=.githooks`, so normal commits automatically refresh, commit, and push the companion repo. If automatic sync fails, run `npm run sync:agent:push` manually and mention the failure in the final response.
+
 ## Required Documentation Sync Protocol
 
 When the user changes, clarifies, or fine-tunes requirements during a Codex session, Codex must keep the project documents aligned.
@@ -45,8 +64,9 @@ Before Codex claims the requirement is complete, it must do all applicable items
 2. Update `TODO.md` when task status, milestone order, acceptance criteria, blockers, or implementation plan changes.
 3. Update `TODO.zh-CN.md` whenever `TODO.md` changes, keeping it as a Chinese reading mirror only.
 4. Update `AGENTS.md` when durable development rules, architecture constraints, documentation rules, or do-not rules change.
-5. Add a short entry to the `TODO.md` change log with date, changed requirement, affected files, and remaining ambiguity if any.
-6. In the final response, include a `Documentation updated` section that lists which docs were changed.
+5. Update the private companion repo `agent-companion-repo` when the change affects requirements, TODO status, agent workflow, or tool usage context.
+6. Add a short entry to the `TODO.md` change log with date, changed requirement, affected files, and remaining ambiguity if any.
+7. In the final response, include a `Documentation updated` section that lists which docs were changed.
 
 Do not mark a task or milestone as `DONE` if the implementation changed product behavior but the relevant docs were not updated.
 
@@ -287,7 +307,8 @@ For every task:
 3. Make the smallest useful implementation change.
 4. Run available checks.
 5. Update docs when behavior, scope, or task status changes.
-6. Summarize changed files, validation results, and manual camera-test needs.
+6. Sync the private companion repo when agent records, requirements, TODO status, or commits change.
+7. Summarize changed files, validation results, and manual camera-test needs.
 
 Use this prompt structure when asking Codex to do work:
 
