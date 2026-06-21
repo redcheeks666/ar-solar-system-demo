@@ -93,6 +93,13 @@ export type WholeSystemScaleIntent = 'none' | 'scaleUp' | 'scaleDown';
 
 export type WholeSystemRotationIntent = 'none' | 'rotate2d' | 'rotate3d';
 
+export type WholeSystemReleaseBlockReason =
+  | 'none'
+  | 'rotationHold'
+  | 'cuppedGrip';
+
+export type WholeSystemReGripReason = 'none' | 'endpoint' | 'wideMagnet';
+
 export interface PalmOrientationSnapshot {
   normal: NormalizedPoint | null;
   facingCameraScore: number | null;
@@ -123,6 +130,10 @@ export interface WholeSystemIntentSnapshot {
   releaseGestureActive: boolean;
   releaseGestureLatched: boolean;
   releaseGestureScore: number;
+  releaseStableMs: number;
+  releaseBlockReason: WholeSystemReleaseBlockReason;
+  gripHoldActive: boolean;
+  reGripReason: WholeSystemReGripReason;
   virtualLeftEndpoint: NormalizedPoint | null;
   virtualRightEndpoint: NormalizedPoint | null;
   leftEndpointMatched: boolean;

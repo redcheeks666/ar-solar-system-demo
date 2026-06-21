@@ -7,6 +7,7 @@ import {
   WholeSystemIntentController,
 } from './interaction/wholeSystemIntent';
 import { DebugOverlay } from './rendering/debugOverlay';
+import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { TransparentSceneRenderer } from './rendering/scene';
 import { MediaPipeTrackingController } from './tracking/mediapipe';
@@ -24,12 +25,14 @@ const startButton = getElement<HTMLButtonElement>('start-camera');
 const statusText = getElement<HTMLElement>('status-text');
 const introPanel = getElement<HTMLElement>('intro-panel');
 const guidance = getElement<HTMLElement>('guidance');
+const interactionSummary = getElement<HTMLElement>('interaction-summary');
 const debugPanel = getElement<HTMLElement>('debug-panel');
 const debugToggle = getElement<HTMLButtonElement>('debug-toggle');
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
+const statusSummary = new InteractionStatusSummary(interactionSummary);
 const landmarkOverlay = new LandmarkOverlay(landmarkCanvas);
 const tracking = new MediaPipeTrackingController();
 const startupGesture = new HandStartupGestureController();
@@ -142,6 +145,7 @@ renderer.start(({ fps, canvasSize }) => {
   updateTrackingDebugMetrics(latestTracking);
   updatePreviewDebugMetrics();
   landmarkOverlay.draw(latestTracking, debugSnapshot.wholeSystem);
+  statusSummary.update(debugSnapshot);
   debugOverlay.update(debugSnapshot);
 });
 

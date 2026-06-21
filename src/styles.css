@@ -181,6 +181,55 @@ button {
   background: #2c6f86;
 }
 
+.interaction-summary {
+  position: absolute;
+  z-index: 3;
+  top: 16px;
+  right: 96px;
+  width: min(430px, calc(100vw - 128px));
+  min-height: 72px;
+  padding: 10px 12px;
+  border: 1px solid rgba(169, 243, 223, 0.28);
+  border-radius: 8px;
+  color: rgba(246, 247, 249, 0.92);
+  background: rgba(5, 7, 9, 0.72);
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(14px);
+  pointer-events: none;
+}
+
+.interaction-summary p {
+  margin: 0;
+}
+
+.interaction-summary-title {
+  color: #a9f3df;
+  font-size: 0.96rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.interaction-summary-state {
+  margin-top: 2px;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.interaction-summary-reason,
+.interaction-summary-params {
+  margin-top: 4px;
+  color: rgba(246, 247, 249, 0.72);
+  font-size: 0.72rem;
+  line-height: 1.28;
+}
+
+.interaction-summary-params {
+  color: rgba(246, 247, 249, 0.62);
+  overflow-wrap: anywhere;
+}
+
 .debug-panel {
   position: absolute;
   z-index: 3;
@@ -243,5 +292,11 @@ button {
 
   .primary-action {
     width: 100%;
+  }
+
+  .interaction-summary {
+    top: 62px;
+    right: 16px;
+    width: min(380px, calc(100vw - 32px));
   }
 }

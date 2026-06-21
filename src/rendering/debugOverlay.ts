@@ -64,7 +64,7 @@ export class DebugOverlay {
       ['Hand midpoint', formatPair(snapshot.handMidpoint.x, snapshot.handMidpoint.y)],
       ['Hand direction', formatPair(snapshot.handDirection.x, snapshot.handDirection.y)],
       ['Startup state', snapshot.interactionState],
-      ['Chest X/Y', formatPair(snapshot.chestAnchor.x, snapshot.chestAnchor.y)],
+      ['Body ref X/Y', formatPair(snapshot.chestAnchor.x, snapshot.chestAnchor.y)],
       ['Hand distance', formatNullable(snapshot.handDistance)],
       ['Distance velocity', formatNullable(snapshot.handDistanceVelocity)],
       ['openProgress', snapshot.openProgress.toFixed(2)],
@@ -139,6 +139,13 @@ export class DebugOverlay {
           snapshot.wholeSystem.releaseGestureLatched ? 'on' : 'off'
         } (${snapshot.wholeSystem.releaseGestureScore.toFixed(2)})`,
       ],
+      [
+        'Release stable',
+        `${Math.round(snapshot.wholeSystem.releaseStableMs)}ms`,
+      ],
+      ['Release blocked', snapshot.wholeSystem.releaseBlockReason],
+      ['Grip hold', snapshot.wholeSystem.gripHoldActive ? 'yes' : 'no'],
+      ['Re-grip reason', snapshot.wholeSystem.reGripReason],
       [
         'Visual L endpoint',
         formatPoint2(snapshot.wholeSystem.virtualLeftEndpoint),

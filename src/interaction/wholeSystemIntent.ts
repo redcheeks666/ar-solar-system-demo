@@ -6,6 +6,8 @@ import type {
   PalmOrientationSnapshot,
   TrackedHand,
   TrackingSnapshot,
+  WholeSystemReleaseBlockReason,
+  WholeSystemReGripReason,
   WholeSystemControlState,
   WholeSystemIntentSnapshot,
   WholeSystemRotationIntent,
@@ -32,10 +34,12 @@ const PINKY_TIP_INDEX = 20;
 const CONTROL_ENTER_THRESHOLD = 0.7;
 const CONTROL_EXIT_THRESHOLD = 0.35;
 const RELEASE_CONFIRM_MS = 480;
+const RELEASE_STABLE_MS = 280;
 const REGRIP_STABLE_MS = 220;
 const COLLAPSE_STABLE_MS = 180;
 const ENDPOINT_ENTER_RADIUS = 0.16;
 const ENDPOINT_EXIT_RADIUS = 0.24;
+const REGRIP_MAGNET_RADIUS = 0.34;
 const RELEASE_REGRIP_CLEAR_RADIUS = ENDPOINT_EXIT_RADIUS;
 const SCALE_VELOCITY_DEADBAND = 0.025;
 const SCALE_VELOCITY_FULL_SCORE = 0.22;
@@ -46,9 +50,9 @@ const PALM_NORMAL_ROTATION_FULL_SCORE = 2.4;
 const COLLAPSE_START_DISTANCE = 0.34;
 const COLLAPSE_COMPLETE_DISTANCE = 0.19;
 const PINCH_RATIO_THRESHOLD = 0.2;
-const RELEASE_OPEN_SCORE_THRESHOLD = 0.74;
-const RELEASE_GRIP_CANCEL_THRESHOLD = 0.58;
-const RELEASE_MIN_OPEN_FINGERS = 3;
+const RELEASE_OPEN_SCORE_THRESHOLD = 0.82;
+const RELEASE_GRIP_CANCEL_THRESHOLD = 0.44;
+const RELEASE_MIN_OPEN_FINGERS = 4;
 
 export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
   controlState: 'Inactive',
@@ -67,6 +71,10 @@ export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
   releaseGestureActive: false,
   releaseGestureLatched: false,
   releaseGestureScore: 0,
+  releaseStableMs: 0,
+  releaseBlockReason: 'none',
+  gripHoldActive: false,
+  reGripReason: 'none',
   virtualLeftEndpoint: null,
   virtualRightEndpoint: null,
   leftEndpointMatched: false,
@@ -107,6 +115,8 @@ export class WholeSystemIntentController {
   private previousPalmNormalAt: number | null = null;
   private controlStableSince: number | null = null;
   private releaseCandidateSince: number | null = null;
+  private releaseGestureStableSince: number | null = null;
+  private releaseStableMs = 0;
   private releaseGestureLatched = false;
   private reGripStableSince: number | null = null;
   private collapseStableSince: number | null = null;
@@ -129,7 +139,10 @@ export class WholeSystemIntentController {
     const rightHandPose = trackedPair
       ? computeHandPoseIntent(trackedPair.right)
       : createEmptyHandPose();
-    const releaseGesture = computeReleaseGesture(leftHandPose, rightHandPose);
+    const releaseGestureEvidence = computeReleaseGesture(
+      leftHandPose,
+      rightHandPose,
+    );
 
     if (!this.endpoints && startup.pullArmed && handPair) {
       this.establishVirtualEndpoints(handPair);
@@ -149,9 +162,10 @@ export class WholeSystemIntentController {
         rightPalm,
         leftHandPose,
         rightHandPose,
-        releaseGestureActive: releaseGesture.active,
+        releaseGestureActive: false,
         releaseGestureLatched: this.releaseGestureLatched,
-        releaseGestureScore: releaseGesture.score,
+        releaseGestureScore: releaseGestureEvidence.score,
+        releaseStableMs: this.resetReleaseStability(),
       };
     }
 
@@ -166,15 +180,21 @@ export class WholeSystemIntentController {
         rightPalm,
         leftHandPose,
         rightHandPose,
-        releaseGestureActive: releaseGesture.active,
+        releaseGestureActive: false,
         releaseGestureLatched: this.releaseGestureLatched,
-        releaseGestureScore: releaseGesture.score,
+        releaseGestureScore: releaseGestureEvidence.score,
+        releaseStableMs: this.resetReleaseStability(),
         virtualLeftEndpoint: this.endpoints.left,
         virtualRightEndpoint: this.endpoints.right,
       };
     }
 
     const endpointMatch = matchEndpoints(handPair, this.endpoints, this.endpointRadius);
+    const preciseEndpointMatch = matchEndpoints(
+      handPair,
+      this.endpoints,
+      ENDPOINT_ENTER_RADIUS,
+    );
     this.updateReleaseLatchFromEndpointExit(handPair);
 
     const pinchPenalty = trackedPair ? computePinchPenalty(trackedPair) : 0;
@@ -228,6 +248,34 @@ export class WholeSystemIntentController {
       startup.distance,
       startup.distanceVelocity,
     );
+    const gripHoldActive = computeGripHoldActive({
+      endpointScore: endpointMatch.score,
+      palmUpScore,
+      rotationIntentScore,
+      leftHandPose,
+      rightHandPose,
+    });
+    const releaseBlockReason = computeReleaseBlockReason({
+      endpointMatch,
+      palmUpScore,
+      rotationIntent,
+      rotationIntentScore,
+      leftHandPose,
+      rightHandPose,
+    });
+    const releaseGestureActive = this.updateReleaseGestureStability({
+      canRelease:
+        this.controlState === 'SolarHandleControl' &&
+        releaseGestureEvidence.active &&
+        releaseBlockReason === 'none',
+      timestamp,
+    });
+    const reGripReason = getReGripReason(
+      this.controlState,
+      preciseEndpointMatch,
+      endpointMatch,
+      reGripConfidence,
+    );
 
     this.updateControlState({
       handPair,
@@ -235,7 +283,8 @@ export class WholeSystemIntentController {
       releaseConfidence,
       reGripConfidence,
       collapseIntentScore,
-      releaseGestureActive: releaseGesture.active,
+      releaseGestureActive,
+      gripHoldActive,
       timestamp,
     });
 
@@ -257,9 +306,13 @@ export class WholeSystemIntentController {
       rightPalm,
       leftHandPose,
       rightHandPose,
-      releaseGestureActive: releaseGesture.active,
+      releaseGestureActive,
       releaseGestureLatched: this.releaseGestureLatched,
-      releaseGestureScore: releaseGesture.score,
+      releaseGestureScore: releaseGestureEvidence.score,
+      releaseStableMs: this.releaseStableMs,
+      releaseBlockReason,
+      gripHoldActive,
+      reGripReason,
       virtualLeftEndpoint: this.endpoints?.left ?? null,
       virtualRightEndpoint: this.endpoints?.right ?? null,
       leftEndpointMatched: endpointMatch.leftMatched,
@@ -275,12 +328,13 @@ export class WholeSystemIntentController {
     this.previousPalmNormal = null;
     this.previousPalmNormalAt = null;
     this.releaseGestureLatched = false;
+    this.resetReleaseStability();
   }
 
   private get endpointRadius(): number {
     return this.controlState === 'SolarFreeHover' ||
       this.controlState === 'ReGripCandidate'
-      ? ENDPOINT_ENTER_RADIUS
+      ? REGRIP_MAGNET_RADIUS
       : ENDPOINT_EXIT_RADIUS;
   }
 
@@ -313,6 +367,7 @@ export class WholeSystemIntentController {
     reGripConfidence,
     collapseIntentScore,
     releaseGestureActive,
+    gripHoldActive,
     timestamp,
   }: {
     handPair: HandPointPair;
@@ -321,6 +376,7 @@ export class WholeSystemIntentController {
     reGripConfidence: number;
     collapseIntentScore: number;
     releaseGestureActive: boolean;
+    gripHoldActive: boolean;
     timestamp: number;
   }): void {
     if (this.controlState === 'VirtualOpeningHandle') {
@@ -339,11 +395,6 @@ export class WholeSystemIntentController {
     }
 
     if (this.controlState === 'SolarHandleControl') {
-      if (releaseGestureActive) {
-        this.enterReleaseCandidate(timestamp, true);
-        return;
-      }
-
       if (collapseIntentScore >= 0.72) {
         this.collapseStableSince ??= timestamp;
 
@@ -357,7 +408,15 @@ export class WholeSystemIntentController {
 
       this.collapseStableSince = null;
 
-      if (controlConfidence < CONTROL_EXIT_THRESHOLD || releaseConfidence >= 0.68) {
+      if (releaseGestureActive) {
+        this.enterReleaseCandidate(timestamp, true);
+        return;
+      }
+
+      if (
+        !gripHoldActive &&
+        (controlConfidence < CONTROL_EXIT_THRESHOLD || releaseConfidence >= 0.78)
+      ) {
         this.enterReleaseCandidate(timestamp, false);
       }
 
@@ -450,6 +509,32 @@ export class WholeSystemIntentController {
     this.previousPalmNormal = null;
     this.previousPalmNormalAt = null;
     this.releaseGestureLatched = false;
+    this.resetReleaseStability();
+  }
+
+  private updateReleaseGestureStability({
+    canRelease,
+    timestamp,
+  }: {
+    canRelease: boolean;
+    timestamp: number;
+  }): boolean {
+    if (!canRelease) {
+      this.resetReleaseStability();
+      return false;
+    }
+
+    this.releaseGestureStableSince ??= timestamp;
+    this.releaseStableMs = timestamp - this.releaseGestureStableSince;
+
+    return this.releaseStableMs >= RELEASE_STABLE_MS;
+  }
+
+  private resetReleaseStability(): number {
+    this.releaseGestureStableSince = null;
+    this.releaseStableMs = 0;
+
+    return this.releaseStableMs;
   }
 
   private updateMissingHandState(timestamp: number): void {
@@ -482,6 +567,7 @@ export class WholeSystemIntentController {
     this.controlState = 'ReleaseCandidate';
     this.releaseCandidateSince = timestamp;
     this.releaseGestureLatched = fromOpenHandRelease;
+    this.resetReleaseStability();
   }
 
   private updateReleaseLatchFromEndpointExit(handPair: HandPointPair): void {
@@ -827,6 +913,114 @@ function computeReleaseGesture(
     active: leftHandPose.releaseReady && rightHandPose.releaseReady,
     score,
   };
+}
+
+function computeGripHoldActive({
+  endpointScore,
+  palmUpScore,
+  rotationIntentScore,
+  leftHandPose,
+  rightHandPose,
+}: {
+  endpointScore: number;
+  palmUpScore: number;
+  rotationIntentScore: number;
+  leftHandPose: HandPoseIntentSnapshot;
+  rightHandPose: HandPoseIntentSnapshot;
+}): boolean {
+  const averageGripScore = averageNullable(
+    leftHandPose.gripPoseScore,
+    rightHandPose.gripPoseScore,
+  );
+  const averageOpenFingerCount =
+    (leftHandPose.openFingerCount + rightHandPose.openFingerCount) / 2;
+
+  return (
+    endpointScore >= 0.22 &&
+    (averageGripScore >= 0.24 ||
+      averageOpenFingerCount <= 4 ||
+      palmUpScore >= 0.44 ||
+      rotationIntentScore >= 0.18)
+  );
+}
+
+function computeReleaseBlockReason({
+  endpointMatch,
+  palmUpScore,
+  rotationIntent,
+  rotationIntentScore,
+  leftHandPose,
+  rightHandPose,
+}: {
+  endpointMatch: EndpointMatch;
+  palmUpScore: number;
+  rotationIntent: WholeSystemRotationIntent;
+  rotationIntentScore: number;
+  leftHandPose: HandPoseIntentSnapshot;
+  rightHandPose: HandPoseIntentSnapshot;
+}): WholeSystemReleaseBlockReason {
+  if (endpointMatch.score < 0.32) {
+    return 'none';
+  }
+
+  if (
+    palmUpScore >= 0.38 &&
+    (rotationIntent === 'rotate3d' || rotationIntentScore >= 0.28)
+  ) {
+    return 'rotationHold';
+  }
+
+  const minimumOpenScore = Math.min(
+    leftHandPose.openHandScore ?? 0,
+    rightHandPose.openHandScore ?? 0,
+  );
+  const averageGripScore = averageNullable(
+    leftHandPose.gripPoseScore,
+    rightHandPose.gripPoseScore,
+  );
+  const minimumOpenFingerCount = Math.min(
+    leftHandPose.openFingerCount,
+    rightHandPose.openFingerCount,
+  );
+
+  if (
+    palmUpScore >= 0.48 &&
+    (averageGripScore >= 0.24 ||
+      minimumOpenFingerCount < 5 ||
+      minimumOpenScore < 0.9)
+  ) {
+    return 'cuppedGrip';
+  }
+
+  return 'none';
+}
+
+function getReGripReason(
+  state: WholeSystemControlState,
+  preciseEndpointMatch: EndpointMatch,
+  magnetEndpointMatch: EndpointMatch,
+  reGripConfidence: number,
+): WholeSystemReGripReason {
+  if (
+    state !== 'SolarFreeHover' &&
+    state !== 'ReGripCandidate'
+  ) {
+    return 'none';
+  }
+
+  if (preciseEndpointMatch.leftMatched && preciseEndpointMatch.rightMatched) {
+    return 'endpoint';
+  }
+
+  if (
+    reGripConfidence >= 0.62 &&
+    magnetEndpointMatch.leftMatched &&
+    magnetEndpointMatch.rightMatched
+  ) {
+    return 'wideMagnet';
+  }
+
+  return 'none';
 }
 
 function computeControlConfidence({

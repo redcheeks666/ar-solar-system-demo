@@ -47,7 +47,7 @@
 - [ ] 只合拢双手/双拳本身不会播放任何太阳系动画，也不会显示 3D 内容。
 - [ ] 展开进度由手距驱动；如果手停住，不应自动展开完成。
 - [ ] 展开端点需要视觉上跟随双手。
-- [ ] 展开后的太阳系初始位于胸前附近，而不是屏幕中心。
+- [ ] 展开后的太阳系可以使用身体相对参考来增强 AR 感，但松手后可以悬停在用户选择的任意位置。
 - [ ] 松开整体双手控制后，太阳系保持悬浮在最后稳定 transform。
 - [ ] 双手重新扶住左右端点后，可以继续控制整个太阳系。
 - [ ] 双手缩放会改变太阳系大小，包括掌心朝前、像左右推拉玻璃窗一样移动。
@@ -301,6 +301,9 @@ Done when:
 - [x] 定义整体太阳系生命周期状态：`Inactive`、`VirtualOpeningHandle`、`SolarHandleControl`、`ReleaseCandidate`、`SolarFreeHover`、`ReGripCandidate` 和 `SolarClosing`。
 - [x] 定义主要松手判断：双手完全张开，手部 open-hand 分数足够高、伸展手指数量足够、grip-pose 分数足够低。
 - [x] 一旦张开手松手被接受，立即锁存释放：冻结端点、撤手期间阻止重新扶住，并且只有双手明确离开后再回到冻结端点附近，才允许重新扶住。
+- [x] 进入 `ReleaseCandidate` 前，要求张开手松手证据稳定持续一小段时间；单帧 release 抖动不能让控制脱手。
+- [x] 当掌心朝上的微弯托举手仍在端点附近时，托住/旋转意图优先于松手。
+- [x] 在冻结端点周围使用更宽容的重新扶住磁吸区，成功后把虚拟端点吸回当前双手。
 - [x] 保留端点不匹配、双手完全丢失或整体控制置信度过低作为兜底松手信号。
 - [x] 定义重新扶住判断：双手回到冻结的视觉左/右虚拟端点附近，不要求 pinch 单个行星。
 - [x] 定义由手距速度驱动的缩放意图；当双掌看起来朝向摄像头时，提高缩放置信度。
@@ -310,7 +313,8 @@ Done when:
 - [x] 掌心朝向只作为意图置信度加分，不作为硬性门槛。
 - [x] 通过早期 pinch penalty，使整体太阳系控制与未来单个行星 pinch 抓取意图区分。
 - [x] 添加 debug-only 视觉左/视觉右虚拟端点和端点匹配状态；这些只是 2D 调试标记，不是 3D 太阳系内容。
-- [x] 添加整体控制状态、控制/松手/重新扶住置信度、缩放/旋转/收起意图、掌心法线、掌心分数、open-hand/grip-pose 分数、松手锁和虚拟端点的 debug 字段。
+- [x] 添加整体控制状态、控制/松手/重新扶住置信度、缩放/旋转/收起意图、掌心法线、掌心分数、open-hand/grip-pose 分数、松手锁、释放稳定时长、松手阻止原因、握持保护状态、重新扶住原因和虚拟端点的 debug 字段。
+- [x] 在 Debug 按钮左侧添加简短中文交互状态说明，展示当前系统理解的意图、原因和核心参数。
 - [x] 在验证这个交互合同时，AR 场景视觉上保持空场。
 
 验收标准：
@@ -318,12 +322,15 @@ Done when:
 - [x] 文档状态模型区分 `SolarOpening`、`SolarFreeHover`、`SolarHandleControl` 和 `SolarClosing`。
 - [x] 松手表示未来太阳系会保持最后稳定的位置、缩放和朝向，而不是吸回胸前锚点或屏幕中心。
 - [x] 已接受的张开手松手会冻结端点，并防止用户慢慢撤手时立刻重新扶住。
+- [x] 掌心朝上的托举旋转会保持 `SolarHandleControl`，不会被误判为松手。
+- [x] 重新扶住可以通过更宽容的磁吸区恢复，不要求用户精确重新对齐身体或摄像头位置。
 - [x] 重新扶住表示双手回到视觉左/右端点附近后，可以不 pinch 就继续整体控制。
 - [x] 掌心朝前左右推拉被定义并调试为缩放意图置信度加分。
 - [x] 已展开状态下，双手扶住端点向内合拢被定义并调试为反向收起，而不仅是普通缩小。
 - [x] 反向收起完成后，回到初始空摄像头画面。
 - [x] 掌心朝上轻轻旋转和掌心法线变化被定义并调试为 3D 旋转意图。
 - [x] Debug 面板暴露整体太阳系协议值，且不渲染太阳系 3D 内容。
+- [x] 右上角中文状态说明能解释系统当前认为用户是在等待、握住、旋转、松手、悬浮、重新扶住、缩放还是收起，并显示该判断背后的核心参数。
 - [x] Debug overlay 只可在 debug 模式下显示 2D 虚拟端点标记。
 - [x] `npm run typecheck` 通过。
 - [x] `npm run build` 通过。
@@ -375,7 +382,7 @@ Done when:
 - [ ] `HandsClosed` 保持视觉静止，不播放太阳系动画，也不显示 3D 内容。
 - [ ] 展开期间，将视觉左右端点绑定到左右手。
 - [ ] 根据 `openProgress` 渐进显示太阳、轨道、天体、星尘和星云。
-- [ ] 展开完成后，将太阳系放置在胸前锚点附近。
+- [ ] 展开完成后，将太阳系放置在双手拉开的当前位置，可选使用身体相对参考增强 AR 感。
 - [ ] 当反向收起达到闭合阈值时，隐藏全部太阳系内容并回到 `EmptyIdle`。
 - [ ] 整体双手控制松开后，保持最后稳定的太阳系 transform，不重新居中。
 - [ ] 添加 `openProgress`、起始距离、目标距离和状态的调试值。
@@ -387,7 +394,7 @@ Done when:
 - [ ] 展开宽度/进度明显跟随手距。
 - [ ] 如果双手暂停，展开保持而不是自动播放到 100%。
 - [ ] 展开端点明显跟随双手。
-- [ ] 完成后，太阳系悬浮在胸前锚点附近。
+- [ ] 完成后，太阳系出现在双手拉开的位置，而不是被强制吸到胸前或屏幕中心。
 - [ ] 双手松开后，太阳系悬浮停留在松手位置。
 - [ ] 双手扶住端点向内移动时，太阳系反向收起。
 - [ ] 收起完成后，画面回到只有摄像头视频和 2D UI 的空场。
@@ -449,7 +456,7 @@ Done when:
 - [ ] 扭动或改变双手相对姿态会让太阳系产生 3D 倾斜/旋转。
 - [ ] 掌心朝上轻轻旋转会让太阳系产生 3D 旋转。
 - [ ] 旋转明显不是单纯的屏幕平面 2D 旋转。
-- [ ] 操控太阳系时，胸前锚定仍然有效。
+- [ ] 身体相对参考可以辅助初始 AR 感，但操控和自由悬浮由释放/控制 transform 决定。
 - [ ] 松开整体双手控制后，当前 transform 保持稳定。
 - [ ] `npm run build` 通过。
 - [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
@@ -691,7 +698,7 @@ Done when:
 - [ ] 只在展开开始后添加星尘和星云效果。
 - [ ] 添加手部接近反馈，例如小型光环或粒子。
 - [ ] 添加返回尾迹效果。
-- [ ] 调整胸前锚点、手、缩放、旋转、pinch 和甩出的平滑参数。
+- [ ] 调整身体参考、手、缩放、旋转、pinch 和甩出的平滑参数。
 - [ ] 针对常见笔记本摄像头构图调整触发阈值。
 - [ ] 如果 FPS 不稳定，减少粒子数量或后处理。
 - [ ] 添加隐藏调试 UI 的 presentation/recording mode。
@@ -701,7 +708,7 @@ Done when:
 验收标准：
 
 - [ ] 观众能理解太阳系是从双手之间被拉出来的。
-- [ ] 观众能理解太阳系悬浮在用户胸前。
+- [ ] 观众能理解太阳系是一个可由双手控制并停在松手位置的自由悬浮物体。
 - [ ] 缩放和旋转看起来具有空间感。
 - [ ] 抓取、释放、脱离悬停和返回都在视觉上清楚。
 - [ ] Demo 在普通笔记本上以可用帧率运行。
@@ -762,7 +769,7 @@ Done when:
 5. 将双手/双拳在摄像头可见画面任意位置合拢。
 6. 向两侧拉开双手，观察启动状态是否从 `HandsClosed` 进入 `PullArmed`；在后续里程碑中，再观察太阳系是否在双手之间展开。
 7. 中途暂停双手，确认展开不会自动完成。
-8. 完成展开，确认太阳系悬浮在胸前附近。
+8. 完成展开，确认太阳系出现在双手拉开的位置，并且之后可以停在松手位置。
 9. 身体轻微左右移动，确认太阳系平滑跟随。
 10. 双手拉远/靠近，确认缩放变化。
 11. 扭动双手，确认可见 3D 旋转。
@@ -800,15 +807,17 @@ Done when:
 | 项目 | 用户动作 | 观察位置 | 通过条件 |
 |---|---|---|---|
 | M3.5 空场 | 打开页面，点击 `开启摄像头`，打开 `Debug`，先不要把手放进画面。 | 摄像头预览、Debug 面板和 debug overlay。 | 摄像头预览不出现 3D 太阳、行星、轨道、星云、粒子、奇点或模型。`Whole control` 显示 `Inactive`。 |
+| 右上角状态说明 | 保持 `Debug` 打开或关闭，执行任意 M3.5 手势动作。 | `Debug` 按钮左侧的小中文状态面板。 | 面板显示中文标题、状态、原因和核心参数。标题应与当前动作意图一致，例如等待、握住、旋转、松手、悬浮、重新扶住、缩放或收起。 |
 | 拉开后协议启动 | 双手在画面任意位置合拢，然后拉开，直到 `Startup state` 进入 `PullArmed`。 | Debug 面板里的 `Whole control`、`Control confidence` 和 2D 端点圆圈。 | `Whole control` 从 `Inactive` 变为 `VirtualOpeningHandle`，随后变为 `SolarHandleControl`。只有打开 `Debug` 时，双手附近会出现两个小的 2D 调试端点圆圈。 |
 | 掌心朝向数值 | 保持双手可见，慢慢把掌心转向摄像头、转到侧面、再转成朝上。 | Debug 面板里的 `Visual L palm normal`、`Visual R palm normal`、`Visual L palm facing/up` 和 `Visual R palm facing/up`。 | 掌心法线数值持续更新。facing/up 分数保持在 `0.00-1.00` 范围，并且会随掌心方向变化而明显变化。 |
-| 微弯手保持抓住 | 当 `Whole control` 为 `SolarHandleControl` 时，双手保持微微弯曲，像握住两个把手。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release gesture` 和 `Whole control`。 | `Release gesture` 保持 `no`；`Whole control` 保持 `SolarHandleControl`。虚拟端点继续跟随双手。 |
-| 张开手松手 | 当 `Whole control` 为 `SolarHandleControl` 时，双手五指完全张开并伸展。看到 `Release gesture` 变成 `yes / lock on` 后，慢慢把手收回或放松手指。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release gesture`、`Whole control` 和 2D 端点圆圈。 | open 分数升高，grip 分数降低，`Release gesture` 变成 `yes / lock on`，`Whole control` 立即进入 `ReleaseCandidate`，随后进入 `SolarFreeHover`。即使慢慢收手时手指放松，端点圆圈也应冻结；在双手先离开冻结端点、再主动回到端点前，`Whole control` 不能跳回 `SolarHandleControl`。 |
+| 微弯手保持抓住 | 当 `Whole control` 为 `SolarHandleControl` 时，双手保持微微弯曲，像握住两个把手。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Grip hold`、`Release stable`、`Release gesture` 和 `Whole control`。 | `Grip hold` 显示 `yes`，`Release stable` 基本保持在 `0ms` 附近，`Release gesture` 保持 `no`，`Whole control` 保持 `SolarHandleControl`。虚拟端点继续跟随双手。 |
+| 掌心朝上托举旋转保持 | 当 `Whole control` 为 `SolarHandleControl` 时，把双掌转成大致朝上，手指微弯，像托住托盘一样，然后轻轻旋转/扭动双手控制柄。 | Debug 面板里的 `Rotation intent`、`Release blocked`、`Grip hold`、`Release stable`、`Release gesture` 和 `Whole control`。 | `Rotation intent` 可以变成 `rotate2d` 或 `rotate3d`；托举过程中 `Release blocked` 应显示 `rotationHold` 或 `cuppedGrip`，`Grip hold` 应显示 `yes`，`Release stable` 不应攒到松手阈值，`Whole control` 应保持 `SolarHandleControl`。 |
+| 张开手松手 | 当 `Whole control` 为 `SolarHandleControl` 时，双手五指完全张开并明显伸展，且先停止旋转。看到 `Release stable` 超过约 `280ms`、`Release gesture` 变成 `yes / lock on` 后，慢慢把手收回或放松手指。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release stable`、`Release blocked`、`Release gesture`、`Whole control` 和 2D 端点圆圈。 | open 分数升高，grip 分数降低，`Release blocked` 显示 `none`，`Release stable` 超过约 `280ms`，`Release gesture` 变成 `yes / lock on`，`Whole control` 进入 `ReleaseCandidate`，随后进入 `SolarFreeHover`。即使慢慢收手时手指放松，端点圆圈也应冻结；在双手先离开冻结端点、再主动回到端点前，`Whole control` 不能跳回 `SolarHandleControl`。 |
 | 放大意图 | 当 `Whole control` 为 `SolarHandleControl` 时，双手向两侧拉远。 | Debug 面板里的 `Scale intent`、`Hand distance` 和 `Distance velocity`。 | 向外移动时，`Scale intent` 变为 `scaleUp`，且 `Hand distance` 增大。画面不出现任何 3D 太阳内容。 |
 | 缩小意图 | 当 `Whole control` 为 `SolarHandleControl` 时，双手互相靠近，但不要完全合拢。 | Debug 面板里的 `Scale intent`、`Hand distance` 和 `Collapse intent`。 | `Scale intent` 变为 `scaleDown`；`Hand distance` 减小。`Collapse intent` 可能升高，但只要没有靠得很近，不一定需要完成收起。 |
 | 反向收起意图 | 从 `SolarHandleControl` 开始，继续让双手向内靠近，直到接近合拢。 | Debug 面板里的 `Whole control` 和 `Collapse intent`。 | `Collapse intent` 向 `1.00` 升高；`Whole control` 可以进入 `SolarClosing`，完全合拢后回到 `Inactive` 附近。画面不出现 3D 内容。 |
 | 兜底松手 | 进入 `SolarHandleControl` 后，把双手移出画面或遮住几秒。 | Debug 面板里的 `Whole control`、`Release confidence` 和端点圆圈。 | `Whole control` 先变成 `ReleaseCandidate`，再变成 `SolarFreeHover`。虚拟端点圆圈冻结在最后稳定位置。 |
-| 重新扶住冻结端点 | 进入 `SolarFreeHover` 后，先把双手明显移离冻结端点圆圈，再把双手重新放到两个圆圈附近。 | Debug 面板里的 `Release gesture`、`Whole control`、`Re-grip confidence` 和 `Visual endpoint matched`。 | 双手离开端点后，`Release gesture` 变成 `no / lock off`。双手回到圆圈附近时，`Visual endpoint matched` 显示 `Visual L yes / Visual R yes`，`Re-grip confidence` 升高，`Whole control` 经过 `ReGripCandidate` 回到 `SolarHandleControl`。 |
+| 重新扶住冻结端点 | 进入 `SolarFreeHover` 后，先把双手明显移离冻结端点圆圈，再把双手重新放到两个圆圈附近。不应该需要非常精确地重新调整身体或摄像头距离。 | Debug 面板里的 `Release gesture`、`Whole control`、`Re-grip confidence`、`Re-grip reason` 和 `Visual endpoint matched`。 | 双手离开端点后，`Release gesture` 变成 `no / lock off`。双手回到圆圈附近时，`Re-grip reason` 应变成 `endpoint` 或 `wideMagnet`，`Re-grip confidence` 升高，`Whole control` 经过 `ReGripCandidate` 回到 `SolarHandleControl`。 |
 | 旋转意图 | 当 `Whole control` 为 `SolarHandleControl` 时，掌心大致朝上或明显不朝摄像头，轻轻旋转/扭动双手形成的控制柄。 | Debug 面板里的 `Rotation intent`、`Rotation intent score`、掌心 facing/up 分数和掌心法线。 | `Rotation intent` 从 `none` 变成 `rotate2d` 或 `rotate3d`；当掌心呈空间姿态或掌心法线变化清楚时，应能出现 `rotate3d`。 |
 | 整体控制与 pinch 分离 | 当 `Whole control` 为 `SolarHandleControl` 时，用一只手做 pinch，像未来要抓某颗行星一样。 | Debug 面板里的 `Control confidence`。 | `Control confidence` 应下降，而不是把强 pinch 当成更强的整体太阳系控制。本里程碑不会抓取任何行星。 |
 
@@ -842,6 +851,31 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-22 — 明确自由悬浮位置规则
+
+- 需求纠正：未来 3D 太阳系不受胸前锚点约束；松手后可以根据最后稳定 transform 悬停在用户选择的任意位置。
+- 将肩膀/胸前数据重新定义为可选身体相对参考，只用于初始 AR 感，不作为启动、松手、重新扶住、缩放、旋转或自由悬浮的必要锚点。
+- 默认隐藏肩膀 debug 线，并将 Debug 面板中的 `Chest X/Y` 改名为 `Body ref X/Y`，避免暗示太阳系固定在胸前。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/rendering/debugOverlay.ts` 和 `src/rendering/landmarkOverlay.ts`。
+- 剩余不明确项：未来 M4/M5 实现时，需要决定初始放置中可选身体参考的权重，但不能覆盖双手驱动的自由悬浮规则。
+
+### 2026-06-22 — 新增右上角中文交互状态说明
+
+- 需求细化：下一次人工摄像头测试前，页面应在 Debug 按钮左侧显示当前状态机解释的简短中文说明。
+- 新增状态说明条，把 `Startup state` 和 `Whole control` 翻译成人能直接理解的状态，例如等待、握住、旋转、松手、悬浮、重新扶住、缩放和收起。
+- 状态说明会显示判断原因和核心参数，方便用户在真实动作意图与系统解释不一致时，精确反馈是哪类判断出了问题。
+- 影响文件：`index.html`、`src/main.ts`、`src/styles.css`、`src/rendering/interactionStatusSummary.ts`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md` 和 `ar_solar_system_prd.md`。
+- 剩余不明确项：需要真实摄像头测试确认说明文字可读，并且不会遮挡关键手部区域。
+
+### 2026-06-22 — 调整 M3.5 托举/旋转优先级和重新扶住磁吸
+
+- 需求细化：掌心朝上、手指微弯且仍在端点附近时，应理解为托住/旋转，而不是松手；托住/旋转意图优先于缩放/收起，张开手松手最后。
+- 调整 release 行为：张开手松手需要稳定持续一小段时间后才进入 `ReleaseCandidate`，降低单帧 release 抖动。
+- 调整重新扶住行为：冻结端点周围使用更宽容的磁吸区，重新获得控制后虚拟端点吸回当前双手。
+- 添加 debug 字段：释放稳定时长、松手阻止原因、握持保护状态和重新扶住原因；同步更新 M3.5 人工验收清单，覆盖掌心朝上旋转和重新扶住恢复。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/debugOverlay.ts` 和 `src/utils/types.ts`。
+- 剩余不明确项：仍需真实摄像头验证 `rotationHold`/`cuppedGrip` 阻止逻辑不会让有意张开手松手变得过难。
 
 ### 2026-06-21 — 明确张开手松手锁和 debug 状态命名
 

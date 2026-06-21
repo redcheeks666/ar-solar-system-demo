@@ -47,7 +47,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Closed hands/fists alone do not play any solar-system animation or show 3D content.
 - [ ] Opening progress is driven by hand distance and should not auto-complete if hands stop.
 - [ ] Opening endpoints visually follow both hands.
-- [ ] Opened solar system starts near the chest, not the screen center.
+- [ ] Opened solar system may use body-relative placement for initial AR feel, but after release it can hover at any user-chosen position.
 - [ ] Releasing the whole-system two-hand handle leaves the solar system hovering at its last stable transform.
 - [ ] Re-gripping the left and right endpoints lets the user continue whole-system control.
 - [ ] Two-hand scaling changes solar system size, including palm-forward side-to-side "sliding glass" movement.
@@ -301,6 +301,9 @@ Tasks:
 - [x] Define whole-system lifecycle states: `Inactive`, `VirtualOpeningHandle`, `SolarHandleControl`, `ReleaseCandidate`, `SolarFreeHover`, `ReGripCandidate`, and `SolarClosing`.
 - [x] Define release detection primarily from both hands opening fully: high open-hand score, enough extended fingers, and low grip-pose score.
 - [x] Latch an accepted open-hand release immediately: freeze endpoints, block re-grip while hands withdraw, and only allow re-grip after both hands clearly leave and then return to the frozen endpoints.
+- [x] Require stable open-hand release evidence before entering `ReleaseCandidate`; single-frame release spikes must not detach control.
+- [x] Prioritize hold/rotate intent over release when palms-up cupped hands remain near the endpoints.
+- [x] Use a wider re-grip magnetic zone around frozen endpoints before snapping virtual endpoints back to the current hands.
 - [x] Keep endpoint mismatch, complete hand loss, or low whole-control confidence as fallback release signals.
 - [x] Define re-grip detection using both hands near the frozen visual left/right endpoints without requiring a planet pinch.
 - [x] Define scale intent from hand-distance velocity and boost it when both palms appear camera-facing.
@@ -310,7 +313,8 @@ Tasks:
 - [x] Keep palm orientation as an intent-confidence signal, not a hard gate.
 - [x] Keep whole-system control separate from individual planet pinch-grab intent by adding an early pinch penalty to whole-control confidence.
 - [x] Add debug-only visual-left/visual-right virtual endpoints and endpoint match state; these are 2D debug markers only, not 3D solar content.
-- [x] Add debug fields for whole-control state, control/release/re-grip confidence, scale/rotation/collapse intent, palm normals, palm scores, open-hand/grip-pose scores, release gesture lock, and virtual endpoints.
+- [x] Add debug fields for whole-control state, control/release/re-grip confidence, scale/rotation/collapse intent, palm normals, palm scores, open-hand/grip-pose scores, release gesture lock, release stable time, release-block reason, grip-hold state, re-grip reason, and virtual endpoints.
+- [x] Add a concise Chinese interaction status summary beside the Debug button, showing the current interpreted intent, reason, and key parameters.
 - [x] Keep the AR scene visually empty while this contract is being validated.
 
 Acceptance Criteria:
@@ -318,12 +322,15 @@ Acceptance Criteria:
 - [x] The documented state model distinguishes `SolarOpening`, `SolarFreeHover`, `SolarHandleControl`, and `SolarClosing`.
 - [x] Release means the future solar system will remain at the last stable position, scale, and orientation instead of snapping to chest anchor or screen center.
 - [x] Accepted open-hand release freezes the endpoints and prevents immediate re-grip while the user slowly pulls hands away.
+- [x] Palms-up cupped rotation keeps `SolarHandleControl` instead of being mistaken for release.
+- [x] Re-grip can recover through a forgiving magnetic zone without requiring the user to precisely realign body/camera position.
 - [x] Re-grip means returning both hands near visual left/right endpoints can resume whole-system control without pinch.
 - [x] Palm-forward side-to-side movement is specified and debugged as a scale-intent confidence boost.
 - [x] Moving gripped hands inward from the opened state is specified and debugged as reverse collapse, not just ordinary scale-down.
 - [x] Reverse collapse returns to the initial empty camera view when fully closed.
 - [x] Palms-up gentle rotation and palm-normal motion are specified and debugged as 3D rotation intent.
 - [x] Debug panel exposes whole-system protocol values without rendering solar-system 3D content.
+- [x] The top-right Chinese status summary explains whether the system currently thinks the user is waiting, holding, rotating, releasing, free-hovering, re-gripping, scaling, or closing, with the core parameters behind that decision.
 - [x] Debug overlay may show only 2D virtual endpoint markers when debug mode is enabled.
 - [x] `npm run typecheck` passes.
 - [x] `npm run build` passes.
@@ -375,7 +382,7 @@ Tasks:
 - [ ] Keep `HandsClosed` visually static with no solar-system animation or 3D content.
 - [ ] During opening, bind visual left/right endpoints to left/right hands.
 - [ ] Reveal sun, orbits, bodies, star dust, and nebula progressively based on `openProgress`.
-- [ ] On completion, place the solar system around the chest anchor.
+- [ ] On completion, place the solar system between the opened hands, optionally biased by body-relative context for AR feel.
 - [ ] When reverse collapse reaches the closed threshold, hide all solar-system content and return to `EmptyIdle`.
 - [ ] On whole-system release, hold the last stable solar-system transform instead of recentering.
 - [ ] Add debug values for `openProgress`, start distance, target distance, and state.
@@ -387,7 +394,7 @@ Acceptance criteria:
 - [ ] Opening width/progress clearly follows hand distance.
 - [ ] If the hands pause, opening holds rather than auto-playing to 100%.
 - [ ] Opening endpoints visibly follow both hands.
-- [ ] When complete, solar system floats near the chest anchor.
+- [ ] When complete, solar system appears at the hand-opened position rather than being forced to the chest or screen center.
 - [ ] Releasing both hands leaves the solar system hovering where it was released.
 - [ ] Moving both endpoint hands inward collapses the solar system in reverse.
 - [ ] When the collapse completes, the scene returns to camera video plus 2D UI only.
@@ -449,7 +456,7 @@ Acceptance criteria:
 - [ ] Twisting or changing relative hand posture tilts/rotates the solar system in 3D.
 - [ ] Palms-up gentle rotation rotates the solar system in 3D.
 - [ ] Rotation is visibly not just a flat 2D screen-plane rotation.
-- [ ] Chest anchoring remains active while manipulating the solar system.
+- [ ] Body-relative placement may inform initial AR feel, but manipulation and free-hover are driven by the released/controlled transform.
 - [ ] Releasing the whole-system handle leaves the current transform stable.
 - [ ] `npm run build` passes.
 - [ ] Behavior is manually tested or marked `NEEDS_MANUAL_VERIFY`.
@@ -691,7 +698,7 @@ Tasks:
 - [ ] Add star dust and nebula effects only after opening begins.
 - [ ] Add hand-proximity feedback such as small light rings or particles.
 - [ ] Add return tail effect.
-- [ ] Tune smoothing for chest anchor, hands, scale, rotation, pinch, and throw.
+- [ ] Tune smoothing for body reference, hands, scale, rotation, pinch, and throw.
 - [ ] Tune trigger thresholds for common laptop webcam framing.
 - [ ] Reduce particle count or post-processing if FPS is unstable.
 - [ ] Add presentation/recording mode that hides debug UI.
@@ -701,7 +708,7 @@ Tasks:
 Acceptance criteria:
 
 - [ ] A viewer can understand the solar system is pulled from between the hands.
-- [ ] A viewer can understand the solar system floats near the user's chest.
+- [ ] A viewer can understand the solar system is a hand-controlled object that can free-hover where it is released.
 - [ ] Scaling and rotation look spatial.
 - [ ] Grab, release, detached hover, and return are visually obvious.
 - [ ] Demo runs at a usable frame rate on a normal laptop.
@@ -762,7 +769,7 @@ Manual verification handoff rule:
 5. Bring both hands/fists together anywhere in the visible camera frame.
 6. Pull hands apart and observe whether the startup state changes from `HandsClosed` to `PullArmed` and, in later milestones, whether the solar system opens between hands.
 7. Pause hands halfway and confirm opening does not auto-complete.
-8. Complete opening and confirm the solar system floats near the chest.
+8. Complete opening and confirm the solar system appears where the hands opened it and can later hover where released.
 9. Move torso slightly left/right and confirm the solar system follows smoothly.
 10. Move hands farther/closer and confirm scale changes.
 11. Twist hands and confirm 3D rotation is visible.
@@ -800,15 +807,17 @@ Use this checklist to verify the debug-only whole-system interaction protocol be
 | Item | User action | Where to look | Pass condition |
 |---|---|---|---|
 | M3.5 empty scene | Open the page, click `开启摄像头`, turn on `Debug`, and keep hands out of view. | Camera preview, debug panel, and debug overlay. | Camera preview shows no 3D sun, planets, orbits, nebula, particles, singularity, or model. `Whole control` reads `Inactive`. |
+| Top-right status summary | Keep `Debug` either open or closed and perform any M3.5 action. | The small Chinese status panel to the left of the `Debug` button. | It shows a human-readable title, state, reason, and core parameters. The title should match the current action intent, such as waiting, holding, rotating, releasing, free-hovering, re-gripping, scaling, or closing. |
 | Protocol arms after pull | Close both hands anywhere visible, then pull them apart until `Startup state` reaches `PullArmed`. | Debug panel `Whole control`, `Control confidence`, and 2D endpoint circles. | `Whole control` changes from `Inactive` to `VirtualOpeningHandle` and then `SolarHandleControl`. Two small 2D debug endpoint circles appear near the hands only when `Debug` is on. |
 | Palm orientation values | Hold both hands visible and slowly rotate each palm toward the camera, sideways, and upward. | Debug panel `Visual L palm normal`, `Visual R palm normal`, `Visual L palm facing/up`, and `Visual R palm facing/up`. | Palm normal values update continuously. Facing/up scores stay in the `0.00-1.00` range and visibly change when palm orientation changes. |
-| Bent-hand hold | While `Whole control` is `SolarHandleControl`, keep both hands slightly curved as if holding two handles. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Release gesture`, and `Whole control`. | `Release gesture` stays `no`; `Whole control` stays in `SolarHandleControl`. The virtual endpoints continue to follow the hands. |
-| Open-hand release | While `Whole control` is `SolarHandleControl`, fully open both hands with fingers extended. After `Release gesture` reads `yes / lock on`, slowly pull the hands back or relax them. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Release gesture`, `Whole control`, and the 2D endpoint circles. | Open scores rise, grip scores fall, `Release gesture` becomes `yes / lock on`, `Whole control` immediately changes to `ReleaseCandidate`, then becomes `SolarFreeHover`. The endpoint circles freeze even if the fingers relax during slow withdrawal, and `Whole control` must not jump back to `SolarHandleControl` until both hands first leave the frozen endpoints and then intentionally return. |
+| Bent-hand hold | While `Whole control` is `SolarHandleControl`, keep both hands slightly curved as if holding two handles. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Grip hold`, `Release stable`, `Release gesture`, and `Whole control`. | `Grip hold` reads `yes`, `Release stable` stays near `0ms`, `Release gesture` stays `no`, and `Whole control` stays in `SolarHandleControl`. The virtual endpoints continue to follow the hands. |
+| Palms-up cupped rotation hold | While `Whole control` is `SolarHandleControl`, turn both palms upward with slightly curved fingers as if holding a tray, then gently rotate/twist the two-hand handle. | Debug panel `Rotation intent`, `Release blocked`, `Grip hold`, `Release stable`, `Release gesture`, and `Whole control`. | `Rotation intent` can become `rotate2d` or `rotate3d`; `Release blocked` should read `rotationHold` or `cuppedGrip` during the hold, `Grip hold` should read `yes`, `Release stable` should not climb to the release threshold, and `Whole control` should remain `SolarHandleControl`. |
+| Open-hand release | While `Whole control` is `SolarHandleControl`, fully open both hands with fingers clearly extended and stop rotating. After `Release stable` climbs past about `280ms` and `Release gesture` reads `yes / lock on`, slowly pull the hands back or relax them. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Release stable`, `Release blocked`, `Release gesture`, `Whole control`, and the 2D endpoint circles. | Open scores rise, grip scores fall, `Release blocked` reads `none`, `Release stable` climbs past about `280ms`, `Release gesture` becomes `yes / lock on`, `Whole control` changes to `ReleaseCandidate`, then becomes `SolarFreeHover`. The endpoint circles freeze even if the fingers relax during slow withdrawal, and `Whole control` must not jump back to `SolarHandleControl` until both hands first leave the frozen endpoints and then intentionally return. |
 | Scale-up intent | While `Whole control` is `SolarHandleControl`, move both hands farther apart. | Debug panel `Scale intent`, `Hand distance`, and `Distance velocity`. | `Scale intent` becomes `scaleUp` during the outward movement, and `Hand distance` increases. No 3D solar content appears. |
 | Scale-down intent | While `Whole control` is `SolarHandleControl`, move both hands closer together, but not fully closed. | Debug panel `Scale intent`, `Hand distance`, and `Collapse intent`. | `Scale intent` becomes `scaleDown`; `Hand distance` decreases. `Collapse intent` may rise but should not need to complete unless the hands get very close. |
 | Reverse-collapse intent | From `SolarHandleControl`, keep moving both hands inward until they are close together. | Debug panel `Whole control` and `Collapse intent`. | `Collapse intent` rises toward `1.00`; `Whole control` can enter `SolarClosing` and then reset toward `Inactive` when fully closed. No 3D content appears. |
 | Fallback release | Reach `SolarHandleControl`, then move both hands out of frame or hide them for a few seconds. | Debug panel `Whole control`, `Release confidence`, and endpoint circles. | `Whole control` changes to `ReleaseCandidate`, then `SolarFreeHover`. The virtual endpoint circles remain frozen at the last stable positions. |
-| Re-grip frozen endpoints | After `SolarFreeHover`, first move both hands clearly away from the frozen endpoint circles, then bring both hands back near those two circles. | Debug panel `Release gesture`, `Whole control`, `Re-grip confidence`, and `Visual endpoint matched`. | After the hands leave the endpoints, `Release gesture` changes to `no / lock off`. When the hands return near the circles, `Visual endpoint matched` reads `Visual L yes / Visual R yes`, `Re-grip confidence` rises, and `Whole control` changes through `ReGripCandidate` back to `SolarHandleControl`. |
+| Re-grip frozen endpoints | After `SolarFreeHover`, first move both hands clearly away from the frozen endpoint circles, then bring both hands back near those two circles. You should not need to perfectly realign your body or camera distance. | Debug panel `Release gesture`, `Whole control`, `Re-grip confidence`, `Re-grip reason`, and `Visual endpoint matched`. | After the hands leave the endpoints, `Release gesture` changes to `no / lock off`. When the hands return near the circles, `Re-grip reason` should become `endpoint` or `wideMagnet`, `Re-grip confidence` rises, and `Whole control` changes through `ReGripCandidate` back to `SolarHandleControl`. |
 | Rotation intent | While `SolarHandleControl`, hold palms generally upward or tilted away from camera and gently rotate/twist the two-hand handle. | Debug panel `Rotation intent`, `Rotation intent score`, palm facing/up scores, and palm normals. | `Rotation intent` changes from `none` to `rotate2d` or `rotate3d`; with a spatial palm posture or clear palm-normal change, `rotate3d` should appear. |
 | Whole vs pinch separation | While `SolarHandleControl`, pinch with one hand as if grabbing a future planet. | Debug panel `Control confidence`. | `Control confidence` should drop rather than treating a strong pinch as better whole-system control. No planet is grabbed in this milestone. |
 
@@ -842,6 +851,31 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-22 — Free-hover placement rule clarified
+
+- Requirement correction: the future 3D solar system is not constrained to the chest anchor; after release it can hover at any user-chosen position based on the last stable transform.
+- Reframed shoulder/chest data as an optional body-relative reference for initial AR feel, not a required anchor for startup, release, re-grip, scale, rotation, or free-hover.
+- Hid the shoulder debug line by default and renamed the debug label from `Chest X/Y` to `Body ref X/Y` to avoid implying a chest-fixed solar system.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, `src/rendering/debugOverlay.ts`, and `src/rendering/landmarkOverlay.ts`.
+- Remaining ambiguity: future M4/M5 implementation should decide how much optional body-relative bias to use during initial placement without overriding hand-driven free-hover.
+
+### 2026-06-22 — Top-right Chinese interaction status summary added
+
+- Requirement refinement: before the next manual camera pass, the page should show a concise Chinese explanation of the current state-machine interpretation beside the Debug button.
+- Added a status summary that translates `Startup state` and `Whole control` into human-readable states such as waiting, holding, rotating, releasing, free-hovering, re-gripping, scaling, and closing.
+- The summary shows the reason and core parameters behind the decision, so mismatches between the user's intended gesture and the system interpretation can be reported precisely.
+- Affected files: `index.html`, `src/main.ts`, `src/styles.css`, `src/rendering/interactionStatusSummary.ts`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, and `ar_solar_system_prd.md`.
+- Remaining ambiguity: real webcam testing should confirm the summary text is readable without covering important hand regions.
+
+### 2026-06-22 — M3.5 hold/rotate priority and magnetic re-grip tuning
+
+- Requirement refinement: palms-up cupped hands near endpoints should be treated as holding/rotating, not as release; hold/rotate intent has priority over scale/collapse, and open-hand release is last.
+- Changed release behavior so open-hand release requires stable evidence for a short window before entering `ReleaseCandidate`, reducing single-frame release spikes.
+- Changed re-grip behavior to use a wider magnetic zone around frozen endpoints, then snap virtual endpoints back to the current hands once control is reacquired.
+- Added debug fields for release stable time, release-block reason, grip-hold state, and re-grip reason; updated the M3.5 manual checklist around palms-up rotation and re-grip recovery.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, `src/interaction/wholeSystemIntent.ts`, `src/rendering/debugOverlay.ts`, and `src/utils/types.ts`.
+- Remaining ambiguity: real webcam testing still needs to confirm the `rotationHold`/`cuppedGrip` blockers do not make intentional open-hand release too hard.
 
 ### 2026-06-21 — Open-hand release latch and debug state naming clarified
 

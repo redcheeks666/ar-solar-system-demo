@@ -33,6 +33,7 @@ const LEFT_COLOR = '#7dd3fc';
 const RIGHT_COLOR = '#f6c177';
 const POSE_COLOR = '#a9f3df';
 const ENDPOINT_COLOR = '#d9f99d';
+const DRAW_POSE_SHOULDER_DEBUG = false;
 
 export class LandmarkOverlay {
   private readonly context: CanvasRenderingContext2D;
@@ -72,7 +73,9 @@ export class LandmarkOverlay {
       return;
     }
 
-    this.drawPose(snapshot.pose.landmarks);
+    if (DRAW_POSE_SHOULDER_DEBUG) {
+      this.drawPose(snapshot.pose.landmarks);
+    }
     snapshot.hands.hands.forEach((hand) => this.drawHand(hand));
 
     if (wholeSystem) {

@@ -12,14 +12,14 @@ The MVP experience is:
 4. The user brings both hands or fists together anywhere in the visible camera frame.
 5. The user pulls both hands apart.
 6. A 3D solar system is pulled open between the hands, with the opening endpoints visually attached to both hands.
-7. After opening, the solar system floats around the user's chest anchor, not the screen center.
+7. After opening, the solar system may initially use a body-relative reference for AR feel, but after release it can free-hover at any user-chosen position instead of being constrained to the chest anchor or screen center.
 8. The user scales and spatially rotates the solar system with both hands.
 9. The user can hover and pinch-grab Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
 10. A grabbed body attaches to the hand, freezes autonomous rotation/orbit, and can be inspected, scaled, and spatially rotated.
 11. A normal pinch release does **not** return the body to orbit. It remains detached at the release location and resumes natural self-rotation.
 12. A clear throw gesture returns the detached body to its original orbit with a visible return animation.
 
-This is not a normal 3D solar system page. It is a **webcam AR interaction demo** where the 3D content appears to exist in front of the user's chest and hands.
+This is not a normal 3D solar system page. It is a **webcam AR interaction demo** where the 3D content appears to exist in the camera-visible space controlled by the user's hands.
 
 ## Source of Truth
 
@@ -86,7 +86,7 @@ camera on
 → hands together anywhere in the visible camera frame
 → hands pull apart
 → solar system opens between both hands
-→ solar system floats near chest
+→ solar system free-hovers at the released position
 → both hands scale and spatially rotate it
 → pinch-grab a body
 → inspect the body while it is frozen
@@ -138,7 +138,7 @@ Prefer this structure for the first Web Demo:
       gestures.ts
       handStartupGesture.ts
       wholeSystemIntent.ts
-      chestAnchor.ts
+      bodyReference.ts
       coordinateMapping.ts
       grabController.ts
       throwDetector.ts
@@ -190,15 +190,15 @@ It must appear only after a valid two-hand closed-to-pull gesture:
 - if the hands pause, the opening progress should pause or hold rather than auto-complete;
 - the left and right opening endpoints should visually follow the left and right hands.
 
-### Chest-Anchored AR Feel
+### Body-Relative Placement And Free Hover
 
-The opened solar system should feel attached to the user's chest area.
+The opened solar system should feel like it exists in front of the user, but it must not be permanently pinned to the chest.
 
-- Use left and right shoulders to estimate the chest anchor.
-- Smooth the chest anchor to reduce jitter.
-- Keep the last stable chest anchor briefly if shoulders are temporarily lost.
+- Left and right shoulders may be used as an optional body-relative reference for initial placement or AR feel.
+- The chest/body reference must not be required for startup, release, re-grip, scale, rotation, or free-hover behavior.
 - Do not leave the solar system fixed at the screen center after opening.
-- When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to the chest anchor or screen center.
+- When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to a chest/body reference or the screen center.
+- A released solar system can hover at any visible in-frame position chosen by the user's hands.
 
 ### Whole-System Handle, Release, and Re-Grip
 
@@ -208,9 +208,13 @@ The opened solar system should behave like a manipulable object suspended in the
 - Releasing both hands from the endpoints should place the whole solar system in a free-hover state at the last stable position, scale, and orientation.
 - Returning both hands near the left and right endpoints should re-grip the whole-system handle without requiring a planet pinch.
 - The primary whole-system release gesture is both hands opening fully, with fingers extended and grip-pose confidence low for a short confirmation window.
+- Open-hand release must not win from a single frame; it needs a short stable confirmation window before `ReleaseCandidate`.
 - Once an open-hand release is accepted, release should latch: endpoints freeze immediately, and re-grip is blocked until both hands have clearly moved away from the frozen endpoints. Fingers relaxing during withdrawal must not reattach the handle.
 - Slightly curved hands should be treated as still holding the endpoints, not as a release.
+- Palms-up cupped hands near the endpoints, especially while rotation intent is present, should be treated as holding/rotating rather than releasing.
+- Whole-system intent priority is hold/rotate first, scale/collapse second, and open-hand release last.
 - Complete hand loss, endpoint mismatch, or low whole-control confidence may remain fallback release signals, but they must not replace open-hand release as the primary user-facing gesture.
+- Re-grip should use a forgiving magnetic zone around the frozen visual endpoints, then snap the virtual endpoints back to the current hands after control is reacquired.
 - Moving gripped hands farther apart or closer together should scale the whole solar system.
 - Moving gripped hands inward from the opened state should collapse the solar system in reverse; when fully closed, the scene returns to the initial empty camera view.
 - Palm-forward, side-to-side motion should be understood as a scale gesture, like pushing or pulling two glass panels apart/together.
@@ -242,6 +246,7 @@ Protocol output should include:
 - Palm normal and palm orientation scores.
 - Open-hand and grip-pose scores.
 - Release gesture state and accepted-release lock state.
+- Release stable time, release-block reason, grip-hold state, and re-grip reason.
 - Virtual visual-left/visual-right endpoints and endpoint match state.
 
 Palm orientation is an intent-confidence signal only. Do not make palm-forward or palms-up a hard gate, because normal webcam hand depth and palm normals can be noisy.
@@ -320,7 +325,7 @@ Use normalized camera coordinates as the tracking input and map them into the Th
 
 Required smoothing:
 
-- Low-pass filter for chest anchor.
+- Low-pass filter for the optional body reference, if used.
 - Low-pass filter for hand positions.
 - Short hold window for missing hands during startup gestures and active grab.
 - Hysteresis thresholds for pinch start and pinch end.
@@ -344,7 +349,7 @@ Debug panel should eventually show:
 - Left hand x/y.
 - Right hand x/y.
 - Hand midpoint x/y.
-- Chest anchor x/y.
+- Body reference x/y, if a body-relative reference is being debugged.
 - Hand distance.
 - Hand distance velocity.
 - Whether both hands are visible.
@@ -355,7 +360,9 @@ Debug panel should eventually show:
 - Palm normals and palm orientation scores.
 - Open-hand and grip-pose scores.
 - Release gesture state and accepted-release lock state.
+- Release stable time, release-block reason, grip-hold state, and re-grip reason.
 - Virtual visual-left/visual-right endpoints and endpoint match state.
+- A concise Chinese interaction status summary near the Debug toggle that states the current interpreted user intent, the reason, and the key parameters behind the decision.
 - `openProgress`.
 - Current solar scale.
 - Current hovered body.
