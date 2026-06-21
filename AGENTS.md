@@ -136,6 +136,8 @@ Prefer this structure for the first Web Demo:
     interaction/
       stateMachine.ts
       gestures.ts
+      handStartupGesture.ts
+      wholeSystemIntent.ts
       chestAnchor.ts
       coordinateMapping.ts
       grabController.ts
@@ -180,6 +182,9 @@ It must appear only after a valid two-hand closed-to-pull gesture:
 
 - both hands detected;
 - hands initially close to each other anywhere in the visible camera frame;
+- if the hands overlap and one hand is briefly lost, the startup state may hold recent valid two-hand evidence for a short window;
+- a single detected hand must not start the gesture unless both hands were recently detected close together;
+- while the hands/fists remain closed, no solar-system animation or 3D content should play;
 - hand distance increases over a short time window;
 - the opening progress is driven by current hand distance;
 - if the hands pause, the opening progress should pause or hold rather than auto-complete;
@@ -193,6 +198,57 @@ The opened solar system should feel attached to the user's chest area.
 - Smooth the chest anchor to reduce jitter.
 - Keep the last stable chest anchor briefly if shoulders are temporarily lost.
 - Do not leave the solar system fixed at the screen center after opening.
+- When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to the chest anchor or screen center.
+
+### Whole-System Handle, Release, and Re-Grip
+
+The opened solar system should behave like a manipulable object suspended in the air.
+
+- During pull-open, the left and right visual endpoints should stay attached to the left and right hands.
+- Releasing both hands from the endpoints should place the whole solar system in a free-hover state at the last stable position, scale, and orientation.
+- Returning both hands near the left and right endpoints should re-grip the whole-system handle without requiring a planet pinch.
+- The primary whole-system release gesture is both hands opening fully, with fingers extended and grip-pose confidence low for a short confirmation window.
+- Once an open-hand release is accepted, release should latch: endpoints freeze immediately, and re-grip is blocked until both hands have clearly moved away from the frozen endpoints. Fingers relaxing during withdrawal must not reattach the handle.
+- Slightly curved hands should be treated as still holding the endpoints, not as a release.
+- Complete hand loss, endpoint mismatch, or low whole-control confidence may remain fallback release signals, but they must not replace open-hand release as the primary user-facing gesture.
+- Moving gripped hands farther apart or closer together should scale the whole solar system.
+- Moving gripped hands inward from the opened state should collapse the solar system in reverse; when fully closed, the scene returns to the initial empty camera view.
+- Palm-forward, side-to-side motion should be understood as a scale gesture, like pushing or pulling two glass panels apart/together.
+- Palms-up gentle rotation should rotate the whole solar system in 3D.
+- Whole-system handle gestures must remain separate from pinch-grabbing individual planets.
+
+### Pre-3D Whole-System Interaction Protocol
+
+Before visible solar-system 3D content is attached, whole-system interaction must pass through an explicit protocol layer rather than mapping MediaPipe landmarks directly to Three.js objects.
+
+The protocol layer should follow this shape:
+
+```text
+MediaPipe landmarks
+→ HandFrame
+→ WholeSystemIntent
+→ future SolarSystemController
+```
+
+Protocol output should include:
+
+- Whole-system control state.
+- Control confidence.
+- Release confidence.
+- Re-grip confidence.
+- Scale intent and score.
+- Rotation intent and score.
+- Reverse-collapse intent score.
+- Palm normal and palm orientation scores.
+- Open-hand and grip-pose scores.
+- Release gesture state and accepted-release lock state.
+- Virtual visual-left/visual-right endpoints and endpoint match state.
+
+Palm orientation is an intent-confidence signal only. Do not make palm-forward or palms-up a hard gate, because normal webcam hand depth and palm normals can be noisy.
+
+Virtual endpoint left/right labels should mean the user's visual left/right in the mirrored camera preview. They are not the same thing as MediaPipe handedness labels.
+
+Virtual endpoints may be displayed only as debug-only 2D overlay markers before Milestone 4. They are not solar-system 3D content. Do not render the sun, planets, orbit rings, nebula, particles, singularity, or any 3D model in the protocol-validation milestone.
 
 ### Spatial Rotation
 
@@ -244,6 +300,9 @@ HandsClosed
 PullArmed
 SolarOpening
 SolarActive
+SolarFreeHover
+SolarHandleControl
+SolarClosing
 BodyHover
 BodyGrabbed
 BodyDetached
@@ -251,6 +310,9 @@ BodyReturning
 ```
 
 The state machine should be inspectable in the debug panel.
+
+Debug labels should distinguish startup and whole-system protocol state clearly:
+`Startup state` means the hand-only closed-to-pull startup state, while `Whole control` means the whole-system handle/release/re-grip protocol state.
 
 ## Coordinate and Smoothing Rules
 
@@ -260,7 +322,7 @@ Required smoothing:
 
 - Low-pass filter for chest anchor.
 - Low-pass filter for hand positions.
-- Short hold window for missing hands during active grab.
+- Short hold window for missing hands during startup gestures and active grab.
 - Hysteresis thresholds for pinch start and pinch end.
 - Slerp or equivalent smoothing for 3D rotations.
 - Velocity smoothing for throw detection.
@@ -287,6 +349,13 @@ Debug panel should eventually show:
 - Hand distance velocity.
 - Whether both hands are visible.
 - Whether lost-hand hold is active.
+- Whole-system control state.
+- Control/release/re-grip confidence.
+- Scale, rotation, and reverse-collapse intent.
+- Palm normals and palm orientation scores.
+- Open-hand and grip-pose scores.
+- Release gesture state and accepted-release lock state.
+- Virtual visual-left/visual-right endpoints and endpoint match state.
 - `openProgress`.
 - Current solar scale.
 - Current hovered body.
@@ -309,6 +378,14 @@ For every task:
 5. Update docs when behavior, scope, or task status changes.
 6. Sync the private companion repo when agent records, requirements, TODO status, or commits change.
 7. Summarize changed files, validation results, and manual camera-test needs.
+
+When a milestone or acceptance item needs user/manual verification, Codex must provide a separate manual verification checklist for the user. Each checklist item must include:
+
+1. The user action to perform in plain language.
+2. Where to observe the result, such as the debug panel, visible UI, browser console, or camera preview.
+3. The exact pass condition, including expected state names or values when applicable.
+
+Do not mark a milestone `DONE` from `NEEDS_MANUAL_VERIFY` until the user explicitly reports that the manual verification passed. If the user reports a failed or confusing verification item, keep the milestone in `NEEDS_MANUAL_VERIFY` and refine the implementation, thresholds, or checklist until the user confirms it passes.
 
 Use this prompt structure when asking Codex to do work:
 

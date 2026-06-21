@@ -13,6 +13,9 @@ export type InteractionState =
   | 'PullArmed'
   | 'SolarOpening'
   | 'SolarActive'
+  | 'SolarFreeHover'
+  | 'SolarHandleControl'
+  | 'SolarClosing'
   | 'BodyHover'
   | 'BodyGrabbed'
   | 'BodyDetached'
@@ -77,6 +80,55 @@ export interface HandStartupGestureSnapshot {
   pullArmed: boolean;
 }
 
+export type WholeSystemControlState =
+  | 'Inactive'
+  | 'VirtualOpeningHandle'
+  | 'SolarHandleControl'
+  | 'ReleaseCandidate'
+  | 'SolarFreeHover'
+  | 'ReGripCandidate'
+  | 'SolarClosing';
+
+export type WholeSystemScaleIntent = 'none' | 'scaleUp' | 'scaleDown';
+
+export type WholeSystemRotationIntent = 'none' | 'rotate2d' | 'rotate3d';
+
+export interface PalmOrientationSnapshot {
+  normal: NormalizedPoint | null;
+  facingCameraScore: number | null;
+  upScore: number | null;
+}
+
+export interface HandPoseIntentSnapshot {
+  openHandScore: number | null;
+  gripPoseScore: number | null;
+  openFingerCount: number;
+  releaseReady: boolean;
+}
+
+export interface WholeSystemIntentSnapshot {
+  controlState: WholeSystemControlState;
+  controlConfidence: number;
+  releaseConfidence: number;
+  reGripConfidence: number;
+  scaleIntent: WholeSystemScaleIntent;
+  scaleIntentScore: number;
+  rotationIntent: WholeSystemRotationIntent;
+  rotationIntentScore: number;
+  collapseIntentScore: number;
+  leftPalm: PalmOrientationSnapshot;
+  rightPalm: PalmOrientationSnapshot;
+  leftHandPose: HandPoseIntentSnapshot;
+  rightHandPose: HandPoseIntentSnapshot;
+  releaseGestureActive: boolean;
+  releaseGestureLatched: boolean;
+  releaseGestureScore: number;
+  virtualLeftEndpoint: NormalizedPoint | null;
+  virtualRightEndpoint: NormalizedPoint | null;
+  leftEndpointMatched: boolean;
+  rightEndpointMatched: boolean;
+}
+
 export interface DebugSnapshot {
   fps: number;
   cameraStatus: CameraPermissionStatus;
@@ -117,6 +169,7 @@ export interface DebugSnapshot {
   grabbedBody: string | null;
   pinchState: string;
   throwVelocity: number | null;
+  wholeSystem: WholeSystemIntentSnapshot;
   rendererReady: boolean;
   canvasSize: {
     width: number;

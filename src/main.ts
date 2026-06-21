@@ -2,6 +2,10 @@ import './styles.css';
 import { startCamera, stopCamera } from './camera/camera';
 import { HandStartupGestureController } from './interaction/handStartupGesture';
 import { InteractionStateMachine } from './interaction/stateMachine';
+import {
+  EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
+  WholeSystemIntentController,
+} from './interaction/wholeSystemIntent';
 import { DebugOverlay } from './rendering/debugOverlay';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { TransparentSceneRenderer } from './rendering/scene';
@@ -29,6 +33,7 @@ const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
 const landmarkOverlay = new LandmarkOverlay(landmarkCanvas);
 const tracking = new MediaPipeTrackingController();
 const startupGesture = new HandStartupGestureController();
+const wholeSystemIntent = new WholeSystemIntentController();
 
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
@@ -74,6 +79,7 @@ const debugSnapshot: DebugSnapshot = {
   grabbedBody: null,
   pinchState: 'idle',
   throwVelocity: null,
+  wholeSystem: EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
   rendererReady: true,
   canvasSize: renderer.getCanvasSize(),
   videoSourceSize: {
@@ -121,6 +127,12 @@ renderer.start(({ fps, canvasSize }) => {
     }
 
     updateStartupGestureDebugMetrics(startupUpdate.snapshot);
+    debugSnapshot.wholeSystem = wholeSystemIntent.update(
+      latestTracking,
+      startupUpdate.snapshot,
+      interaction.state,
+      timestamp,
+    );
   }
 
   debugSnapshot.fps = fps;
@@ -129,7 +141,7 @@ renderer.start(({ fps, canvasSize }) => {
   debugSnapshot.canvasSize = canvasSize;
   updateTrackingDebugMetrics(latestTracking);
   updatePreviewDebugMetrics();
-  landmarkOverlay.draw(latestTracking);
+  landmarkOverlay.draw(latestTracking, debugSnapshot.wholeSystem);
   debugOverlay.update(debugSnapshot);
 });
 
@@ -140,6 +152,7 @@ startButton.addEventListener('click', () => {
 window.addEventListener('beforeunload', () => {
   stopCamera(activeStream);
   tracking.dispose();
+  wholeSystemIntent.reset();
   renderer.dispose();
 });
 

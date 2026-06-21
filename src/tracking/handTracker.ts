@@ -14,6 +14,9 @@ import type { VisionFileset } from './mediapipe';
 import { LandmarkSmoother } from './smoothing';
 
 const HAND_SMOOTHING_ALPHA = 0.38;
+const MIN_HAND_DETECTION_CONFIDENCE = 0.35;
+const MIN_HAND_PRESENCE_CONFIDENCE = 0.35;
+const MIN_HAND_TRACKING_CONFIDENCE = 0.4;
 const WRIST_INDEX = 0;
 const THUMB_TIP_INDEX = 4;
 const INDEX_FINGER_TIP_INDEX = 8;
@@ -46,9 +49,9 @@ export class HandTracker {
       },
       runningMode: 'VIDEO',
       numHands: 2,
-      minHandDetectionConfidence: 0.5,
-      minHandPresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      minHandDetectionConfidence: MIN_HAND_DETECTION_CONFIDENCE,
+      minHandPresenceConfidence: MIN_HAND_PRESENCE_CONFIDENCE,
+      minTrackingConfidence: MIN_HAND_TRACKING_CONFIDENCE,
     });
 
     return new HandTracker(landmarker);

@@ -63,7 +63,7 @@ export class DebugOverlay {
       ['Lost-hand hold', snapshot.lostHandHoldActive ? 'active' : 'inactive'],
       ['Hand midpoint', formatPair(snapshot.handMidpoint.x, snapshot.handMidpoint.y)],
       ['Hand direction', formatPair(snapshot.handDirection.x, snapshot.handDirection.y)],
-      ['State', snapshot.interactionState],
+      ['Startup state', snapshot.interactionState],
       ['Chest X/Y', formatPair(snapshot.chestAnchor.x, snapshot.chestAnchor.y)],
       ['Hand distance', formatNullable(snapshot.handDistance)],
       ['Distance velocity', formatNullable(snapshot.handDistanceVelocity)],
@@ -73,6 +73,86 @@ export class DebugOverlay {
       ['Grabbed body', snapshot.grabbedBody ?? 'none'],
       ['Pinch', snapshot.pinchState],
       ['Throw velocity', formatNullable(snapshot.throwVelocity)],
+      ['Whole control', snapshot.wholeSystem.controlState],
+      [
+        'Control confidence',
+        formatNullable(snapshot.wholeSystem.controlConfidence),
+      ],
+      [
+        'Release confidence',
+        formatNullable(snapshot.wholeSystem.releaseConfidence),
+      ],
+      [
+        'Re-grip confidence',
+        formatNullable(snapshot.wholeSystem.reGripConfidence),
+      ],
+      [
+        'Scale intent',
+        `${snapshot.wholeSystem.scaleIntent} (${snapshot.wholeSystem.scaleIntentScore.toFixed(2)})`,
+      ],
+      [
+        'Rotation intent',
+        `${snapshot.wholeSystem.rotationIntent} (${snapshot.wholeSystem.rotationIntentScore.toFixed(2)})`,
+      ],
+      [
+        'Collapse intent',
+        formatNullable(snapshot.wholeSystem.collapseIntentScore),
+      ],
+      [
+        'Visual L palm normal',
+        formatPoint3(snapshot.wholeSystem.leftPalm.normal),
+      ],
+      [
+        'Visual R palm normal',
+        formatPoint3(snapshot.wholeSystem.rightPalm.normal),
+      ],
+      [
+        'Visual L palm facing/up',
+        formatPair(
+          snapshot.wholeSystem.leftPalm.facingCameraScore,
+          snapshot.wholeSystem.leftPalm.upScore,
+        ),
+      ],
+      [
+        'Visual R palm facing/up',
+        formatPair(
+          snapshot.wholeSystem.rightPalm.facingCameraScore,
+          snapshot.wholeSystem.rightPalm.upScore,
+        ),
+      ],
+      [
+        'Visual L open/grip',
+        formatPosePair(snapshot.wholeSystem.leftHandPose),
+      ],
+      [
+        'Visual R open/grip',
+        formatPosePair(snapshot.wholeSystem.rightHandPose),
+      ],
+      [
+        'Release gesture',
+        `${
+          snapshot.wholeSystem.releaseGestureActive ||
+          snapshot.wholeSystem.releaseGestureLatched
+            ? 'yes'
+            : 'no'
+        } / lock ${
+          snapshot.wholeSystem.releaseGestureLatched ? 'on' : 'off'
+        } (${snapshot.wholeSystem.releaseGestureScore.toFixed(2)})`,
+      ],
+      [
+        'Visual L endpoint',
+        formatPoint2(snapshot.wholeSystem.virtualLeftEndpoint),
+      ],
+      [
+        'Visual R endpoint',
+        formatPoint2(snapshot.wholeSystem.virtualRightEndpoint),
+      ],
+      [
+        'Visual endpoint matched',
+        `${snapshot.wholeSystem.leftEndpointMatched ? 'Visual L yes' : 'Visual L no'} / ${
+          snapshot.wholeSystem.rightEndpointMatched ? 'Visual R yes' : 'Visual R no'
+        }`,
+      ],
       ['Renderer', snapshot.rendererReady ? 'ready' : 'not ready'],
       [
         'Video source',
@@ -136,6 +216,32 @@ function formatPair(x: number | null, y: number | null): string {
   }
 
   return `${x.toFixed(3)}, ${y.toFixed(3)}`;
+}
+
+function formatPoint2(point: { x: number; y: number } | null): string {
+  if (!point) {
+    return 'n/a';
+  }
+
+  return `${point.x.toFixed(3)}, ${point.y.toFixed(3)}`;
+}
+
+function formatPoint3(point: { x: number; y: number; z: number } | null): string {
+  if (!point) {
+    return 'n/a';
+  }
+
+  return `${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}`;
+}
+
+function formatPosePair(pose: {
+  openHandScore: number | null;
+  gripPoseScore: number | null;
+  openFingerCount: number;
+}): string {
+  return `${formatNullable(pose.openHandScore)} / ${formatNullable(
+    pose.gripPoseScore,
+  )} (${pose.openFingerCount})`;
 }
 
 function formatSize(width: number | null, height: number | null): string {

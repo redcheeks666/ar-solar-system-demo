@@ -44,11 +44,15 @@
 - [ ] Web Demo 优先。
 - [ ] 初始 AR 场景为空：在拉开手势之前，不显示 3D 太阳、行星、轨道、星云、奇点、星尘或装饰性 3D 物体。
 - [ ] 太阳系只在用户双手/双拳在摄像头可见画面任意位置合拢并向两侧拉开之后出现。
+- [ ] 只合拢双手/双拳本身不会播放任何太阳系动画，也不会显示 3D 内容。
 - [ ] 展开进度由手距驱动；如果手停住，不应自动展开完成。
 - [ ] 展开端点需要视觉上跟随双手。
-- [ ] 展开后的太阳系锚定在胸前附近，而不是屏幕中心。
-- [ ] 双手缩放会改变太阳系大小。
-- [ ] 双手空间旋转应产生可见的 3D 倾斜和深度，而不只是 2D 旋转。
+- [ ] 展开后的太阳系初始位于胸前附近，而不是屏幕中心。
+- [ ] 松开整体双手控制后，太阳系保持悬浮在最后稳定 transform。
+- [ ] 双手重新扶住左右端点后，可以继续控制整个太阳系。
+- [ ] 双手缩放会改变太阳系大小，包括掌心朝前、像左右推拉玻璃窗一样移动。
+- [ ] 已展开状态下，双手扶住端点向内合拢会让太阳系反向收起，并在完全合拢后回到空摄像头画面。
+- [ ] 双手空间旋转应产生可见的 3D 倾斜和深度，而不只是 2D 旋转，包括掌心朝上的轻微旋转。
 - [ ] MVP 中水星、金星、地球、火星、木星、土星、天王星、海王星和月球均可抓取。
 - [ ] Pinch 抓取会将选中的天体吸附到手上，并冻结其自主运动。
 - [ ] 普通释放会让天体保持脱离状态，悬浮在释放位置并自转。
@@ -213,6 +217,8 @@ Done when:
 - [x] 当手部追踪短暂丢失时，短暂保持上一稳定手部位置。
 - [x] 检测双手是否在摄像头可见画面的任意位置合拢。
 - [x] 检测双手在合拢状态后是否持续向两侧拉开。
+- [x] 当双手/双拳重叠导致一只手短时间丢失时，只基于最近有效的双手合拢证据进行容错。
+- [x] 添加宽限窗口，避免 `HandsClosed` 和 `PullArmed` 在慢速起步、短暂停顿或短暂遮挡时闪烁。
 - [x] 添加交互状态：`CameraReady`、`EmptyIdle`、`HandsClosed` 和 `PullArmed`。
 - [x] `HandsClosed` 表示双手已合拢，但不应出现任何 3D 内容。
 - [x] `PullArmed` 表示已检测到有效拉开趋势，但太阳系仍不应出现。
@@ -229,6 +235,7 @@ Done when:
 - [x] 双手在胸前合拢并拉开可以进入 `PullArmed`，待人工摄像头验证。
 - [x] 双手在身体侧边合拢并拉开可以进入 `PullArmed`，待人工摄像头验证。
 - [x] 如果双手丢失或拉开趋势停止，应用回到 `EmptyIdle` 或其他合适空闲状态。
+- [x] 如果双手紧贴导致 MediaPipe 短暂丢失一只手，应用会保留最近有效的双手证据，而不是立刻闪回空闲状态。
 - [x] 进入 `HandsClosed` 或 `PullArmed` 不会渲染太阳、行星、轨道环、星云、粒子、奇点或任何 3D 模型。
 - [x] 调试面板显示稳定手部位置、手距、距离速度、中点和状态变化。
 - [x] `npm run build` 通过。
@@ -282,6 +289,73 @@ Done when:
 - `TODO.md` is updated with implementation status and manual verification notes.
 ```
 
+## Milestone 3.5 — 接入 3D 前的整体太阳系交互合同
+
+状态：`NEEDS_MANUAL_VERIFY`
+
+目标：在添加可见太阳系 3D 内容之前，锁定并调试整体太阳系的交互语义。这个里程碑在 MediaPipe 关键点和未来太阳系控制器之间定义一层协议，用 debug-only 信号暴露松手、重新扶住、缩放、反向收起和旋转意图，但不得渲染太阳、行星、轨道环、星云、粒子、奇点或任何 3D 模型。
+
+任务：
+
+- [x] 定义协议层：`MediaPipe landmarks -> HandFrame -> WholeSystemIntent -> future SolarSystemController`。
+- [x] 定义整体太阳系生命周期状态：`Inactive`、`VirtualOpeningHandle`、`SolarHandleControl`、`ReleaseCandidate`、`SolarFreeHover`、`ReGripCandidate` 和 `SolarClosing`。
+- [x] 定义主要松手判断：双手完全张开，手部 open-hand 分数足够高、伸展手指数量足够、grip-pose 分数足够低。
+- [x] 一旦张开手松手被接受，立即锁存释放：冻结端点、撤手期间阻止重新扶住，并且只有双手明确离开后再回到冻结端点附近，才允许重新扶住。
+- [x] 保留端点不匹配、双手完全丢失或整体控制置信度过低作为兜底松手信号。
+- [x] 定义重新扶住判断：双手回到冻结的视觉左/右虚拟端点附近，不要求 pinch 单个行星。
+- [x] 定义由手距速度驱动的缩放意图；当双掌看起来朝向摄像头时，提高缩放置信度。
+- [x] 定义反向收起意图：整体控制状态下双手向内移动，并且手距接近闭合阈值。
+- [x] 定义掌心朝上的轻微旋转和掌心法线变化作为 3D 旋转意图信号，并在 debug 中区分 2D/3D 旋转意图。
+- [x] 定义 MediaPipe 手部关键点中的掌心朝向基础量：手腕、食指掌指关节、中指掌指关节、小指掌指关节、掌心法线、朝向摄像头分数、朝上分数。
+- [x] 掌心朝向只作为意图置信度加分，不作为硬性门槛。
+- [x] 通过早期 pinch penalty，使整体太阳系控制与未来单个行星 pinch 抓取意图区分。
+- [x] 添加 debug-only 视觉左/视觉右虚拟端点和端点匹配状态；这些只是 2D 调试标记，不是 3D 太阳系内容。
+- [x] 添加整体控制状态、控制/松手/重新扶住置信度、缩放/旋转/收起意图、掌心法线、掌心分数、open-hand/grip-pose 分数、松手锁和虚拟端点的 debug 字段。
+- [x] 在验证这个交互合同时，AR 场景视觉上保持空场。
+
+验收标准：
+
+- [x] 文档状态模型区分 `SolarOpening`、`SolarFreeHover`、`SolarHandleControl` 和 `SolarClosing`。
+- [x] 松手表示未来太阳系会保持最后稳定的位置、缩放和朝向，而不是吸回胸前锚点或屏幕中心。
+- [x] 已接受的张开手松手会冻结端点，并防止用户慢慢撤手时立刻重新扶住。
+- [x] 重新扶住表示双手回到视觉左/右端点附近后，可以不 pinch 就继续整体控制。
+- [x] 掌心朝前左右推拉被定义并调试为缩放意图置信度加分。
+- [x] 已展开状态下，双手扶住端点向内合拢被定义并调试为反向收起，而不仅是普通缩小。
+- [x] 反向收起完成后，回到初始空摄像头画面。
+- [x] 掌心朝上轻轻旋转和掌心法线变化被定义并调试为 3D 旋转意图。
+- [x] Debug 面板暴露整体太阳系协议值，且不渲染太阳系 3D 内容。
+- [x] Debug overlay 只可在 debug 模式下显示 2D 虚拟端点标记。
+- [x] `npm run typecheck` 通过。
+- [x] `npm run build` 通过。
+- [ ] 真实摄像头验证确认 debug 值足够清晰且稳定，可以开始 Milestone 4。
+- [x] 在 Milestone 4 开始前，`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md` 和 `AGENTS.md` 已对齐。
+- [x] 状态保持为 `NEEDS_MANUAL_VERIFY`，直到用户确认 Milestone 3.5 checklist 通过。
+
+建议 Codex 提示词：
+
+```text
+Goal:
+Implement Milestone 3.5: debug-only whole-system interaction protocol before adding 3D solar content.
+
+Context:
+Read @AGENTS.md, @TODO.md, and @ar_solar_system_prd.md.
+Do not start Milestone 4 yet.
+
+Constraints:
+- Do not render solar-system 3D content.
+- Keep the initial AR scene empty.
+- Keep startup hand-only.
+- Separate whole-system control from individual planet pinch-grab.
+- Palm orientation should boost confidence, not act as a hard gate.
+- Virtual endpoints may be shown only as debug-only 2D markers.
+
+Done when:
+- Release/re-grip/scale/reverse-collapse/rotation intent values are visible in the debug panel.
+- No sun, planet, orbit, nebula, particle, singularity, or 3D model appears.
+- npm run typecheck and npm run build pass.
+- TODO.md and TODO.zh-CN.md are updated.
+```
+
 ## Milestone 4 — 手部吸附拉开展开太阳系
 
 状态：`TODO`
@@ -295,11 +369,15 @@ Done when:
 - [ ] 根据手距计算 `openProgress`。
 - [ ] 限制并平滑 `openProgress`。
 - [ ] 防止手距停止增加后自动展开完成。
+- [ ] 支持已展开端点双手向内移动时的反向进度。
 - [ ] 构建包含太阳、简化轨道和天体的初始太阳系 group。
 - [ ] 在展开开始前，让所有太阳系 3D 物体保持不可见。
+- [ ] `HandsClosed` 保持视觉静止，不播放太阳系动画，也不显示 3D 内容。
 - [ ] 展开期间，将视觉左右端点绑定到左右手。
 - [ ] 根据 `openProgress` 渐进显示太阳、轨道、天体、星尘和星云。
 - [ ] 展开完成后，将太阳系放置在胸前锚点附近。
+- [ ] 当反向收起达到闭合阈值时，隐藏全部太阳系内容并回到 `EmptyIdle`。
+- [ ] 整体双手控制松开后，保持最后稳定的太阳系 transform，不重新居中。
 - [ ] 添加 `openProgress`、起始距离、目标距离和状态的调试值。
 
 验收标准：
@@ -310,6 +388,9 @@ Done when:
 - [ ] 如果双手暂停，展开保持而不是自动播放到 100%。
 - [ ] 展开端点明显跟随双手。
 - [ ] 完成后，太阳系悬浮在胸前锚点附近。
+- [ ] 双手松开后，太阳系悬浮停留在松手位置。
+- [ ] 双手扶住端点向内移动时，太阳系反向收起。
+- [ ] 收起完成后，画面回到只有摄像头视频和 2D UI 的空场。
 - [ ] 触发失败不会造成闪烁或随机出现部分太阳物体。
 - [ ] `npm run build` 通过。
 - [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
@@ -344,11 +425,16 @@ Done when:
 任务：
 
 - [ ] 在进入 `SolarActive` 时计算基准手距。
+- [ ] 当双手回到左右端点附近时，检测整体太阳系重新扶住。
 - [ ] 将手距映射为太阳系缩放。
+- [ ] 区分普通缩小和接近闭合阈值时的反向收起意图。
+- [ ] 将掌心朝前、左右推拉移动识别为缩放意图。
 - [ ] 将缩放限制在实用范围内，初始约为 `0.6x` 到 `2.5x`。
 - [ ] 平滑缩放变化。
 - [ ] 在映射后的 3D 空间中计算双手控制向量。
+- [ ] 估算掌心朝向或等价手部姿态，用于掌心朝前和掌心朝上意图。
 - [ ] 实现 quaternion 或 arcball 风格的旋转映射。
+- [ ] 将掌心朝上的轻微旋转识别为整体 3D 旋转意图。
 - [ ] 使用 slerp 平滑旋转。
 - [ ] 让轨道平面可见地在 3D 中倾斜。
 - [ ] 防止快速翻转或失控旋转。
@@ -358,9 +444,13 @@ Done when:
 
 - [ ] 双手拉远会放大太阳系。
 - [ ] 双手靠近会缩小太阳系。
+- [ ] 掌心朝前、左右推拉移动会像推拉玻璃窗一样缩放太阳系。
+- [ ] 双手扶住端点足够靠近时，可以进入反向收起并回到空场。
 - [ ] 扭动或改变双手相对姿态会让太阳系产生 3D 倾斜/旋转。
+- [ ] 掌心朝上轻轻旋转会让太阳系产生 3D 旋转。
 - [ ] 旋转明显不是单纯的屏幕平面 2D 旋转。
 - [ ] 操控太阳系时，胸前锚定仍然有效。
+- [ ] 松开整体双手控制后，当前 transform 保持稳定。
 - [ ] `npm run build` 通过。
 - [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
 
@@ -658,6 +748,13 @@ Done when:
 
 对涉及摄像头或手部追踪的每个里程碑进行人工验证时，使用此脚本。
 
+人工验收交接规则：
+
+- 对于每个需要用户人工验收的里程碑，Codex 必须提供一份单独给用户使用的 checklist。
+- checklist 的每一项都必须写清楚：用户要做什么动作、看哪里、什么结果算通过。
+- 在用户明确说 checklist 通过之前，里程碑保持 `NEEDS_MANUAL_VERIFY`。
+- 如果任何 checklist 项失败或不清楚，保持里程碑未完成，并继续调整行为、阈值或 checklist。
+
 1. 在浏览器中打开 Web Demo。
 2. 点击 `开启摄像头`。
 3. 确认只显示摄像头画面和极简 2D UI。
@@ -675,6 +772,45 @@ Done when:
 15. 再次抓取并甩出释放，确认它回到轨道。
 16. 用月球和土星重复测试。
 17. 运行录制模式，确认 debug UI 已隐藏。
+
+### Milestone 3 人工验收 Checklist
+
+用这份清单验证“纯双手合拢到拉开”的启动状态。
+
+| 项目 | 你要做的动作 | 看哪里 | 通过标准 |
+|---|---|---|---|
+| 初始空场 | 打开页面，点击 `开启摄像头`，等待 tracking 加载完成。 | 摄像头预览和 Debug 面板。 | 画面只显示摄像头视频和 2D UI/debug。没有太阳、行星、轨道、星云、粒子、奇点或任何 3D 模型。摄像头开启后 Debug 的 `Startup state` 为 `EmptyIdle`。 |
+| Debug 值可见 | 点击 `Debug`，让两只手都出现在画面里。 | Debug 面板。 | 能看到 `Left center`、`Right center`、`Both hands`、`Hand midpoint`、`Hand distance`、`Distance velocity`。两只手都被识别时，`Both hands` 显示 `visible`。 |
+| 胸前 HandsClosed | 双手/双拳在胸前靠近并短暂停住。 | Debug 面板里的 `Startup state`。 | `Startup state` 变成 `HandsClosed`。画面不出现任何 3D 太阳系内容。 |
+| 胸前 PullArmed | 从胸前合拢状态开始，双手向两侧拉开。 | Debug 面板里的 `Startup state`、`Hand distance`、`Distance velocity`。 | `Startup state` 变成 `PullArmed`；拉开过程中 `Hand distance` 增大。画面不出现任何 3D 太阳系内容。 |
+| 合拢遮挡容错 | 双手/双拳非常靠近，让关键点 overlay 可能短时间只显示一只手，然后保持合拢姿势。 | Debug 面板里的 `Both hands`、`Lost-hand hold` 和 `Startup state`。 | 如果刚刚已经检测到双手合拢，短时间单手丢失时 `Lost-hand hold` 显示 `active`，`Startup state` 保持或进入 `HandsClosed`，而不是快速闪回 `EmptyIdle`。 |
+| 头顶 HandsClosed | 双手举到头顶，在头顶合拢并短暂停住，保证两只手都在画面内。 | Debug 面板里的 `Startup state`。 | `Startup state` 变成 `HandsClosed`。这个动作不需要把手移到胸前。 |
+| 头顶 PullArmed | 从头顶合拢状态开始，双手向两侧拉开。 | Debug 面板里的 `Startup state`、`Hand distance`、`Distance velocity`。 | `Startup state` 变成 `PullArmed`；`Hand distance` 增大。画面不出现任何 3D 太阳系内容。 |
+| 身体侧边 HandsClosed | 双手移动到身体一侧，在侧边合拢并短暂停住，保证两只手都在画面内。 | Debug 面板里的 `Startup state`。 | `Startup state` 变成 `HandsClosed`。这个动作不需要把手移到胸前。 |
+| 身体侧边 PullArmed | 从侧边合拢状态开始，双手向两侧拉开。 | Debug 面板里的 `Startup state`、`Hand distance`、`Distance velocity`。 | `Startup state` 变成 `PullArmed`；`Hand distance` 增大。画面不出现任何 3D 太阳系内容。 |
+| 短暂丢手保持 | 在 `HandsClosed` 或 `PullArmed` 状态下，短暂遮住一只手，小于约 2 秒，再露出来。 | Debug 面板里的 `Lost-hand hold` 和 `Startup state`。 | `Lost-hand hold` 会显示 `active`，短时间丢手不会立刻造成启动状态乱跳。 |
+| 丢手回空闲 | 遮住一只或两只手超过约 2.5 秒。 | Debug 面板里的 `Both hands`、`Lost-hand hold`、`Startup state`。 | `Both hands` 变成 `missing`；`Lost-hand hold` 变成 `inactive`；`Startup state` 回到 `EmptyIdle` 或其他合适空闲状态。 |
+| 拉开停止回空闲 | 进入 `PullArmed` 后，不再继续拉开，双手保持不动。 | Debug 面板里的 `Startup state` 和 `Distance velocity`。 | 短暂停顿后，`Startup state` 回到 `EmptyIdle` 或其他合适空闲状态。 |
+| 启动状态无 3D 内容 | 重复任意 `HandsClosed` 或 `PullArmed` 测试。 | 摄像头预览。 | 进入 `HandsClosed` 或 `PullArmed` 时，绝不会显示太阳系内容。 |
+
+### Milestone 3.5 人工验收清单
+
+用这份清单验证 Milestone 4 之前的 debug-only 整体太阳系交互协议。
+
+| 项目 | 用户动作 | 观察位置 | 通过条件 |
+|---|---|---|---|
+| M3.5 空场 | 打开页面，点击 `开启摄像头`，打开 `Debug`，先不要把手放进画面。 | 摄像头预览、Debug 面板和 debug overlay。 | 摄像头预览不出现 3D 太阳、行星、轨道、星云、粒子、奇点或模型。`Whole control` 显示 `Inactive`。 |
+| 拉开后协议启动 | 双手在画面任意位置合拢，然后拉开，直到 `Startup state` 进入 `PullArmed`。 | Debug 面板里的 `Whole control`、`Control confidence` 和 2D 端点圆圈。 | `Whole control` 从 `Inactive` 变为 `VirtualOpeningHandle`，随后变为 `SolarHandleControl`。只有打开 `Debug` 时，双手附近会出现两个小的 2D 调试端点圆圈。 |
+| 掌心朝向数值 | 保持双手可见，慢慢把掌心转向摄像头、转到侧面、再转成朝上。 | Debug 面板里的 `Visual L palm normal`、`Visual R palm normal`、`Visual L palm facing/up` 和 `Visual R palm facing/up`。 | 掌心法线数值持续更新。facing/up 分数保持在 `0.00-1.00` 范围，并且会随掌心方向变化而明显变化。 |
+| 微弯手保持抓住 | 当 `Whole control` 为 `SolarHandleControl` 时，双手保持微微弯曲，像握住两个把手。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release gesture` 和 `Whole control`。 | `Release gesture` 保持 `no`；`Whole control` 保持 `SolarHandleControl`。虚拟端点继续跟随双手。 |
+| 张开手松手 | 当 `Whole control` 为 `SolarHandleControl` 时，双手五指完全张开并伸展。看到 `Release gesture` 变成 `yes / lock on` 后，慢慢把手收回或放松手指。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release gesture`、`Whole control` 和 2D 端点圆圈。 | open 分数升高，grip 分数降低，`Release gesture` 变成 `yes / lock on`，`Whole control` 立即进入 `ReleaseCandidate`，随后进入 `SolarFreeHover`。即使慢慢收手时手指放松，端点圆圈也应冻结；在双手先离开冻结端点、再主动回到端点前，`Whole control` 不能跳回 `SolarHandleControl`。 |
+| 放大意图 | 当 `Whole control` 为 `SolarHandleControl` 时，双手向两侧拉远。 | Debug 面板里的 `Scale intent`、`Hand distance` 和 `Distance velocity`。 | 向外移动时，`Scale intent` 变为 `scaleUp`，且 `Hand distance` 增大。画面不出现任何 3D 太阳内容。 |
+| 缩小意图 | 当 `Whole control` 为 `SolarHandleControl` 时，双手互相靠近，但不要完全合拢。 | Debug 面板里的 `Scale intent`、`Hand distance` 和 `Collapse intent`。 | `Scale intent` 变为 `scaleDown`；`Hand distance` 减小。`Collapse intent` 可能升高，但只要没有靠得很近，不一定需要完成收起。 |
+| 反向收起意图 | 从 `SolarHandleControl` 开始，继续让双手向内靠近，直到接近合拢。 | Debug 面板里的 `Whole control` 和 `Collapse intent`。 | `Collapse intent` 向 `1.00` 升高；`Whole control` 可以进入 `SolarClosing`，完全合拢后回到 `Inactive` 附近。画面不出现 3D 内容。 |
+| 兜底松手 | 进入 `SolarHandleControl` 后，把双手移出画面或遮住几秒。 | Debug 面板里的 `Whole control`、`Release confidence` 和端点圆圈。 | `Whole control` 先变成 `ReleaseCandidate`，再变成 `SolarFreeHover`。虚拟端点圆圈冻结在最后稳定位置。 |
+| 重新扶住冻结端点 | 进入 `SolarFreeHover` 后，先把双手明显移离冻结端点圆圈，再把双手重新放到两个圆圈附近。 | Debug 面板里的 `Release gesture`、`Whole control`、`Re-grip confidence` 和 `Visual endpoint matched`。 | 双手离开端点后，`Release gesture` 变成 `no / lock off`。双手回到圆圈附近时，`Visual endpoint matched` 显示 `Visual L yes / Visual R yes`，`Re-grip confidence` 升高，`Whole control` 经过 `ReGripCandidate` 回到 `SolarHandleControl`。 |
+| 旋转意图 | 当 `Whole control` 为 `SolarHandleControl` 时，掌心大致朝上或明显不朝摄像头，轻轻旋转/扭动双手形成的控制柄。 | Debug 面板里的 `Rotation intent`、`Rotation intent score`、掌心 facing/up 分数和掌心法线。 | `Rotation intent` 从 `none` 变成 `rotate2d` 或 `rotate3d`；当掌心呈空间姿态或掌心法线变化清楚时，应能出现 `rotate3d`。 |
+| 整体控制与 pinch 分离 | 当 `Whole control` 为 `SolarHandleControl` 时，用一只手做 pinch，像未来要抓某颗行星一样。 | Debug 面板里的 `Control confidence`。 | `Control confidence` 应下降，而不是把强 pinch 当成更强的整体太阳系控制。本里程碑不会抓取任何行星。 |
 
 ## 实现过程中待解决的问题
 
@@ -706,6 +842,61 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-21 — 明确张开手松手锁和 debug 状态命名
+
+- 需求细化：张开手松手一旦被接受，必须立即锁存，冻结虚拟端点，并阻止重新扶住，直到双手先明确离开冻结端点、之后再回到端点附近。
+- 明确 debug 命名：`Startup state` 是 Milestone 3 的合拢到拉开启动状态；`Whole control` 是 Milestone 3.5 的整体太阳系协议状态，用来看 `ReleaseCandidate`、`SolarFreeHover`、`ReGripCandidate` 和 `SolarHandleControl`。
+- 更新人工验收：`Release gesture` 达到 `yes / lock on` 后，慢慢收手不再粘手成为必须通过的测试项。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/debugOverlay.ts` 和 `src/utils/types.ts`。
+- 剩余不明确项：仍需真实摄像头验证释放锁在自然距离清除，同时不会让主动重新扶住变得过严。
+
+### 2026-06-21 — 调整 Milestone 3.5 松手、视觉端点和 rotate3d
+
+- 需求细化：整体太阳系松手应主要使用明确的张开手手势；双手微弯时应继续保持抓住端点。
+- 明确 debug 命名：虚拟端点使用镜像摄像头预览中的视觉左/视觉右，不等同于 MediaPipe handedness 的 left/right。
+- 放宽并增强 `rotate3d` 检测：使用掌心法线变化和更宽的空间掌心姿态分数，而不是只要求很高的掌心朝上分数。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/debugOverlay.ts` 和 `src/utils/types.ts`。
+- 剩余不明确项：需要真实摄像头测试 open-hand/grip-pose 阈值，并确认 `rotate3d` 更容易出现，同时不会影响正常抓住或松手稳定性。
+
+### 2026-06-21 — 实现 Milestone 3.5 整体太阳系协议，用于 debug 验证
+
+- 已将接入 3D 前的整体太阳系交互协议实现为 debug-only 层，位于 MediaPipe 手部数据和未来太阳系控制器之间。
+- 添加掌心朝向基础量、虚拟端点、控制/松手/重新扶住置信度、缩放/旋转/反向收起意图值，以及端点匹配 debug 输出。
+- 添加 Milestone 3.5 人工验收清单；每个测试项都包含用户动作、观察位置和通过条件。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/main.ts`、`src/utils/types.ts`、`src/interaction/stateMachine.ts`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/debugOverlay.ts` 和 `src/rendering/landmarkOverlay.ts`。
+- 剩余不明确项：Milestone 4 开始前，需要通过真实摄像头校准掌心 facing/up 分数、虚拟端点命中半径、可见手部松手行为、旋转意图阈值和最终收起阈值。
+
+### 2026-06-21 — 新增反向收起回空场需求
+
+- 需求澄清：在已展开或整体双手控制状态下，双手扶住左右端点向内合拢时，太阳系应按反向展开逻辑收起。
+- 收起进度应跟随手距，手停住时收起暂停或保持，完全合拢后回到初始空摄像头画面。
+- 将长期状态模型更新为包含 `SolarClosing`，并更新 Milestone 3.5、4、5，以区分普通缩小和有意的反向收起。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md` 和 `ar_solar_system_prd.md`。
+- 剩余不明确项：普通缩小和完全收起之间的阈值与迟滞，需要在接入可见 3D 前通过 debug 校准。
+
+### 2026-06-21 — 明确 M4 前整体太阳系交互语义
+
+- 需求澄清：在添加太阳系 3D 内容之前，项目应先锁定整体太阳系交互合同，包括双手合拢不播放动画、双手吸附拉开展开、松手后自由悬浮、通过端点重新扶住、掌心朝前缩放、掌心朝上 3D 旋转。
+- 新增 Milestone 3.5，作为 Milestone 4 前的接入 3D 前设计/debug 关口。
+- 更新 Milestone 4 和 Milestone 5，使展开、松手、重新扶住、缩放和旋转语义匹配新的长期交互模型。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md` 和 `ar_solar_system_prd.md`。
+- 剩余不明确项：掌心朝向阈值和端点命中区域仍需在接入 3D 前通过 debug-only 校准。
+
+### 2026-06-21 — 根据用户录屏调优 Milestone 3 摄像头稳定性
+
+- 真实摄像头录屏显示：双手/双拳紧贴时会出现 `State` 抖动，以及一只手短暂丢失的问题。
+- 调整 M3 启动检测：锁存最近有效的双手合拢证据，为 `HandsClosed`/`PullArmed` 增加宽限窗口，稳定双手配对，并略微降低 MediaPipe 手部置信度阈值。
+- 更新 M3 人工验收 checklist，新增合拢遮挡容错测试。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/interaction/handStartupGesture.ts` 和 `src/tracking/handTracker.ts`。
+- 剩余不明确项：需要再次真实摄像头验证新阈值是否稳定，同时确认不会太容易误触发。
+
+### 2026-06-21 — 新增人工验收 checklist 交接规则
+
+- 工作流需求变更：每当里程碑需要用户人工验收时，Codex 必须提供单独 checklist，说明用户动作、观察位置和明确通过标准。
+- 添加 Milestone 3 人工验收 checklist，覆盖 `HandsClosed`、`PullArmed`、丢手保持、回空闲行为和无 3D 内容检查。
+- 影响文件：`AGENTS.md`、`TODO.md` 和 `TODO.zh-CN.md`。
+- 剩余不明确项：无。
 
 ### 2026-06-21 — 新增私有 agent 伴生仓库
 

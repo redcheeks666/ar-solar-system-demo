@@ -2,6 +2,7 @@ import type {
   NormalizedPoint,
   TrackedHand,
   TrackingSnapshot,
+  WholeSystemIntentSnapshot,
 } from '../utils/types';
 
 const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
@@ -31,6 +32,7 @@ const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
 const LEFT_COLOR = '#7dd3fc';
 const RIGHT_COLOR = '#f6c177';
 const POSE_COLOR = '#a9f3df';
+const ENDPOINT_COLOR = '#d9f99d';
 
 export class LandmarkOverlay {
   private readonly context: CanvasRenderingContext2D;
@@ -55,7 +57,10 @@ export class LandmarkOverlay {
     }
   }
 
-  draw(snapshot: TrackingSnapshot): void {
+  draw(
+    snapshot: TrackingSnapshot,
+    wholeSystem?: WholeSystemIntentSnapshot,
+  ): void {
     if (!this.visible) {
       return;
     }
@@ -69,6 +74,10 @@ export class LandmarkOverlay {
 
     this.drawPose(snapshot.pose.landmarks);
     snapshot.hands.hands.forEach((hand) => this.drawHand(hand));
+
+    if (wholeSystem) {
+      this.drawVirtualEndpoints(wholeSystem);
+    }
   }
 
   clear(): void {
@@ -117,6 +126,34 @@ export class LandmarkOverlay {
     this.drawPoint(hand.center, '#ffffff', 4);
     this.drawPoint(hand.thumbTip, '#f38ba8', 4);
     this.drawPoint(hand.indexFingerTip, '#b4f9f8', 4);
+  }
+
+  private drawVirtualEndpoints(snapshot: WholeSystemIntentSnapshot): void {
+    const left = snapshot.virtualLeftEndpoint;
+    const right = snapshot.virtualRightEndpoint;
+
+    if (!left || !right || snapshot.controlState === 'Inactive') {
+      return;
+    }
+
+    this.drawLine(left, right, ENDPOINT_COLOR, 1.2);
+    this.drawEndpoint(left, snapshot.leftEndpointMatched ? LEFT_COLOR : ENDPOINT_COLOR);
+    this.drawEndpoint(right, snapshot.rightEndpointMatched ? RIGHT_COLOR : ENDPOINT_COLOR);
+  }
+
+  private drawEndpoint(point: NormalizedPoint, color: string): void {
+    const { x, y } = this.mapPoint(point);
+
+    this.context.beginPath();
+    this.context.arc(x, y, 8, 0, Math.PI * 2);
+    this.context.strokeStyle = color;
+    this.context.lineWidth = 2;
+    this.context.stroke();
+
+    this.context.beginPath();
+    this.context.arc(x, y, 2.5, 0, Math.PI * 2);
+    this.context.fillStyle = color;
+    this.context.fill();
   }
 
   private drawPoint(point: NormalizedPoint, color: string, radius: number): void {
