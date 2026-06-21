@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="AR Solar System webcam gesture interaction demo"
+    />
+    <title>AR Solar System</title>
+  </head>
+  <body>
+    <main id="app" class="app-shell">
+      <section id="preview-stage" class="preview-stage" aria-label="摄像头预览">
+        <video
+          id="camera-video"
+          class="camera-video"
+          playsinline
+          muted
+          aria-label="摄像头画面"
+        ></video>
+
+        <canvas
+          id="webgl-canvas"
+          class="webgl-canvas"
+          aria-label="AR 叠加层"
+        ></canvas>
+
+        <canvas
+          id="landmark-canvas"
+          class="landmark-canvas"
+          aria-label="调试关键点叠加层"
+          hidden
+        ></canvas>
+
+        <div id="preview-overlay" class="preview-overlay">
+          <section id="intro-panel" class="intro-panel" aria-live="polite">
+            <p class="eyebrow">Web Demo</p>
+            <h1>AR Solar System</h1>
+            <p id="status-text" class="status-text">
+              开启摄像头后，让双手保持在画面中清晰可见。
+            </p>
+            <button id="start-camera" class="primary-action" type="button">
+              开启摄像头
+            </button>
+          </section>
+
+          <p id="guidance" class="guidance" hidden>
+            双手在画面任意位置合拢，再向两侧拉开
+          </p>
+        </div>
+      </section>
+
+      <button
+        id="debug-toggle"
+        class="debug-toggle"
+        type="button"
+        aria-controls="debug-panel"
+        aria-pressed="false"
+      >
+        Debug
+      </button>
+
+      <aside id="debug-panel" class="debug-panel" hidden></aside>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
