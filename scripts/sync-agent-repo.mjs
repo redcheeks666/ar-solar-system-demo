@@ -23,11 +23,13 @@ const docsToSnapshot = [
 
 function run(command, commandArgs, cwd, options = {}) {
   try {
-    return execFileSync(command, commandArgs, {
+    const output = execFileSync(command, commandArgs, {
       cwd,
       encoding: "utf8",
       stdio: options.stdio ?? ["ignore", "pipe", "pipe"],
-    }).trim();
+    });
+
+    return typeof output === "string" ? output.trim() : "";
   } catch (error) {
     if (options.allowFail) {
       return "";
