@@ -139,9 +139,13 @@ Prefer this structure for the first Web Demo:
       handStartupGesture.ts
       handPrimitives.ts
       handPairing.ts
+      handLandmarks.ts
       gestureCalibration.ts
       gestureDebugRecorder.ts
       wholeSystemIntent.ts
+      palmOrientation.ts
+      handPose.ts
+      intentScoring.ts
       intentTuning.ts
       bodyReference.ts
       coordinateMapping.ts
@@ -480,7 +484,12 @@ These shared modules exist so the same logic is not re-derived in multiple files
 
 - `src/utils/math.ts` — shared vector/scalar math (`clamp`, `clamp01`, `lerp`, `inverseLerp`, `average`, `averageNullable`, `averagePoints`, `distance2d/3d`, `subtract`, `cross`, `normalize`, `cosineSimilarity`, `unwrapAngle`). Do not define local copies of these in any module (tracking, interaction, or rendering); import from here. The only sanctioned per-file math is genuinely module-specific (e.g. the calibration smoothing helpers in `gestureCalibration.ts`).
 - `src/interaction/handPairing.ts` — visual-left/right hand assignment. Visual-left = the hand the user sees on the LEFT of the mirrored preview = the LARGER camera-frame x. All gesture modules (startup, primitives, whole-system) must use `getVisualTrackedHandPair` / `sortVisualLeftRight`; do not invent a per-file left/right convention, and do not confuse this with MediaPipe handedness labels.
-- `src/interaction/intentTuning.ts` — every tunable whole-system gesture threshold and blend weight. When tuning gesture behavior, change values here. Do not reintroduce magic numbers into the scoring functions of `wholeSystemIntent.ts`.
+- `src/interaction/intentTuning.ts` — every tunable whole-system gesture threshold and blend weight. When tuning gesture behavior, change values here. Do not reintroduce magic numbers into the scoring functions (now in `intentScoring.ts` and `handPose.ts`).
+- `src/interaction/handLandmarks.ts` — MediaPipe hand landmark index constants, shared by palm-orientation and hand-pose code. Do not re-declare landmark indices per file.
+- `src/interaction/palmOrientation.ts` — palm normal / facing-camera / up-score primitives from hand landmarks (`computePalmOrientation`, `averagePalmNormal`, `createEmptyPalm`). Pure and stateless.
+- `src/interaction/handPose.ts` — open-hand / grip-pose / release-ready scoring (`computeHandPoseIntent`, `computeReleaseGesture`, `createEmptyHandPose`). Pure and stateless.
+- `src/interaction/intentScoring.ts` — pure whole-system scoring: control/release/re-grip confidence, scale/rotation/collapse intent, endpoint matching, and pinch separation, plus the shared `HandPointPair` / `VirtualEndpoints` / `EndpointMatch` types. No cross-frame state.
+- `src/interaction/wholeSystemIntent.ts` — the orchestration layer ONLY: the `WholeSystemIntentController` state machine plus cross-frame state (endpoints, latches, stable timers, previous hand-axis angle/palm normal). Stateful rotation-velocity scoring stays here because it needs previous-frame data; all stateless computation is delegated to the modules above. Do not move pure scoring back in, and do not relocate the stateful rotation methods out.
 - `src/interaction/coordinateMapping.ts` — the only place that converts normalized MediaPipe coordinates into displayed stage pixels and Three.js world coordinates. It is `object-fit: contain` and mirror aware. The debug landmark overlay and all future 3D content (M4+) must map through it, using `scene.getInteractionViewport()` for the camera parameters, so hands, virtual endpoints, and 3D content stay pixel-aligned. Do not hand-roll `(1 - x) * width` style mapping elsewhere.
 
 ## Visual Rules

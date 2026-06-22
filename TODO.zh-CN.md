@@ -811,6 +811,7 @@ Done when:
 - [x] 将视觉左/右双手分配统一到 `src/interaction/handPairing.ts`，使 startup、手部基础特征和整体控制保持一致。
 - [x] 将共享的向量/标量数学合并到 `src/utils/math.ts`。
 - [x] 默认关闭未使用的 `PoseLandmarker`（`ENABLE_POSE_TRACKING`），并移除关键点 overlay 每点调用 `getBoundingClientRect` 的重排，把算力让给手部追踪。
+- [x] 将整体太阳系协议（`wholeSystemIntent.ts`）拆成"编排层 + 无状态模块"（`palmOrientation`、`handPose`、`intentScoring`、`handLandmarks`）；控制器现在只持有状态机、跨帧状态和有状态的旋转打分。状态机本身的拆分推迟到 M4 之后（Step 8）。
 - [ ] 创建调试状态 store，使调试 UI 不直接依赖内部类。
 - [ ] 保持帧循环性能稳定，避免不必要的逐帧分配。
 - [ ] 添加摄像头权限错误 UI。
@@ -919,6 +920,15 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-22 — M4 前重构：将 wholeSystemIntent.ts 拆成聚焦模块（Steps 4–7）
+
+- 将 ~1428 行的整体太阳系协议文件拆成"编排层 + 聚焦的无状态模块"，行为零变化。已验证为纯搬迁：把调参常量解析回数字后，每个被搬函数和控制器 class 与重构前逐字一致（每一步 typecheck + build 均通过）。
+- 新增模块：`handLandmarks.ts`（共享 MediaPipe landmark 索引）、`palmOrientation.ts`（掌心法线/朝向/朝上）、`handPose.ts`（手型 open/grip/release 打分）、`intentScoring.ts`（纯算分：控制/松手/重新扶住置信度、缩放/旋转/收起意图、端点匹配、pinch 分离，以及共享类型 `HandPointPair`/`VirtualEndpoints`/`EndpointMatch`）。
+- `wholeSystemIntent.ts` 现在只剩编排：`WholeSystemIntentController` 状态机、跨帧状态，以及有状态的旋转速度打分（因需要上一帧角度/法线，必须留下）。1428 → 792 行。
+- Step 8（把状态机本身拆成 release/re-grip/collapse 控制器）有意推迟到 M4/M5 之后，避免同时承担 3D 工作和状态机重构两套不稳定。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`src/interaction/wholeSystemIntent.ts`，以及新增 `src/interaction/handLandmarks.ts`、`palmOrientation.ts`、`handPose.ts`、`intentScoring.ts`。未改动任何产品行为、交互规则或验收标准，因此 `ar_solar_system_prd.md` 不变。
+- 剩余不明确项：本次重构无；搁置的录制/回放 + 单测方案留待下一步重聊。
 
 ### 2026-06-22 — M4 前重构收尾：完成数学收口并移除死状态
 

@@ -811,6 +811,7 @@ Status: `TODO`
 - [x] Unify visual-left/right hand assignment in `src/interaction/handPairing.ts` so startup, hand primitives, and whole-system agree.
 - [x] Consolidate shared vector/scalar math in `src/utils/math.ts`.
 - [x] Disable the unused `PoseLandmarker` by default (`ENABLE_POSE_TRACKING`) and remove per-point `getBoundingClientRect` thrash in the landmark overlay to free CPU for hand tracking.
+- [x] Split the whole-system protocol (`wholeSystemIntent.ts`) into orchestration + stateless modules (`palmOrientation`, `handPose`, `intentScoring`, `handLandmarks`); the controller now owns only the state machine, cross-frame state, and stateful rotation scoring. State-machine split deferred to post-M4 (Step 8).
 - [ ] Create a debug state store so debug UI does not depend directly on internal classes.
 - [ ] Keep frame loop performance stable and avoid unnecessary per-frame allocations.
 - [ ] Add camera permission error UI.
@@ -919,6 +920,15 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-22 — Pre-M4 refactor: split wholeSystemIntent.ts into focused modules (Steps 4–7)
+
+- Split the ~1428-line whole-system protocol file into an orchestration layer plus focused stateless modules, with no behavior change. Verified as a pure relocation: every moved function and the controller class are byte-identical to before once tuning constants are resolved to numbers (typecheck + build green at each step).
+- New modules: `handLandmarks.ts` (shared MediaPipe landmark indices), `palmOrientation.ts` (palm normal / facing / up), `handPose.ts` (open-hand / grip / release scoring), `intentScoring.ts` (pure control/release/re-grip confidence, scale/rotation/collapse intent, endpoint matching, pinch separation, plus the shared `HandPointPair` / `VirtualEndpoints` / `EndpointMatch` types).
+- `wholeSystemIntent.ts` is now orchestration only: the `WholeSystemIntentController` state machine, cross-frame state, and the stateful rotation-velocity scoring (which must stay because it needs previous-frame angle/normal). 1428 → 792 lines.
+- Step 8 (splitting the state machine itself into release/re-grip/collapse controllers) is intentionally deferred until after M4/M5, so 3D work and a state-machine refactor are not destabilized at once.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `src/interaction/wholeSystemIntent.ts`, and new `src/interaction/handLandmarks.ts`, `palmOrientation.ts`, `handPose.ts`, `intentScoring.ts`. No product behavior, interaction rule, or acceptance criteria changed, so `ar_solar_system_prd.md` is unchanged.
+- Remaining ambiguity: none for this refactor; the deferred record/replay + unit-test strategy is to be revisited next.
 
 ### 2026-06-22 — Pre-M4 refactor follow-up: finish math consolidation and remove dead state
 
