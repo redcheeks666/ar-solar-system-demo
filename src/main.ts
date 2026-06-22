@@ -1,5 +1,8 @@
 import './styles.css';
 import { startCamera, stopCamera } from './camera/camera';
+import { GestureCalibrationController, getDefaultGestureCalibrationSnapshot } from './interaction/gestureCalibration';
+import { GestureDebugRecorder } from './interaction/gestureDebugRecorder';
+import { EMPTY_HAND_PRIMITIVES, HandPrimitiveController } from './interaction/handPrimitives';
 import { HandStartupGestureController } from './interaction/handStartupGesture';
 import { InteractionStateMachine } from './interaction/stateMachine';
 import {
@@ -28,13 +31,20 @@ const guidance = getElement<HTMLElement>('guidance');
 const interactionSummary = getElement<HTMLElement>('interaction-summary');
 const debugPanel = getElement<HTMLElement>('debug-panel');
 const debugToggle = getElement<HTMLButtonElement>('debug-toggle');
+const debugRecorderControls = getElement<HTMLElement>('debug-recorder');
+const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
+const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
+const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
 const statusSummary = new InteractionStatusSummary(interactionSummary);
-const landmarkOverlay = new LandmarkOverlay(landmarkCanvas);
+const landmarkOverlay = new LandmarkOverlay(landmarkCanvas, videoElement);
 const tracking = new MediaPipeTrackingController();
+const handPrimitives = new HandPrimitiveController();
+const gestureCalibration = new GestureCalibrationController();
+const gestureRecorder = new GestureDebugRecorder();
 const startupGesture = new HandStartupGestureController();
 const wholeSystemIntent = new WholeSystemIntentController();
 
@@ -68,6 +78,10 @@ const debugSnapshot: DebugSnapshot = {
     y: null,
   },
   handDistanceVelocity: null,
+  startupTransitionReason: 'not-started',
+  handPrimitives: EMPTY_HAND_PRIMITIVES,
+  gestureCalibration: getDefaultGestureCalibrationSnapshot(),
+  gestureRecording: gestureRecorder.getStatus(),
   bothHandsVisible: false,
   lostHandHoldActive: false,
   interactionState: interaction.state,
@@ -111,6 +125,7 @@ const debugSnapshot: DebugSnapshot = {
 
 debugOverlay.onVisibilityChange((visible) => {
   landmarkOverlay.setVisible(visible);
+  debugRecorderControls.hidden = !visible;
 });
 
 renderer.start(({ fps, canvasSize }) => {
@@ -118,10 +133,21 @@ renderer.start(({ fps, canvasSize }) => {
 
   if (cameraStatus === 'granted') {
     latestTracking = tracking.update(videoElement, timestamp);
+    const primitiveSnapshot = handPrimitives.update(
+      latestTracking,
+      gestureCalibration.getSnapshot().thresholds,
+      timestamp,
+    );
+
+    debugSnapshot.handPrimitives = primitiveSnapshot;
+    debugSnapshot.gestureCalibration =
+      gestureCalibration.updateFromPrimitives(primitiveSnapshot);
+
     const startupUpdate = startupGesture.update(
       latestTracking,
       interaction.state,
       timestamp,
+      debugSnapshot.gestureCalibration.thresholds,
     );
 
     if (startupUpdate.nextState) {
@@ -135,6 +161,12 @@ renderer.start(({ fps, canvasSize }) => {
       startupUpdate.snapshot,
       interaction.state,
       timestamp,
+      debugSnapshot.gestureCalibration.thresholds,
+      primitiveSnapshot.trackingConfidence,
+    );
+    debugSnapshot.gestureCalibration = gestureCalibration.updateFromInteraction(
+      startupUpdate.snapshot,
+      debugSnapshot.wholeSystem,
     );
   }
 
@@ -143,8 +175,13 @@ renderer.start(({ fps, canvasSize }) => {
   debugSnapshot.interactionState = interaction.state;
   debugSnapshot.canvasSize = canvasSize;
   updateTrackingDebugMetrics(latestTracking);
-  updatePreviewDebugMetrics();
+  if (debugOverlay.isVisible) {
+    updatePreviewDebugMetrics();
+  }
   landmarkOverlay.draw(latestTracking, debugSnapshot.wholeSystem);
+  gestureRecorder.record(timestamp, latestTracking, debugSnapshot);
+  debugSnapshot.gestureRecording = gestureRecorder.getStatus();
+  updateRecorderControls();
   statusSummary.update(debugSnapshot);
   debugOverlay.update(debugSnapshot);
 });
@@ -156,8 +193,28 @@ startButton.addEventListener('click', () => {
 window.addEventListener('beforeunload', () => {
   stopCamera(activeStream);
   tracking.dispose();
+  handPrimitives.reset();
+  gestureCalibration.reset();
   wholeSystemIntent.reset();
   renderer.dispose();
+});
+
+debugRecordToggle.addEventListener('click', () => {
+  gestureRecorder.toggle();
+  debugSnapshot.gestureRecording = gestureRecorder.getStatus();
+  updateRecorderControls();
+});
+
+debugRecordExport.addEventListener('click', () => {
+  gestureRecorder.exportJson();
+  debugSnapshot.gestureRecording = gestureRecorder.getStatus();
+  updateRecorderControls();
+});
+
+debugRecordClear.addEventListener('click', () => {
+  gestureRecorder.clear();
+  debugSnapshot.gestureRecording = gestureRecorder.getStatus();
+  updateRecorderControls();
 });
 
 async function handleCameraStart(): Promise<void> {
@@ -256,8 +313,19 @@ function updateStartupGestureDebugMetrics(
   debugSnapshot.handDirection.y = snapshot.direction?.y ?? null;
   debugSnapshot.handDistance = snapshot.distance;
   debugSnapshot.handDistanceVelocity = snapshot.distanceVelocity;
+  debugSnapshot.startupTransitionReason = snapshot.transitionReason;
   debugSnapshot.bothHandsVisible = snapshot.bothHandsVisible;
   debugSnapshot.lostHandHoldActive = snapshot.lostHandHoldActive;
+}
+
+function updateRecorderControls(): void {
+  const status = gestureRecorder.getStatus();
+
+  debugRecordToggle.textContent = status.recording
+    ? `Stop (${status.frameCount})`
+    : 'Record';
+  debugRecordExport.disabled = status.frameCount === 0;
+  debugRecordClear.disabled = status.frameCount === 0;
 }
 
 function updateGuidanceForState(state: string): void {

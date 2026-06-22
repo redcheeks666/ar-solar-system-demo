@@ -1,3 +1,7 @@
+import {
+  mapNormalizedToStagePixel,
+  type PreviewLayout,
+} from '../interaction/coordinateMapping';
 import type {
   NormalizedPoint,
   TrackedHand,
@@ -38,8 +42,18 @@ const DRAW_POSE_SHOULDER_DEBUG = false;
 export class LandmarkOverlay {
   private readonly context: CanvasRenderingContext2D;
   private visible = false;
+  private layout: PreviewLayout = {
+    stageWidth: 0,
+    stageHeight: 0,
+    sourceWidth: 0,
+    sourceHeight: 0,
+    mirrored: true,
+  };
 
-  constructor(private readonly canvas: HTMLCanvasElement) {
+  constructor(
+    private readonly canvas: HTMLCanvasElement,
+    private readonly video: HTMLVideoElement,
+  ) {
     const context = canvas.getContext('2d');
 
     if (!context) {
@@ -66,7 +80,15 @@ export class LandmarkOverlay {
       return;
     }
 
-    this.resizeToDisplay();
+    const bounds = this.canvas.getBoundingClientRect();
+    this.resizeToDisplay(bounds);
+    this.layout = {
+      stageWidth: bounds.width,
+      stageHeight: bounds.height,
+      sourceWidth: this.video.videoWidth,
+      sourceHeight: this.video.videoHeight,
+      mirrored: true,
+    };
     this.clear();
 
     if (snapshot.status !== 'ready') {
@@ -87,8 +109,7 @@ export class LandmarkOverlay {
     this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
 
-  private resizeToDisplay(): void {
-    const bounds = this.canvas.getBoundingClientRect();
+  private resizeToDisplay(bounds: DOMRect): void {
     const width = Math.max(1, Math.round(bounds.width * window.devicePixelRatio));
     const height = Math.max(1, Math.round(bounds.height * window.devicePixelRatio));
 
@@ -186,11 +207,6 @@ export class LandmarkOverlay {
   }
 
   private mapPoint(point: NormalizedPoint): { x: number; y: number } {
-    const bounds = this.canvas.getBoundingClientRect();
-
-    return {
-      x: (1 - point.x) * bounds.width,
-      y: point.y * bounds.height,
-    };
+    return mapNormalizedToStagePixel(point, this.layout);
   }
 }

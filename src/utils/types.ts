@@ -74,10 +74,13 @@ export interface HandStartupGestureSnapshot {
   direction: NormalizedPoint | null;
   distance: number | null;
   distanceVelocity: number | null;
+  closeIntentScore: number;
+  pullIntentScore: number;
   bothHandsVisible: boolean;
   lostHandHoldActive: boolean;
   handsClosed: boolean;
   pullArmed: boolean;
+  transitionReason: string;
 }
 
 export type WholeSystemControlState =
@@ -118,6 +121,8 @@ export interface WholeSystemIntentSnapshot {
   controlConfidence: number;
   releaseConfidence: number;
   reGripConfidence: number;
+  endpointHitScore: number;
+  trackingConfidence: number;
   scaleIntent: WholeSystemScaleIntent;
   scaleIntentScore: number;
   rotationIntent: WholeSystemRotationIntent;
@@ -138,6 +143,52 @@ export interface WholeSystemIntentSnapshot {
   virtualRightEndpoint: NormalizedPoint | null;
   leftEndpointMatched: boolean;
   rightEndpointMatched: boolean;
+  transitionReason: string;
+}
+
+export interface GestureThresholds {
+  closedDistance: number;
+  closedEvidenceDistance: number;
+  pullMinDistanceDelta: number;
+  endpointEnterRadius: number;
+  endpointExitRadius: number;
+  reGripMagnetRadius: number;
+  releaseReGripClearRadius: number;
+  collapseStartDistance: number;
+  collapseCompleteDistance: number;
+}
+
+export interface HandPrimitiveSnapshot {
+  leftHand: NormalizedPoint | null;
+  rightHand: NormalizedPoint | null;
+  midpoint: NormalizedPoint | null;
+  direction: NormalizedPoint | null;
+  distance: number | null;
+  distanceVelocity: number | null;
+  handAxisAngle: number | null;
+  averagePalmScale: number | null;
+  trackingConfidence: number;
+  closeIntentScore: number;
+  pullIntentScore: number;
+  bothHandsVisible: boolean;
+  visibleHandCount: number;
+  transitionReason: string;
+}
+
+export interface GestureCalibrationSnapshot {
+  thresholds: GestureThresholds;
+  averagePalmScale: number | null;
+  closedDistance: number | null;
+  comfortableOpenDistance: number | null;
+  calibrated: boolean;
+  reason: string;
+}
+
+export interface GestureRecordingStatus {
+  recording: boolean;
+  frameCount: number;
+  maxFrames: number;
+  lastEvent: string | null;
 }
 
 export interface DebugSnapshot {
@@ -166,6 +217,10 @@ export interface DebugSnapshot {
     y: number | null;
   };
   handDistanceVelocity: number | null;
+  startupTransitionReason: string;
+  handPrimitives: HandPrimitiveSnapshot;
+  gestureCalibration: GestureCalibrationSnapshot;
+  gestureRecording: GestureRecordingStatus;
   bothHandsVisible: boolean;
   lostHandHoldActive: boolean;
   interactionState: InteractionState;

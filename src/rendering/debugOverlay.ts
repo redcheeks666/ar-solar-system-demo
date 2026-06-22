@@ -63,10 +63,48 @@ export class DebugOverlay {
       ['Lost-hand hold', snapshot.lostHandHoldActive ? 'active' : 'inactive'],
       ['Hand midpoint', formatPair(snapshot.handMidpoint.x, snapshot.handMidpoint.y)],
       ['Hand direction', formatPair(snapshot.handDirection.x, snapshot.handDirection.y)],
+      ['Hand axis angle', formatNullable(snapshot.handPrimitives.handAxisAngle)],
+      [
+        'Primitive confidence',
+        formatNullable(snapshot.handPrimitives.trackingConfidence),
+      ],
+      [
+        'Close / pull score',
+        `${snapshot.handPrimitives.closeIntentScore.toFixed(2)} / ${snapshot.handPrimitives.pullIntentScore.toFixed(2)}`,
+      ],
+      ['Primitive reason', snapshot.handPrimitives.transitionReason],
       ['Startup state', snapshot.interactionState],
+      ['Startup reason', snapshot.startupTransitionReason],
       ['Body ref X/Y', formatPair(snapshot.chestAnchor.x, snapshot.chestAnchor.y)],
       ['Hand distance', formatNullable(snapshot.handDistance)],
       ['Distance velocity', formatNullable(snapshot.handDistanceVelocity)],
+      [
+        'Calibration',
+        snapshot.gestureCalibration.calibrated ? 'session-adaptive' : 'defaults',
+      ],
+      [
+        'Palm scale',
+        formatNullable(snapshot.gestureCalibration.averagePalmScale),
+      ],
+      [
+        'Closed / open calib',
+        `${formatNullable(snapshot.gestureCalibration.closedDistance)} / ${formatNullable(
+          snapshot.gestureCalibration.comfortableOpenDistance,
+        )}`,
+      ],
+      [
+        'Close thresholds',
+        `${snapshot.gestureCalibration.thresholds.closedDistance.toFixed(3)} / ${snapshot.gestureCalibration.thresholds.closedEvidenceDistance.toFixed(3)}`,
+      ],
+      [
+        'Endpoint radii',
+        `${snapshot.gestureCalibration.thresholds.endpointEnterRadius.toFixed(3)} / ${snapshot.gestureCalibration.thresholds.endpointExitRadius.toFixed(3)} / ${snapshot.gestureCalibration.thresholds.reGripMagnetRadius.toFixed(3)}`,
+      ],
+      [
+        'Collapse thresholds',
+        `${snapshot.gestureCalibration.thresholds.collapseCompleteDistance.toFixed(3)} / ${snapshot.gestureCalibration.thresholds.collapseStartDistance.toFixed(3)}`,
+      ],
+      ['Calibration reason', snapshot.gestureCalibration.reason],
       ['openProgress', snapshot.openProgress.toFixed(2)],
       ['Solar scale', snapshot.solarScale.toFixed(2)],
       ['Hovered body', snapshot.hoveredBody ?? 'none'],
@@ -77,6 +115,14 @@ export class DebugOverlay {
       [
         'Control confidence',
         formatNullable(snapshot.wholeSystem.controlConfidence),
+      ],
+      [
+        'Endpoint hit',
+        formatNullable(snapshot.wholeSystem.endpointHitScore),
+      ],
+      [
+        'Whole tracking conf',
+        formatNullable(snapshot.wholeSystem.trackingConfidence),
       ],
       [
         'Release confidence',
@@ -146,6 +192,12 @@ export class DebugOverlay {
       ['Release blocked', snapshot.wholeSystem.releaseBlockReason],
       ['Grip hold', snapshot.wholeSystem.gripHoldActive ? 'yes' : 'no'],
       ['Re-grip reason', snapshot.wholeSystem.reGripReason],
+      ['Whole reason', snapshot.wholeSystem.transitionReason],
+      [
+        'Recorder',
+        `${snapshot.gestureRecording.recording ? 'recording' : 'idle'} ${snapshot.gestureRecording.frameCount}/${snapshot.gestureRecording.maxFrames}`,
+      ],
+      ['Recorder event', snapshot.gestureRecording.lastEvent ?? 'none'],
       [
         'Visual L endpoint',
         formatPoint2(snapshot.wholeSystem.virtualLeftEndpoint),

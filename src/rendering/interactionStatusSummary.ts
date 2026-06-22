@@ -89,6 +89,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
           `Rotation=${whole.rotationIntent} ${score(whole.rotationIntentScore)}`,
           `Palm up=${score(avg(whole.leftPalm.upScore, whole.rightPalm.upScore))}`,
           `Release stable=${Math.round(whole.releaseStableMs)}ms`,
+          `Reason=${whole.transitionReason}`,
         ],
       };
     }
@@ -116,6 +117,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
           `Distance=${nullable(snapshot.handDistance)}`,
           `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
           `Control=${score(whole.controlConfidence)}`,
+          `Reason=${whole.transitionReason}`,
         ],
       };
     }
@@ -128,6 +130,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Control=${score(whole.controlConfidence)}`,
         `Endpoints=${matchText(whole.leftEndpointMatched, whole.rightEndpointMatched)}`,
         `Grip hold=${yesNo(whole.gripHoldActive)}`,
+        `Reason=${whole.transitionReason}`,
       ],
     };
   }
@@ -144,6 +147,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Lock=${whole.releaseGestureLatched ? 'on' : 'off'}`,
         `Stable=${Math.round(whole.releaseStableMs)}ms`,
         `Release conf=${score(whole.releaseConfidence)}`,
+        `Reason=${whole.transitionReason}`,
       ],
     };
   }
@@ -161,6 +165,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Lock=${whole.releaseGestureLatched ? 'on' : 'off'}`,
         `Re-grip=${score(whole.reGripConfidence)}`,
         `Reason=${whole.reGripReason}`,
+        `Transition=${whole.transitionReason}`,
       ],
     };
   }
@@ -174,6 +179,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Re-grip=${score(whole.reGripConfidence)}`,
         `Reason=${whole.reGripReason}`,
         `Endpoints=${matchText(whole.leftEndpointMatched, whole.rightEndpointMatched)}`,
+        `Transition=${whole.transitionReason}`,
       ],
     };
   }
@@ -187,6 +193,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Collapse=${score(whole.collapseIntentScore)}`,
         `Distance=${nullable(snapshot.handDistance)}`,
         `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
+        `Reason=${whole.transitionReason}`,
       ],
     };
   }
@@ -200,6 +207,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Startup=${snapshot.interactionState}`,
         `Control=${score(whole.controlConfidence)}`,
         `Both hands=${visibleText(snapshot.bothHandsVisible)}`,
+        `Reason=${whole.transitionReason}`,
       ],
     };
   }
@@ -213,6 +221,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Distance=${nullable(snapshot.handDistance)}`,
         `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
         `Both hands=${visibleText(snapshot.bothHandsVisible)}`,
+        `Reason=${snapshot.startupTransitionReason}`,
       ],
     };
   }
@@ -226,6 +235,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Distance=${nullable(snapshot.handDistance)}`,
         `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
         `Both hands=${visibleText(snapshot.bothHandsVisible)}`,
+        `Reason=${snapshot.startupTransitionReason}`,
       ],
     };
   }
@@ -238,6 +248,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
       `Startup=${snapshot.interactionState}`,
       `Both hands=${visibleText(snapshot.bothHandsVisible)}`,
       `Lost hold=${snapshot.lostHandHoldActive ? 'active' : 'inactive'}`,
+      `Reason=${snapshot.startupTransitionReason}`,
     ],
   };
 }

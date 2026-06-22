@@ -162,6 +162,8 @@ Status: `DONE`
 
 Goal: Detect body pose, both hands, and expose stable landmark data for later interaction.
 
+Note (2026-06-22): Pose tracking is implemented but disabled by default via `ENABLE_POSE_TRACKING` in `src/tracking/config.ts`, because shoulder/body data currently gates no interaction and the pose model stole CPU from hand tracking. Hand tracking is unaffected; the debug panel shows `Pose: missing`. Re-enable (runs throttled at `POSE_DETECTION_INTERVAL_MS`) when M4+ consumes body-relative placement.
+
 Tasks:
 
 - [x] Add MediaPipe Tasks Vision dependency.
@@ -359,6 +361,68 @@ Constraints:
 Done when:
 - Release/re-grip/scale/reverse-collapse/rotation intent values are visible in the debug panel.
 - No sun, planet, orbit, nebula, particle, singularity, or 3D model appears.
+- npm run typecheck and npm run build pass.
+- TODO.md and TODO.zh-CN.md are updated.
+```
+
+## Milestone 3.6 — Gesture Diagnostics and Session-Adaptive Thresholds
+
+Status: `NEEDS_MANUAL_VERIFY`
+
+Goal: Make the pre-3D gesture foundation more robust before Milestone 4 by adding a unified hand primitives layer, session-adaptive thresholds, structured transition reasons, and a no-video gesture debug recorder.
+
+Tasks:
+
+- [x] Add a unified `HandPrimitives` layer that exposes hand distance, midpoint, axis direction, axis angle, distance velocity, average palm scale, close intent score, pull intent score, and tracking confidence.
+- [x] Add session-only dynamic calibration for close distance, comfortable open distance, palm scale, endpoint radii, re-grip magnet radius, and collapse thresholds.
+- [x] Feed adaptive thresholds into startup detection instead of relying only on fixed normalized distances.
+- [x] Feed adaptive endpoint and collapse thresholds into whole-system control, re-grip, and reverse-collapse logic.
+- [x] Add structured `transitionReason` values for startup and whole-system protocol decisions.
+- [x] Add `endpointHitScore` and `trackingConfidence` to whole-system debug output and scoring.
+- [x] Add a debug recorder that stores structured landmarks, primitives, calibration, intent scores, states, and transition reasons in memory only.
+- [x] Add Debug UI buttons to start/stop recording, export a JSON log, and clear the in-memory recording.
+- [x] Confirm the recorder does not capture raw camera video or upload data.
+- [x] Keep the AR scene visually empty and avoid rendering any solar-system 3D content.
+
+Acceptance Criteria:
+
+- [x] Debug panel shows hand primitive values: axis angle, tracking confidence, close/pull scores, and primitive reason.
+- [x] Debug panel shows session calibration values: palm scale, closed/open calibration, close thresholds, endpoint radii, and collapse thresholds.
+- [x] Debug panel shows startup and whole-system transition reasons.
+- [x] Whole-system scoring uses tracking confidence instead of only visible/missing hand booleans.
+- [x] Startup, endpoint re-grip, and collapse thresholds can adapt during the current camera session without persistent history.
+- [x] Debug recorder can export structured JSON containing landmarks and computed values, but no raw camera frames.
+- [x] `npm run typecheck` passes.
+- [x] `npm run build` passes.
+- [ ] Real webcam verification confirms the adaptive thresholds and transition reasons are understandable and do not make M3/M3.5 behavior less stable.
+- [x] `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, and `AGENTS.md` are aligned before Milestone 4 starts.
+
+Manual verification checklist:
+
+- [ ] Open the page, start the camera, open Debug, and confirm `Calibration` changes from defaults to `session-adaptive` after both hands are visible.
+- [ ] Close both hands naturally and confirm `Closed / open calib` records a closed distance and `Close thresholds` stay near that value instead of acting like arbitrary fixed numbers.
+- [ ] Pull hands apart naturally and confirm `Closed / open calib` records an open distance, while `PullArmed` behavior still works.
+- [ ] Test release and re-grip, and confirm `Endpoint hit`, `Whole tracking conf`, `Whole reason`, and `Re-grip reason` explain the result.
+- [ ] Click `Record`, perform a short failed or successful gesture sequence, click `Stop`, export JSON, and confirm the file contains structured values rather than video frames.
+
+Suggested Codex prompt:
+
+```text
+Goal:
+Implement or refine Milestone 3.6: gesture diagnostics and session-adaptive thresholds before adding 3D solar content.
+
+Context:
+Read @AGENTS.md, @TODO.md, and @ar_solar_system_prd.md.
+Do not start Milestone 4 yet.
+
+Constraints:
+- Do not render solar-system 3D content.
+- Keep startup hand-only.
+- Do not persist personal gesture history unless explicitly requested.
+- Record only structured debug data, not webcam video.
+
+Done when:
+- Hand primitives, adaptive thresholds, transition reasons, and recorder state are visible in Debug.
 - npm run typecheck and npm run build pass.
 - TODO.md and TODO.zh-CN.md are updated.
 ```
@@ -742,7 +806,11 @@ Done when:
 Status: `TODO`
 
 - [ ] Define shared TypeScript types for landmarks, hand state, pose state, interaction states, celestial bodies, and body lifecycle states.
-- [ ] Create named constants for gesture thresholds.
+- [x] Create named constants for gesture thresholds. Done: all whole-system tunables live in `src/interaction/intentTuning.ts`; do not reintroduce magic numbers into `wholeSystemIntent.ts`.
+- [x] Centralize the normalized→stage/world coordinate mapping in `src/interaction/coordinateMapping.ts` (M4 prerequisite); `src/rendering/scene.ts` exposes `getInteractionViewport()`.
+- [x] Unify visual-left/right hand assignment in `src/interaction/handPairing.ts` so startup, hand primitives, and whole-system agree.
+- [x] Consolidate shared vector/scalar math in `src/utils/math.ts`.
+- [x] Disable the unused `PoseLandmarker` by default (`ENABLE_POSE_TRACKING`) and remove per-point `getBoundingClientRect` thrash in the landmark overlay to free CPU for hand tracking.
 - [ ] Create a debug state store so debug UI does not depend directly on internal classes.
 - [ ] Keep frame loop performance stable and avoid unnecessary per-frame allocations.
 - [ ] Add camera permission error UI.
@@ -827,7 +895,7 @@ These should not block early milestones, but Codex should record decisions when 
 
 - [x] Exact package choice and loading strategy for MediaPipe Tasks Vision. Decision: use `@mediapipe/tasks-vision@0.10.35`, load wasm from the matching jsDelivr package path, and load the official Google-hosted lite pose and float16 hand `.task` models for the MVP.
 - [x] Whether to use plain TypeScript modules or add React. Decision: use plain TypeScript modules for the initial Web Demo.
-- [ ] Exact mapping from MediaPipe landmark coordinates to Three.js scene coordinates.
+- [x] Exact mapping from MediaPipe landmark coordinates to Three.js scene coordinates. Decision: centralized in `src/interaction/coordinateMapping.ts` (object-fit: contain + mirror aware), with camera params from `scene.getInteractionViewport()`. The debug overlay already maps through it; M4 3D content must use the same module. Final world-plane depth still subject to M4 tuning.
 - [ ] Final pinch threshold values after real webcam testing.
 - [ ] Final throw velocity threshold after real webcam testing.
 - [ ] Whether detached bodies should stay in front of the solar system plane or preserve release depth.
@@ -851,6 +919,35 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-22 — Pre-M4 refactor follow-up: finish math consolidation and remove dead state
+
+- Folded the remaining duplicated math into `src/utils/math.ts`: added `averagePoints` (was copied in `handTracker.ts` and `wholeSystemIntent.ts`), and switched `smoothing.ts` (`lerp`), `gestureCalibration.ts` (`clamp`), and `handTracker.ts` (`distance3d`) to import from it. No local copies of shared math remain outside `utils/math.ts`.
+- Removed the dead `pullTrendSince` state from `handStartupGesture.ts` (it was only written, never read); startup behavior is unchanged.
+- Strengthened the AGENTS "Single Sources of Truth" rule so future modules import shared math instead of redefining it.
+- Verified: `npm run typecheck` and `npm run build` pass.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `src/utils/math.ts`, `src/tracking/smoothing.ts`, `src/tracking/handTracker.ts`, `src/interaction/gestureCalibration.ts`, `src/interaction/wholeSystemIntent.ts`, and `src/interaction/handStartupGesture.ts`.
+- Remaining ambiguity: none.
+
+### 2026-06-22 — Pre-M4 refactor: coordinate-mapping SoT, centralized tuning, unified left/right, pose disabled
+
+- Engineering refactor only; no product behavior or acceptance-criteria change. Prepares for Milestone 4 and removes future-conflict hazards.
+- Added `src/interaction/coordinateMapping.ts` as the single normalized→stage-pixel/world mapping source (object-fit: contain + mirror aware). `src/rendering/scene.ts` now exports camera params and `getInteractionViewport()`. The debug landmark overlay maps through it; M4 3D endpoints must use the same module so content stays pixel-aligned with the hands.
+- Extracted all whole-system gesture thresholds and blend weights into `src/interaction/intentTuning.ts`. Values are unchanged, so gesture behavior is identical; tune gestures there instead of editing scoring functions.
+- Unified visual-left/right hand assignment in `src/interaction/handPairing.ts` (visual-left = larger camera x in the mirrored preview). Startup and hand-primitive modules previously used the opposite raw-camera convention; this only corrects debug read-outs because whole-system already re-sorted to visual order.
+- Consolidated duplicated vector/scalar math into `src/utils/math.ts`.
+- Performance: `PoseLandmarker` is disabled by default via `ENABLE_POSE_TRACKING` in `src/tracking/config.ts` (it gated nothing and stole CPU from hand tracking; runs throttled when enabled). Removed per-point `getBoundingClientRect` thrash in the landmark overlay and gated preview debug metrics behind debug visibility.
+- Verified: `npm run typecheck` and `npm run build` pass; coordinate-mapping math sanity-checked numerically. Real webcam gesture re-verification (M3/M3.5/M3.6 `NEEDS_MANUAL_VERIFY`) still pending.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, `src/tracking/config.ts`, `src/tracking/mediapipe.ts`, `src/utils/math.ts`, `src/interaction/handPairing.ts`, `src/interaction/coordinateMapping.ts`, `src/interaction/intentTuning.ts`, `src/interaction/handStartupGesture.ts`, `src/interaction/handPrimitives.ts`, `src/interaction/wholeSystemIntent.ts`, `src/rendering/scene.ts`, `src/rendering/landmarkOverlay.ts`, and `src/main.ts`.
+- Remaining ambiguity: M4 must confirm the world-plane depth and that endpoints visually attach to hands using the new mapping. `pullTrendSince` in `handStartupGesture.ts` remains dead state to clean up later.
+
+### 2026-06-22 — M3.6 gesture diagnostics and adaptive thresholds added
+
+- Requirement refinement: before Milestone 4, add a unified hand primitives layer, session-adaptive thresholds, structured transition reasons, tracking confidence, and a no-video gesture debug recorder.
+- Startup close/pull thresholds, whole-system endpoint radii, re-grip radius, and reverse-collapse distances now come from current-session calibration values derived from palm scale and observed closed/open hand distances.
+- Debug now exposes primitive scores, calibration values, endpoint hit score, tracking confidence, startup/whole transition reasons, and recorder status; recorder export is structured JSON only.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, `index.html`, `src/main.ts`, `src/styles.css`, `src/utils/types.ts`, `src/interaction/handPrimitives.ts`, `src/interaction/gestureCalibration.ts`, `src/interaction/gestureDebugRecorder.ts`, `src/interaction/handStartupGesture.ts`, `src/interaction/wholeSystemIntent.ts`, `src/rendering/debugOverlay.ts`, and `src/rendering/interactionStatusSummary.ts`.
+- Remaining ambiguity: real webcam testing must confirm adaptive thresholds improve stability and that exported debug logs are enough to diagnose failed gestures.
 
 ### 2026-06-22 — Free-hover placement rule clarified
 

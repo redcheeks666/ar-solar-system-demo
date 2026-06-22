@@ -162,6 +162,8 @@ Done when:
 
 目标：检测身体姿态和双手，并暴露稳定的关键点数据，供后续交互使用。
 
+说明（2026-06-22）：姿态追踪已实现，但通过 `src/tracking/config.ts` 中的 `ENABLE_POSE_TRACKING` 默认关闭，因为肩部/身体数据目前不参与任何交互判定，而姿态模型会抢占手部追踪算力。手部追踪不受影响，调试面板此时显示 `Pose: missing`。当 M4 及以后需要身体相对放置时再开启（开启后按 `POSE_DETECTION_INTERVAL_MS` 降频运行）。
+
 任务：
 
 - [x] 添加 MediaPipe Tasks Vision 依赖。
@@ -359,6 +361,68 @@ Constraints:
 Done when:
 - Release/re-grip/scale/reverse-collapse/rotation intent values are visible in the debug panel.
 - No sun, planet, orbit, nebula, particle, singularity, or 3D model appears.
+- npm run typecheck and npm run build pass.
+- TODO.md and TODO.zh-CN.md are updated.
+```
+
+## Milestone 3.6 — 手势诊断与会话自适应阈值
+
+状态：`NEEDS_MANUAL_VERIFY`
+
+目标：在 Milestone 4 之前继续打牢 3D 接入前的手势根基：新增统一手部基础特征层、当前会话内自适应阈值、结构化状态跳转原因，以及不记录视频的手势调试日志。
+
+任务：
+
+- [x] 新增统一 `HandPrimitives` 层，输出手距、中点、手轴方向、手轴角度、距离速度、平均手掌尺度、合拢意图分数、拉开意图分数和追踪置信度。
+- [x] 新增仅当前会话有效的动态校准：合拢距离、自然拉开距离、手掌尺度、端点半径、重新扶住磁吸半径和收起阈值。
+- [x] 将自适应阈值接入启动手势检测，不再只依赖固定归一化距离。
+- [x] 将自适应端点和收起阈值接入整体控制、重新扶住和反向收起逻辑。
+- [x] 为 startup 和整体控制协议添加结构化 `transitionReason`。
+- [x] 在整体控制调试输出和评分中加入 `endpointHitScore` 与 `trackingConfidence`。
+- [x] 新增 debug recorder，只在内存里记录结构化 landmarks、基础特征、校准值、意图分数、状态和跳转原因。
+- [x] 新增 Debug UI 按钮，用于开始/停止记录、导出 JSON 日志和清空内存记录。
+- [x] 确认 recorder 不采集原始摄像头视频，也不上传数据。
+- [x] 保持 AR 场景视觉空场，不渲染任何太阳系 3D 内容。
+
+验收标准：
+
+- [x] Debug 面板显示手部基础特征：手轴角度、追踪置信度、合拢/拉开分数和基础原因。
+- [x] Debug 面板显示会话校准值：手掌尺度、闭合/拉开校准值、闭合阈值、端点半径和收起阈值。
+- [x] Debug 面板显示 startup 与整体控制的状态跳转原因。
+- [x] 整体控制评分使用 tracking confidence，而不是只看双手 visible/missing。
+- [x] 启动、端点重新扶住和收起阈值可以在当前摄像头会话中自适应，不依赖持久化历史。
+- [x] Debug recorder 可以导出包含 landmarks 和计算值的结构化 JSON，但不包含原始摄像头画面。
+- [x] `npm run typecheck` 通过。
+- [x] `npm run build` 通过。
+- [ ] 真实摄像头验证确认自适应阈值与跳转原因容易理解，且没有让 M3/M3.5 行为变得更不稳定。
+- [x] 在 Milestone 4 开始前，`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md` 和 `AGENTS.md` 已对齐。
+
+人工验证清单：
+
+- [ ] 打开页面，开启摄像头，打开 Debug，确认双手可见后 `Calibration` 会从 defaults 变成 `session-adaptive`。
+- [ ] 自然合拢双手，确认 `Closed / open calib` 记录闭合距离，并且 `Close thresholds` 接近这个值，而不是像完全固定的数字。
+- [ ] 自然拉开双手，确认 `Closed / open calib` 记录拉开距离，同时 `PullArmed` 行为仍然正常。
+- [ ] 测试松手和重新扶住，确认 `Endpoint hit`、`Whole tracking conf`、`Whole reason` 和 `Re-grip reason` 能解释结果。
+- [ ] 点击 `Record`，做一小段成功或失败的手势，点击 `Stop`，导出 JSON，确认文件里是结构化数值而不是视频画面。
+
+建议 Codex 提示词：
+
+```text
+Goal:
+Implement or refine Milestone 3.6: gesture diagnostics and session-adaptive thresholds before adding 3D solar content.
+
+Context:
+Read @AGENTS.md, @TODO.md, and @ar_solar_system_prd.md.
+Do not start Milestone 4 yet.
+
+Constraints:
+- Do not render solar-system 3D content.
+- Keep startup hand-only.
+- Do not persist personal gesture history unless explicitly requested.
+- Record only structured debug data, not webcam video.
+
+Done when:
+- Hand primitives, adaptive thresholds, transition reasons, and recorder state are visible in Debug.
 - npm run typecheck and npm run build pass.
 - TODO.md and TODO.zh-CN.md are updated.
 ```
@@ -742,7 +806,11 @@ Done when:
 状态：`TODO`
 
 - [ ] 为关键点、手部状态、姿态状态、交互状态、天体和天体生命周期状态定义共享 TypeScript 类型。
-- [ ] 为手势阈值创建命名常量。
+- [x] 为手势阈值创建命名常量。已完成：整体太阳系的可调参数全部集中在 `src/interaction/intentTuning.ts`；不要再把魔法数字写回 `wholeSystemIntent.ts`。
+- [x] 将归一化坐标→舞台像素/世界坐标的映射集中到 `src/interaction/coordinateMapping.ts`（M4 前置项）；`src/rendering/scene.ts` 暴露 `getInteractionViewport()`。
+- [x] 将视觉左/右双手分配统一到 `src/interaction/handPairing.ts`，使 startup、手部基础特征和整体控制保持一致。
+- [x] 将共享的向量/标量数学合并到 `src/utils/math.ts`。
+- [x] 默认关闭未使用的 `PoseLandmarker`（`ENABLE_POSE_TRACKING`），并移除关键点 overlay 每点调用 `getBoundingClientRect` 的重排，把算力让给手部追踪。
 - [ ] 创建调试状态 store，使调试 UI 不直接依赖内部类。
 - [ ] 保持帧循环性能稳定，避免不必要的逐帧分配。
 - [ ] 添加摄像头权限错误 UI。
@@ -827,7 +895,7 @@ Done when:
 
 - [x] MediaPipe Tasks Vision 的具体包选择和加载策略。决策：使用 `@mediapipe/tasks-vision@0.10.35`，wasm 从匹配版本的 jsDelivr package 路径加载，MVP 阶段使用 Google 官方托管的 lite pose 和 float16 hand `.task` 模型。
 - [x] 使用纯 TypeScript 模块还是添加 React。决策：初始 Web Demo 使用纯 TypeScript 模块。
-- [ ] MediaPipe 关键点坐标到 Three.js 场景坐标的具体映射。
+- [x] MediaPipe 关键点坐标到 Three.js 场景坐标的具体映射。决策：集中在 `src/interaction/coordinateMapping.ts`（感知 object-fit: contain + 镜像），相机参数来自 `scene.getInteractionViewport()`。Debug overlay 已经走这个映射；M4 的 3D 内容必须使用同一模块。最终世界平面深度仍待 M4 调试确定。
 - [ ] 真实摄像头测试后的最终 pinch 阈值。
 - [ ] 真实摄像头测试后的最终甩出速度阈值。
 - [ ] 脱离天体应保持在太阳系平面前方，还是保留释放深度。
@@ -851,6 +919,35 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-22 — M4 前重构收尾：完成数学收口并移除死状态
+
+- 将剩余重复数学收进 `src/utils/math.ts`：新增 `averagePoints`（之前在 `handTracker.ts` 和 `wholeSystemIntent.ts` 各有一份），并让 `smoothing.ts`（`lerp`）、`gestureCalibration.ts`（`clamp`）、`handTracker.ts`（`distance3d`）改为从中导入。`utils/math.ts` 之外不再有共享数学的本地副本。
+- 移除 `handStartupGesture.ts` 中只写不读的死状态 `pullTrendSince`；启动行为不变。
+- 强化 AGENTS 的 "Single Sources of Truth" 规则，要求后续模块导入共享数学而不是各自重定义。
+- 已验证：`npm run typecheck` 和 `npm run build` 通过。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`src/utils/math.ts`、`src/tracking/smoothing.ts`、`src/tracking/handTracker.ts`、`src/interaction/gestureCalibration.ts`、`src/interaction/wholeSystemIntent.ts` 和 `src/interaction/handStartupGesture.ts`。
+- 剩余不明确项：无。
+
+### 2026-06-22 — M4 前重构：坐标映射 SoT、集中调参、统一左右、关闭 pose
+
+- 仅为工程重构，不改产品行为或验收标准。为 Milestone 4 做准备，并消除后续冲突隐患。
+- 新增 `src/interaction/coordinateMapping.ts` 作为归一化坐标→舞台像素/世界坐标的单一映射源（感知 object-fit: contain + 镜像）。`src/rendering/scene.ts` 现在导出相机参数和 `getInteractionViewport()`。Debug 关键点 overlay 走这个映射；M4 的 3D 端点必须使用同一模块，以保证内容与双手像素对齐。
+- 将整体太阳系的所有手势阈值和混合权重抽取到 `src/interaction/intentTuning.ts`。数值保持不变，因此手势行为完全一致；调手势请改这里，而不是改打分函数。
+- 将视觉左/右双手分配统一到 `src/interaction/handPairing.ts`（视觉左 = 镜像预览中较大的相机 x）。startup 和手部基础特征模块之前用的是相反的原始相机约定；本次只修正了 debug 读数，因为整体控制本来就会重排为视觉顺序。
+- 将重复的向量/标量数学合并到 `src/utils/math.ts`。
+- 性能：`PoseLandmarker` 通过 `src/tracking/config.ts` 的 `ENABLE_POSE_TRACKING` 默认关闭（它不参与任何判定，却抢占手部追踪算力；开启时降频运行）。移除关键点 overlay 每点调用 `getBoundingClientRect` 的重排，并将预览调试指标门控在 debug 可见时才计算。
+- 已验证：`npm run typecheck` 和 `npm run build` 通过；坐标映射数学已用数值自检。真实摄像头手势复测（M3/M3.5/M3.6 `NEEDS_MANUAL_VERIFY`）仍待进行。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`src/tracking/config.ts`、`src/tracking/mediapipe.ts`、`src/utils/math.ts`、`src/interaction/handPairing.ts`、`src/interaction/coordinateMapping.ts`、`src/interaction/intentTuning.ts`、`src/interaction/handStartupGesture.ts`、`src/interaction/handPrimitives.ts`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/scene.ts`、`src/rendering/landmarkOverlay.ts` 和 `src/main.ts`。
+- 剩余不明确项：M4 需要确认世界平面深度，以及用新映射时端点能在视觉上贴住双手。`handStartupGesture.ts` 中的 `pullTrendSince` 仍是待清理的死状态。
+
+### 2026-06-22 — 新增 M3.6 手势诊断与自适应阈值
+
+- 需求细化：Milestone 4 之前，新增统一手部基础特征层、会话自适应阈值、结构化状态跳转原因、追踪置信度和不记录视频的手势 debug recorder。
+- 启动合拢/拉开阈值、整体端点半径、重新扶住半径和反向收起距离现在来自当前会话校准值，这些值由手掌尺度以及观察到的闭合/拉开手距推导。
+- Debug 现在暴露基础特征分数、校准值、端点命中分数、追踪置信度、startup/whole 跳转原因和 recorder 状态；recorder 导出只包含结构化 JSON。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`index.html`、`src/main.ts`、`src/styles.css`、`src/utils/types.ts`、`src/interaction/handPrimitives.ts`、`src/interaction/gestureCalibration.ts`、`src/interaction/gestureDebugRecorder.ts`、`src/interaction/handStartupGesture.ts`、`src/interaction/wholeSystemIntent.ts`、`src/rendering/debugOverlay.ts` 和 `src/rendering/interactionStatusSummary.ts`。
+- 剩余不明确项：需要真实摄像头验证自适应阈值是否提升稳定性，并确认导出的 debug 日志足够定位失败手势。
 
 ### 2026-06-22 — 明确自由悬浮位置规则
 

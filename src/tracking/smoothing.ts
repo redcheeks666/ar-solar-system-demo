@@ -1,3 +1,4 @@
+import { lerp } from '../utils/math';
 import type { NormalizedPoint } from '../utils/types';
 
 const DEFAULT_ALPHA = 0.35;
@@ -72,8 +73,4 @@ export class LandmarkSmoother {
   reset(): void {
     this.filters.clear();
   }
-}
-
-function lerp(from: number, to: number, alpha: number): number {
-  return from + (to - from) * alpha;
 }

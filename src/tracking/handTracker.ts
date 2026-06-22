@@ -9,6 +9,7 @@ import type {
   TrackedHand,
   TrackedHandSide,
 } from '../utils/types';
+import { averagePoints, distance3d } from '../utils/math';
 import { HAND_LANDMARKER_MODEL_URL } from './config';
 import type { VisionFileset } from './mediapipe';
 import { LandmarkSmoother } from './smoothing';
@@ -141,7 +142,10 @@ function createTrackedHand(
   }
 
   const center = averagePoints([wrist, indexMcp, middleMcp, ringMcp, pinkyMcp]);
-  const palmScale = Math.max(distance(wrist, middleMcp), distance(indexMcp, pinkyMcp));
+  const palmScale = Math.max(
+    distance3d(wrist, middleMcp),
+    distance3d(indexMcp, pinkyMcp),
+  );
 
   return {
     side,
@@ -183,24 +187,3 @@ function toNormalizedPoint(landmark: NormalizedLandmark): NormalizedPoint {
   };
 }
 
-function averagePoints(points: readonly NormalizedPoint[]): NormalizedPoint {
-  const total = points.reduce(
-    (sum, point) => {
-      sum.x += point.x;
-      sum.y += point.y;
-      sum.z += point.z;
-      return sum;
-    },
-    { x: 0, y: 0, z: 0 },
-  );
-
-  return {
-    x: total.x / points.length,
-    y: total.y / points.length,
-    z: total.z / points.length,
-  };
-}
-
-function distance(a: NormalizedPoint, b: NormalizedPoint): number {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-}

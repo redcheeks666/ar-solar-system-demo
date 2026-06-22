@@ -137,7 +137,12 @@ Prefer this structure for the first Web Demo:
       stateMachine.ts
       gestures.ts
       handStartupGesture.ts
+      handPrimitives.ts
+      handPairing.ts
+      gestureCalibration.ts
+      gestureDebugRecorder.ts
       wholeSystemIntent.ts
+      intentTuning.ts
       bodyReference.ts
       coordinateMapping.ts
       grabController.ts
@@ -196,6 +201,7 @@ The opened solar system should feel like it exists in front of the user, but it 
 
 - Left and right shoulders may be used as an optional body-relative reference for initial placement or AR feel.
 - The chest/body reference must not be required for startup, release, re-grip, scale, rotation, or free-hover behavior.
+- Because the body reference currently gates nothing, `PoseLandmarker` is disabled by default via `ENABLE_POSE_TRACKING` in `src/tracking/config.ts` to free CPU for hand tracking and gesture stability. Pose data must not be assumed present; the debug panel shows `Pose: missing` while disabled. Re-enable the flag (it then runs throttled at `POSE_DETECTION_INTERVAL_MS`) only when M4+ actually consumes body-relative placement.
 - Do not leave the solar system fixed at the screen center after opening.
 - When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to a chest/body reference or the screen center.
 - A released solar system can hover at any visible in-frame position chosen by the user's hands.
@@ -229,17 +235,21 @@ The protocol layer should follow this shape:
 
 ```text
 MediaPipe landmarks
-→ HandFrame
+→ HandPrimitives
+→ SessionCalibration
 → WholeSystemIntent
 → future SolarSystemController
 ```
 
 Protocol output should include:
 
+- Hand primitive values such as hand axis angle, midpoint, distance, distance velocity, palm scale, close intent score, pull intent score, and tracking confidence.
+- Session-adaptive thresholds for close distance, pull delta, endpoint radii, re-grip magnet radius, and reverse-collapse distance. These should be in-memory by default and not persistent unless the user explicitly asks.
 - Whole-system control state.
 - Control confidence.
 - Release confidence.
 - Re-grip confidence.
+- Endpoint hit score and tracking confidence.
 - Scale intent and score.
 - Rotation intent and score.
 - Reverse-collapse intent score.
@@ -248,6 +258,7 @@ Protocol output should include:
 - Release gesture state and accepted-release lock state.
 - Release stable time, release-block reason, grip-hold state, and re-grip reason.
 - Virtual visual-left/visual-right endpoints and endpoint match state.
+- Structured transition reasons for startup and whole-system state decisions.
 
 Palm orientation is an intent-confidence signal only. Do not make palm-forward or palms-up a hard gate, because normal webcam hand depth and palm normals can be noisy.
 
@@ -362,7 +373,9 @@ Debug panel should eventually show:
 - Release gesture state and accepted-release lock state.
 - Release stable time, release-block reason, grip-hold state, and re-grip reason.
 - Virtual visual-left/visual-right endpoints and endpoint match state.
+- Hand primitives, session calibration thresholds, endpoint hit score, tracking confidence, and structured transition reasons.
 - A concise Chinese interaction status summary near the Debug toggle that states the current interpreted user intent, the reason, and the key parameters behind the decision.
+- A debug gesture recorder that can export structured landmarks, primitives, calibration values, intent scores, states, and transition reasons as JSON without recording raw webcam video or uploading data.
 - `openProgress`.
 - Current solar scale.
 - Current hovered body.
@@ -455,10 +468,20 @@ Do not pretend to have tested webcam or hand gestures if running in a headless e
 - Keep visual constants separate from gesture thresholds.
 - Use requestAnimationFrame for rendering and tracking updates.
 - Avoid expensive per-frame allocations in the render loop.
+- Avoid layout-reading calls (`getBoundingClientRect`, `getComputedStyle`) per landmark/point; read once per frame and reuse, and gate debug-only metrics behind debug visibility.
 - Dispose of Three.js geometries, materials, and textures when no longer needed.
 - Keep UI responsive when tracking models are loading.
 - Fail gracefully when camera permission is denied.
 - Provide lightweight user guidance for camera permission, poor lighting, or missing hands.
+
+### Single Sources of Truth (do not duplicate)
+
+These shared modules exist so the same logic is not re-derived in multiple files. Reuse them instead of re-implementing:
+
+- `src/utils/math.ts` — shared vector/scalar math (`clamp`, `clamp01`, `lerp`, `inverseLerp`, `average`, `averageNullable`, `averagePoints`, `distance2d/3d`, `subtract`, `cross`, `normalize`, `cosineSimilarity`, `unwrapAngle`). Do not define local copies of these in any module (tracking, interaction, or rendering); import from here. The only sanctioned per-file math is genuinely module-specific (e.g. the calibration smoothing helpers in `gestureCalibration.ts`).
+- `src/interaction/handPairing.ts` — visual-left/right hand assignment. Visual-left = the hand the user sees on the LEFT of the mirrored preview = the LARGER camera-frame x. All gesture modules (startup, primitives, whole-system) must use `getVisualTrackedHandPair` / `sortVisualLeftRight`; do not invent a per-file left/right convention, and do not confuse this with MediaPipe handedness labels.
+- `src/interaction/intentTuning.ts` — every tunable whole-system gesture threshold and blend weight. When tuning gesture behavior, change values here. Do not reintroduce magic numbers into the scoring functions of `wholeSystemIntent.ts`.
+- `src/interaction/coordinateMapping.ts` — the only place that converts normalized MediaPipe coordinates into displayed stage pixels and Three.js world coordinates. It is `object-fit: contain` and mirror aware. The debug landmark overlay and all future 3D content (M4+) must map through it, using `scene.getInteractionViewport()` for the camera parameters, so hands, virtual endpoints, and 3D content stay pixel-aligned. Do not hand-roll `(1 - x) * width` style mapping elsewhere.
 
 ## Visual Rules
 

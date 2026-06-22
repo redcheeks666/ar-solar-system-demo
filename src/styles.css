@@ -250,6 +250,32 @@ button {
   font-size: 0.78rem;
 }
 
+.debug-recorder {
+  position: absolute;
+  z-index: 4;
+  left: 16px;
+  bottom: min(calc(100vh - 54px), 534px);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: min(360px, calc(100vw - 32px));
+}
+
+.debug-recorder button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid rgba(169, 243, 223, 0.28);
+  border-radius: 6px;
+  color: rgba(246, 247, 249, 0.92);
+  background: rgba(5, 7, 9, 0.78);
+  cursor: pointer;
+}
+
+.debug-recorder button:hover {
+  color: #07100f;
+  background: #a9f3df;
+}
+
 .debug-row {
   display: grid;
   grid-template-columns: minmax(104px, 0.9fr) minmax(0, 1.1fr);

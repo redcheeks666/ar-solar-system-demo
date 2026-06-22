@@ -5,13 +5,16 @@ import {
   Vector2,
   WebGLRenderer,
 } from 'three';
+import type { PerspectiveViewport } from '../interaction/coordinateMapping';
 import type { RenderFrameSnapshot } from '../utils/types';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
-const CAMERA_FOV = 45;
+export const CAMERA_FOV = 45;
 const CAMERA_NEAR = 0.1;
 const CAMERA_FAR = 100;
-const CAMERA_Z = 6;
+export const CAMERA_Z = 6;
+/** World z of the plane where hand-driven interaction content lives (M4+). */
+export const INTERACTION_PLANE_Z = 0;
 const FPS_SMOOTHING = 0.12;
 
 export class TransparentSceneRenderer {
@@ -97,6 +100,18 @@ export class TransparentSceneRenderer {
     return {
       width: Math.round(size.x),
       height: Math.round(size.y),
+    };
+  }
+
+  /**
+   * Camera parameters for mapping normalized hand coordinates onto the interaction plane.
+   * Pair with `mapNormalizedToWorld` so 3D content (M4+) stays aligned with the hands.
+   */
+  getInteractionViewport(): PerspectiveViewport {
+    return {
+      fovDegrees: CAMERA_FOV,
+      cameraZ: CAMERA_Z,
+      planeZ: INTERACTION_PLANE_Z,
     };
   }
 

@@ -1,4 +1,5 @@
 import type {
+  GestureThresholds,
   HandStartupGestureSnapshot,
   InteractionState,
   HandPoseIntentSnapshot,
@@ -13,6 +14,114 @@ import type {
   WholeSystemRotationIntent,
   WholeSystemScaleIntent,
 } from '../utils/types';
+import {
+  averageNullable,
+  averagePoints,
+  clamp01,
+  cosineSimilarity,
+  cross,
+  distance2d,
+  distance3d,
+  inverseLerp,
+  normalize,
+  subtract,
+  unwrapAngle,
+} from '../utils/math';
+import {
+  getVisualTrackedHandPair,
+  sortVisualLeftRight,
+  type TrackedHandPair,
+} from './handPairing';
+import {
+  AVAILABILITY_LOST_HAND_SCORE,
+  COLLAPSE_DISTANCE_WEIGHT,
+  COLLAPSE_ENTER_SCORE,
+  COLLAPSE_EXIT_SCORE,
+  COLLAPSE_INWARD_RELAXED_SCORE,
+  COLLAPSE_INWARD_WEIGHT,
+  COLLAPSE_STABLE_MS,
+  CONTROL_CONF_AVAILABILITY_WEIGHT,
+  CONTROL_CONF_BASE,
+  CONTROL_CONF_ENDPOINT_WEIGHT,
+  CONTROL_CONF_INERTIA_WEIGHT,
+  CONTROL_CONF_PALM_FLOOR,
+  CONTROL_CONF_PALM_UP_FACTOR,
+  CONTROL_CONF_PALM_WEIGHT,
+  CONTROL_CONF_TRACKING_WEIGHT,
+  CONTROL_ENTER_THRESHOLD,
+  CONTROL_EXIT_THRESHOLD,
+  CUPPED_GRIP_MAX_OPEN_FINGERS,
+  CUPPED_GRIP_MAX_OPEN_SCORE,
+  CUPPED_GRIP_MIN_GRIP_SCORE,
+  CUPPED_GRIP_MIN_PALM_UP,
+  FALLBACK_RELEASE_CONFIDENCE,
+  FINGER_AWAY_MAX,
+  FINGER_AWAY_MIN,
+  FINGER_AWAY_WEIGHT,
+  FINGER_CURLED_THRESHOLD,
+  FINGER_EXTENSION_MAX,
+  FINGER_EXTENSION_MIN,
+  FINGER_EXTENSION_WEIGHT,
+  FINGER_OPEN_THRESHOLD,
+  FINGER_STRAIGHT_MAX,
+  FINGER_STRAIGHT_MIN,
+  FINGER_STRAIGHT_WEIGHT,
+  GRIP_HOLD_MAX_OPEN_FINGERS,
+  GRIP_HOLD_MIN_ENDPOINT_SCORE,
+  GRIP_HOLD_MIN_GRIP_SCORE,
+  GRIP_HOLD_MIN_PALM_UP,
+  GRIP_HOLD_MIN_ROTATION,
+  GRIP_POSE_CURLED_WEIGHT,
+  GRIP_POSE_OPEN_WEIGHT,
+  OPEN_HAND_FINGER_WEIGHT,
+  OPEN_HAND_THUMB_WEIGHT,
+  PALM_NORMAL_ROTATION_DEADBAND,
+  PALM_NORMAL_ROTATION_FULL_SCORE,
+  PINCH_PENALTY_BOTH,
+  PINCH_PENALTY_SINGLE,
+  PINCH_RATIO_THRESHOLD,
+  REGRIP_CONF_AVAILABILITY_WEIGHT,
+  REGRIP_CONF_ENDPOINT_WEIGHT,
+  REGRIP_CONF_PALM_FLOOR,
+  REGRIP_CONF_PALM_UP_FACTOR,
+  REGRIP_CONF_PALM_WEIGHT,
+  REGRIP_CONF_TRACKING_WEIGHT,
+  REGRIP_STABLE_MS,
+  RELEASE_BLOCK_MIN_ENDPOINT_SCORE,
+  RELEASE_CANCEL_REGRIP_CONFIDENCE,
+  RELEASE_CONFIDENCE_ENDPOINT_MISS,
+  RELEASE_CONFIDENCE_LOST_HAND,
+  RELEASE_CONFIRM_MS,
+  RELEASE_GRIP_CANCEL_THRESHOLD,
+  RELEASE_MIN_OPEN_FINGERS,
+  RELEASE_OPEN_SCORE_THRESHOLD,
+  RELEASE_STABLE_MS,
+  ROTATION_3D_POSTURE_THRESHOLD,
+  ROTATION_COMBINED_BASE,
+  ROTATION_COMBINED_POSTURE_WEIGHT,
+  ROTATION_HOLD_MIN_PALM_UP,
+  ROTATION_HOLD_MIN_ROTATION_SCORE,
+  ROTATION_INTENT_MIN_SCORE,
+  ROTATION_PALM_MOTION_BASE,
+  ROTATION_PALM_MOTION_POSTURE_WEIGHT,
+  ROTATION_VELOCITY_DEADBAND,
+  ROTATION_VELOCITY_FULL_SCORE,
+  SCALE_INTENT_MIN_SCORE,
+  SCALE_MOVEMENT_WEIGHT,
+  SCALE_PALM_FACING_WEIGHT,
+  SCALE_VELOCITY_DEADBAND,
+  SCALE_VELOCITY_FULL_SCORE,
+  SPATIAL_NOT_FACING_WEIGHT,
+  SPATIAL_PALM_FACING_PIVOT,
+  THUMB_AWAY_MAX,
+  THUMB_AWAY_MIN,
+  THUMB_AWAY_WEIGHT,
+  THUMB_OPEN_THRESHOLD,
+  THUMB_STRAIGHT_MAX,
+  THUMB_STRAIGHT_MIN,
+  THUMB_STRAIGHT_WEIGHT,
+  WIDE_MAGNET_MIN_REGRIP_CONFIDENCE,
+} from './intentTuning';
 
 const WRIST_INDEX = 0;
 const THUMB_CMC_INDEX = 1;
@@ -31,34 +140,13 @@ const PINKY_MCP_INDEX = 17;
 const PINKY_PIP_INDEX = 18;
 const PINKY_TIP_INDEX = 20;
 
-const CONTROL_ENTER_THRESHOLD = 0.7;
-const CONTROL_EXIT_THRESHOLD = 0.35;
-const RELEASE_CONFIRM_MS = 480;
-const RELEASE_STABLE_MS = 280;
-const REGRIP_STABLE_MS = 220;
-const COLLAPSE_STABLE_MS = 180;
-const ENDPOINT_ENTER_RADIUS = 0.16;
-const ENDPOINT_EXIT_RADIUS = 0.24;
-const REGRIP_MAGNET_RADIUS = 0.34;
-const RELEASE_REGRIP_CLEAR_RADIUS = ENDPOINT_EXIT_RADIUS;
-const SCALE_VELOCITY_DEADBAND = 0.025;
-const SCALE_VELOCITY_FULL_SCORE = 0.22;
-const ROTATION_VELOCITY_DEADBAND = 0.9;
-const ROTATION_VELOCITY_FULL_SCORE = 3.4;
-const PALM_NORMAL_ROTATION_DEADBAND = 0.45;
-const PALM_NORMAL_ROTATION_FULL_SCORE = 2.4;
-const COLLAPSE_START_DISTANCE = 0.34;
-const COLLAPSE_COMPLETE_DISTANCE = 0.19;
-const PINCH_RATIO_THRESHOLD = 0.2;
-const RELEASE_OPEN_SCORE_THRESHOLD = 0.82;
-const RELEASE_GRIP_CANCEL_THRESHOLD = 0.44;
-const RELEASE_MIN_OPEN_FINGERS = 4;
-
 export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
   controlState: 'Inactive',
   controlConfidence: 0,
   releaseConfidence: 0,
   reGripConfidence: 0,
+  endpointHitScore: 0,
+  trackingConfidence: 0,
   scaleIntent: 'none',
   scaleIntentScore: 0,
   rotationIntent: 'none',
@@ -79,6 +167,7 @@ export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
   virtualRightEndpoint: null,
   leftEndpointMatched: false,
   rightEndpointMatched: false,
+  transitionReason: 'inactive',
 };
 
 interface HandPointPair {
@@ -86,11 +175,6 @@ interface HandPointPair {
   right: NormalizedPoint;
   bothHandsVisible: boolean;
   lostHandHoldActive: boolean;
-}
-
-interface TrackedHandPair {
-  left: TrackedHand;
-  right: TrackedHand;
 }
 
 interface VirtualEndpoints {
@@ -126,6 +210,8 @@ export class WholeSystemIntentController {
     startup: HandStartupGestureSnapshot,
     interactionState: InteractionState,
     timestamp: number,
+    thresholds: GestureThresholds,
+    trackingConfidence: number,
   ): WholeSystemIntentSnapshot {
     const trackedPair = this.resolveTrackedPair(tracking);
     const handPair = resolveHandPointPair(startup, trackedPair);
@@ -166,6 +252,8 @@ export class WholeSystemIntentController {
         releaseGestureLatched: this.releaseGestureLatched,
         releaseGestureScore: releaseGestureEvidence.score,
         releaseStableMs: this.resetReleaseStability(),
+        trackingConfidence,
+        transitionReason: 'waiting-for-virtual-endpoints',
       };
     }
 
@@ -184,18 +272,24 @@ export class WholeSystemIntentController {
         releaseGestureLatched: this.releaseGestureLatched,
         releaseGestureScore: releaseGestureEvidence.score,
         releaseStableMs: this.resetReleaseStability(),
+        trackingConfidence,
         virtualLeftEndpoint: this.endpoints.left,
         virtualRightEndpoint: this.endpoints.right,
+        transitionReason: 'missing-hand-pair',
       };
     }
 
-    const endpointMatch = matchEndpoints(handPair, this.endpoints, this.endpointRadius);
+    const endpointMatch = matchEndpoints(
+      handPair,
+      this.endpoints,
+      this.getEndpointRadius(thresholds),
+    );
     const preciseEndpointMatch = matchEndpoints(
       handPair,
       this.endpoints,
-      ENDPOINT_ENTER_RADIUS,
+      thresholds.endpointEnterRadius,
     );
-    this.updateReleaseLatchFromEndpointExit(handPair);
+    this.updateReleaseLatchFromEndpointExit(handPair, thresholds);
 
     const pinchPenalty = trackedPair ? computePinchPenalty(trackedPair) : 0;
     const palmFacingScore = averageNullable(
@@ -208,12 +302,13 @@ export class WholeSystemIntentController {
       availabilityScore: handPair.bothHandsVisible
         ? 1
         : handPair.lostHandHoldActive
-          ? 0.55
+          ? AVAILABILITY_LOST_HAND_SCORE
           : 0,
       palmFacingScore,
       palmUpScore,
       pinchPenalty,
       hasStateInertia: isActiveControlState(this.controlState),
+      trackingConfidence,
     });
     const releaseConfidence = computeReleaseConfidence(
       handPair,
@@ -226,6 +321,7 @@ export class WholeSystemIntentController {
       palmFacingScore,
       palmUpScore,
       pinchPenalty,
+      trackingConfidence,
     });
     const scaleIntentScore = computeScaleIntentScore(
       startup.distanceVelocity,
@@ -247,6 +343,7 @@ export class WholeSystemIntentController {
     const collapseIntentScore = computeCollapseIntentScore(
       startup.distance,
       startup.distanceVelocity,
+      thresholds,
     );
     const gripHoldActive = computeGripHoldActive({
       endpointScore: endpointMatch.score,
@@ -277,7 +374,7 @@ export class WholeSystemIntentController {
       reGripConfidence,
     );
 
-    this.updateControlState({
+    const transitionReason = this.updateControlState({
       handPair,
       controlConfidence,
       releaseConfidence,
@@ -286,6 +383,7 @@ export class WholeSystemIntentController {
       releaseGestureActive,
       gripHoldActive,
       timestamp,
+      thresholds,
     });
 
     if (shouldFollowHands(this.controlState, controlConfidence)) {
@@ -297,6 +395,8 @@ export class WholeSystemIntentController {
       controlConfidence,
       releaseConfidence,
       reGripConfidence,
+      endpointHitScore: endpointMatch.score,
+      trackingConfidence,
       scaleIntent,
       scaleIntentScore,
       rotationIntent,
@@ -317,6 +417,7 @@ export class WholeSystemIntentController {
       virtualRightEndpoint: this.endpoints?.right ?? null,
       leftEndpointMatched: endpointMatch.leftMatched,
       rightEndpointMatched: endpointMatch.rightMatched,
+      transitionReason,
     };
   }
 
@@ -331,15 +432,15 @@ export class WholeSystemIntentController {
     this.resetReleaseStability();
   }
 
-  private get endpointRadius(): number {
+  private getEndpointRadius(thresholds: GestureThresholds): number {
     return this.controlState === 'SolarFreeHover' ||
       this.controlState === 'ReGripCandidate'
-      ? REGRIP_MAGNET_RADIUS
-      : ENDPOINT_EXIT_RADIUS;
+      ? thresholds.reGripMagnetRadius
+      : thresholds.endpointExitRadius;
   }
 
   private resolveTrackedPair(tracking: TrackingSnapshot): TrackedHandPair | null {
-    const currentPair = getCurrentTrackedHandPair(tracking, this.previousTrackedPair);
+    const currentPair = getVisualTrackedHandPair(tracking, this.previousTrackedPair);
 
     if (!currentPair) {
       return null;
@@ -369,6 +470,7 @@ export class WholeSystemIntentController {
     releaseGestureActive,
     gripHoldActive,
     timestamp,
+    thresholds,
   }: {
     handPair: HandPointPair;
     controlConfidence: number;
@@ -378,7 +480,8 @@ export class WholeSystemIntentController {
     releaseGestureActive: boolean;
     gripHoldActive: boolean;
     timestamp: number;
-  }): void {
+    thresholds: GestureThresholds;
+  }): string {
     if (this.controlState === 'VirtualOpeningHandle') {
       if (controlConfidence >= CONTROL_ENTER_THRESHOLD) {
         this.controlStableSince ??= timestamp;
@@ -386,41 +489,46 @@ export class WholeSystemIntentController {
         if (timestamp - this.controlStableSince >= REGRIP_STABLE_MS) {
           this.controlState = 'SolarHandleControl';
           this.controlStableSince = null;
+          return 'virtual-handle-control-stable';
         }
+        return 'virtual-handle-stabilizing';
       } else {
         this.controlStableSince = null;
       }
 
-      return;
+      return 'waiting-for-control-confidence';
     }
 
     if (this.controlState === 'SolarHandleControl') {
-      if (collapseIntentScore >= 0.72) {
+      if (collapseIntentScore >= COLLAPSE_ENTER_SCORE) {
         this.collapseStableSince ??= timestamp;
 
         if (timestamp - this.collapseStableSince >= COLLAPSE_STABLE_MS) {
           this.controlState = 'SolarClosing';
           this.collapseStableSince = null;
+          return 'collapse-intent-stable';
         }
 
-        return;
+        return 'collapse-intent-stabilizing';
       }
 
       this.collapseStableSince = null;
 
       if (releaseGestureActive) {
         this.enterReleaseCandidate(timestamp, true);
-        return;
+        return 'open-hand-release-stable';
       }
 
       if (
         !gripHoldActive &&
-        (controlConfidence < CONTROL_EXIT_THRESHOLD || releaseConfidence >= 0.78)
+        (controlConfidence < CONTROL_EXIT_THRESHOLD ||
+          releaseConfidence >= FALLBACK_RELEASE_CONFIDENCE)
       ) {
         this.enterReleaseCandidate(timestamp, false);
+        return 'fallback-release-confidence';
       }
 
-      return;
+      return 'holding-endpoints';
     }
 
     if (this.controlState === 'ReleaseCandidate') {
@@ -428,11 +536,11 @@ export class WholeSystemIntentController {
         !this.releaseGestureLatched &&
         !releaseGestureActive &&
         controlConfidence >= CONTROL_ENTER_THRESHOLD &&
-        reGripConfidence >= 0.62
+        reGripConfidence >= RELEASE_CANCEL_REGRIP_CONFIDENCE
       ) {
         this.controlState = 'SolarHandleControl';
         this.releaseCandidateSince = null;
-        return;
+        return 'release-candidate-cancelled';
       }
 
       if (
@@ -441,30 +549,32 @@ export class WholeSystemIntentController {
       ) {
         this.controlState = 'SolarFreeHover';
         this.releaseCandidateSince = null;
+        return 'release-confirmed-free-hover';
       }
 
-      return;
+      return 'release-candidate-waiting';
     }
 
     if (this.controlState === 'SolarFreeHover') {
       if (this.releaseGestureLatched) {
         this.reGripStableSince = null;
-        return;
+        return 'release-lock-waiting-for-hand-exit';
       }
 
       if (reGripConfidence >= CONTROL_ENTER_THRESHOLD) {
         this.reGripStableSince ??= timestamp;
         this.controlState = 'ReGripCandidate';
+        return 'regrip-confidence-entered';
       }
 
-      return;
+      return 'free-hover-waiting-for-regrip';
     }
 
     if (this.controlState === 'ReGripCandidate') {
       if (this.releaseGestureLatched) {
         this.controlState = 'SolarFreeHover';
         this.reGripStableSince = null;
-        return;
+        return 'regrip-blocked-by-release-lock';
       }
 
       if (reGripConfidence >= CONTROL_ENTER_THRESHOLD) {
@@ -473,28 +583,34 @@ export class WholeSystemIntentController {
         if (timestamp - this.reGripStableSince >= REGRIP_STABLE_MS) {
           this.controlState = 'SolarHandleControl';
           this.reGripStableSince = null;
+          return 'regrip-stable-control-restored';
         }
+        return 'regrip-stabilizing';
       } else {
         this.controlState = 'SolarFreeHover';
         this.reGripStableSince = null;
+        return 'regrip-confidence-lost';
       }
-
-      return;
     }
 
     if (this.controlState === 'SolarClosing') {
       if (
         handPair.bothHandsVisible &&
-        distance2d(handPair.left, handPair.right) <= COLLAPSE_COMPLETE_DISTANCE
+        distance2d(handPair.left, handPair.right) <= thresholds.collapseCompleteDistance
       ) {
         this.resetVirtualControl();
-        return;
+        return 'collapse-complete-reset-empty';
       }
 
-      if (collapseIntentScore < 0.36) {
+      if (collapseIntentScore < COLLAPSE_EXIT_SCORE) {
         this.controlState = 'SolarHandleControl';
+        return 'collapse-cancelled';
       }
+
+      return 'collapse-continuing';
     }
+
+    return 'inactive';
   }
 
   private resetVirtualControl(): void {
@@ -570,7 +686,10 @@ export class WholeSystemIntentController {
     this.resetReleaseStability();
   }
 
-  private updateReleaseLatchFromEndpointExit(handPair: HandPointPair): void {
+  private updateReleaseLatchFromEndpointExit(
+    handPair: HandPointPair,
+    thresholds: GestureThresholds,
+  ): void {
     if (
       !this.releaseGestureLatched ||
       !this.endpoints ||
@@ -583,7 +702,7 @@ export class WholeSystemIntentController {
     const releaseExitMatch = matchEndpoints(
       handPair,
       this.endpoints,
-      RELEASE_REGRIP_CLEAR_RADIUS,
+      thresholds.releaseReGripClearRadius,
     );
 
     if (!releaseExitMatch.leftMatched || !releaseExitMatch.rightMatched) {
@@ -606,14 +725,19 @@ export class WholeSystemIntentController {
     );
     const combinedMotionScore = Math.max(
       angleMotionScore,
-      palmMotionScore * (0.62 + spatialPostureScore * 0.38),
+      palmMotionScore *
+        (ROTATION_PALM_MOTION_BASE +
+          spatialPostureScore * ROTATION_PALM_MOTION_POSTURE_WEIGHT),
     );
 
     if (combinedMotionScore === 0) {
       return 0;
     }
 
-    return clamp01(combinedMotionScore * (0.72 + spatialPostureScore * 0.28));
+    return clamp01(
+      combinedMotionScore *
+        (ROTATION_COMBINED_BASE + spatialPostureScore * ROTATION_COMBINED_POSTURE_WEIGHT),
+    );
   }
 
   private computeHandleAngleMotionScore(
@@ -705,59 +829,6 @@ function resolveHandPointPair(
   return null;
 }
 
-function getCurrentTrackedHandPair(
-  tracking: TrackingSnapshot,
-  previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null,
-): TrackedHandPair | null {
-  const [first, second] = tracking.hands.hands;
-
-  if (first && second) {
-    return assignTrackedHandPair(first, second, previousPair);
-  }
-
-  if (tracking.hands.left && tracking.hands.right) {
-    return assignTrackedHandPair(
-      tracking.hands.left,
-      tracking.hands.right,
-      previousPair,
-    );
-  }
-
-  return null;
-}
-
-function assignTrackedHandPair(
-  first: TrackedHand,
-  second: TrackedHand,
-  previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null,
-): TrackedHandPair {
-  if (!previousPair) {
-    return first.center.x >= second.center.x
-      ? { left: first, right: second }
-      : { left: second, right: first };
-  }
-
-  const directCost =
-    distance2d(first.center, previousPair.left) +
-    distance2d(second.center, previousPair.right);
-  const swappedCost =
-    distance2d(first.center, previousPair.right) +
-    distance2d(second.center, previousPair.left);
-
-  return directCost <= swappedCost
-    ? { left: first, right: second }
-    : { left: second, right: first };
-}
-
-function sortVisualLeftRight(
-  first: NormalizedPoint,
-  second: NormalizedPoint,
-): { left: NormalizedPoint; right: NormalizedPoint } {
-  return first.x >= second.x
-    ? { left: first, right: second }
-    : { left: second, right: first };
-}
-
 function computePalmOrientation(hand: TrackedHand): PalmOrientationSnapshot {
   const wrist = hand.landmarks[WRIST_INDEX];
   const indexMcp = hand.landmarks[INDEX_MCP_INDEX];
@@ -825,19 +896,27 @@ function computeHandPoseIntent(hand: TrackedHand): HandPoseIntentSnapshot {
     ),
   ];
   const thumbOpenScore = computeThumbOpenScore(hand, palmCenter);
-  const longFingerOpenCount = fingerScores.filter((score) => score >= 0.62).length;
-  const curledFingerCount = fingerScores.filter((score) => score < 0.5).length;
+  const longFingerOpenCount = fingerScores.filter(
+    (score) => score >= FINGER_OPEN_THRESHOLD,
+  ).length;
+  const curledFingerCount = fingerScores.filter(
+    (score) => score < FINGER_CURLED_THRESHOLD,
+  ).length;
   const longFingerAverage =
     fingerScores.reduce((sum, score) => sum + score, 0) / fingerScores.length;
-  const openHandScore = clamp01(longFingerAverage * 0.88 + thumbOpenScore * 0.12);
+  const openHandScore = clamp01(
+    longFingerAverage * OPEN_HAND_FINGER_WEIGHT + thumbOpenScore * OPEN_HAND_THUMB_WEIGHT,
+  );
   const gripPoseScore = clamp01(
-    (1 - openHandScore) * 0.46 + (curledFingerCount / 4) * 0.54,
+    (1 - openHandScore) * GRIP_POSE_OPEN_WEIGHT +
+      (curledFingerCount / fingerScores.length) * GRIP_POSE_CURLED_WEIGHT,
   );
 
   return {
     openHandScore,
     gripPoseScore,
-    openFingerCount: longFingerOpenCount + (thumbOpenScore >= 0.62 ? 1 : 0),
+    openFingerCount:
+      longFingerOpenCount + (thumbOpenScore >= THUMB_OPEN_THRESHOLD ? 1 : 0),
     releaseReady:
       openHandScore >= RELEASE_OPEN_SCORE_THRESHOLD &&
       longFingerOpenCount >= RELEASE_MIN_OPEN_FINGERS &&
@@ -860,19 +939,27 @@ function computeLongFingerOpenScore(
   }
 
   const straightness = cosineSimilarity(subtract(pip, mcp), subtract(tip, pip));
-  const straightScore = inverseLerp(0.45, 0.92, straightness);
+  const straightScore = inverseLerp(
+    FINGER_STRAIGHT_MIN,
+    FINGER_STRAIGHT_MAX,
+    straightness,
+  );
   const extensionScore = inverseLerp(
-    0.58,
-    1.08,
+    FINGER_EXTENSION_MIN,
+    FINGER_EXTENSION_MAX,
     distance3d(tip, mcp) / hand.palmScale,
   );
   const awayScore = inverseLerp(
-    0.62,
-    1.22,
+    FINGER_AWAY_MIN,
+    FINGER_AWAY_MAX,
     distance3d(tip, hand.center) / hand.palmScale,
   );
 
-  return clamp01(straightScore * 0.48 + extensionScore * 0.34 + awayScore * 0.18);
+  return clamp01(
+    straightScore * FINGER_STRAIGHT_WEIGHT +
+      extensionScore * FINGER_EXTENSION_WEIGHT +
+      awayScore * FINGER_AWAY_WEIGHT,
+  );
 }
 
 function computeThumbOpenScore(
@@ -891,14 +978,18 @@ function computeThumbOpenScore(
     subtract(thumbMcp, thumbCmc),
     subtract(thumbTip, thumbMcp),
   );
-  const straightScore = inverseLerp(0.35, 0.88, straightness);
+  const straightScore = inverseLerp(
+    THUMB_STRAIGHT_MIN,
+    THUMB_STRAIGHT_MAX,
+    straightness,
+  );
   const awayScore = inverseLerp(
-    0.58,
-    1.2,
+    THUMB_AWAY_MIN,
+    THUMB_AWAY_MAX,
     distance3d(thumbTip, palmCenter) / hand.palmScale,
   );
 
-  return clamp01(straightScore * 0.42 + awayScore * 0.58);
+  return clamp01(straightScore * THUMB_STRAIGHT_WEIGHT + awayScore * THUMB_AWAY_WEIGHT);
 }
 
 function computeReleaseGesture(
@@ -936,11 +1027,11 @@ function computeGripHoldActive({
     (leftHandPose.openFingerCount + rightHandPose.openFingerCount) / 2;
 
   return (
-    endpointScore >= 0.22 &&
-    (averageGripScore >= 0.24 ||
-      averageOpenFingerCount <= 4 ||
-      palmUpScore >= 0.44 ||
-      rotationIntentScore >= 0.18)
+    endpointScore >= GRIP_HOLD_MIN_ENDPOINT_SCORE &&
+    (averageGripScore >= GRIP_HOLD_MIN_GRIP_SCORE ||
+      averageOpenFingerCount <= GRIP_HOLD_MAX_OPEN_FINGERS ||
+      palmUpScore >= GRIP_HOLD_MIN_PALM_UP ||
+      rotationIntentScore >= GRIP_HOLD_MIN_ROTATION)
   );
 }
 
@@ -959,13 +1050,14 @@ function computeReleaseBlockReason({
   leftHandPose: HandPoseIntentSnapshot;
   rightHandPose: HandPoseIntentSnapshot;
 }): WholeSystemReleaseBlockReason {
-  if (endpointMatch.score < 0.32) {
+  if (endpointMatch.score < RELEASE_BLOCK_MIN_ENDPOINT_SCORE) {
     return 'none';
   }
 
   if (
-    palmUpScore >= 0.38 &&
-    (rotationIntent === 'rotate3d' || rotationIntentScore >= 0.28)
+    palmUpScore >= ROTATION_HOLD_MIN_PALM_UP &&
+    (rotationIntent === 'rotate3d' ||
+      rotationIntentScore >= ROTATION_HOLD_MIN_ROTATION_SCORE)
   ) {
     return 'rotationHold';
   }
@@ -984,10 +1076,10 @@ function computeReleaseBlockReason({
   );
 
   if (
-    palmUpScore >= 0.48 &&
-    (averageGripScore >= 0.24 ||
-      minimumOpenFingerCount < 5 ||
-      minimumOpenScore < 0.9)
+    palmUpScore >= CUPPED_GRIP_MIN_PALM_UP &&
+    (averageGripScore >= CUPPED_GRIP_MIN_GRIP_SCORE ||
+      minimumOpenFingerCount < CUPPED_GRIP_MAX_OPEN_FINGERS ||
+      minimumOpenScore < CUPPED_GRIP_MAX_OPEN_SCORE)
   ) {
     return 'cuppedGrip';
   }
@@ -1013,7 +1105,7 @@ function getReGripReason(
   }
 
   if (
-    reGripConfidence >= 0.62 &&
+    reGripConfidence >= WIDE_MAGNET_MIN_REGRIP_CONFIDENCE &&
     magnetEndpointMatch.leftMatched &&
     magnetEndpointMatch.rightMatched
   ) {
@@ -1030,6 +1122,7 @@ function computeControlConfidence({
   palmUpScore,
   pinchPenalty,
   hasStateInertia,
+  trackingConfidence,
 }: {
   endpointScore: number;
   availabilityScore: number;
@@ -1037,16 +1130,22 @@ function computeControlConfidence({
   palmUpScore: number;
   pinchPenalty: number;
   hasStateInertia: boolean;
+  trackingConfidence: number;
 }): number {
-  const palmScore = Math.max(palmFacingScore, palmUpScore * 0.8, 0.45);
+  const palmScore = Math.max(
+    palmFacingScore,
+    palmUpScore * CONTROL_CONF_PALM_UP_FACTOR,
+    CONTROL_CONF_PALM_FLOOR,
+  );
   const stateInertiaScore = hasStateInertia ? 1 : 0;
 
   return clamp01(
-    endpointScore * 0.42 +
-      availabilityScore * 0.24 +
-      palmScore * 0.16 +
-      0.12 +
-      stateInertiaScore * 0.06 -
+    endpointScore * CONTROL_CONF_ENDPOINT_WEIGHT +
+      availabilityScore * CONTROL_CONF_AVAILABILITY_WEIGHT +
+      trackingConfidence * CONTROL_CONF_TRACKING_WEIGHT +
+      palmScore * CONTROL_CONF_PALM_WEIGHT +
+      CONTROL_CONF_BASE +
+      stateInertiaScore * CONTROL_CONF_INERTIA_WEIGHT -
       pinchPenalty,
   );
 }
@@ -1059,10 +1158,12 @@ function computeReleaseConfidence(
   const missingScore = handPair.bothHandsVisible
     ? 0
     : handPair.lostHandHoldActive
-      ? 0.28
+      ? RELEASE_CONFIDENCE_LOST_HAND
       : 1;
   const endpointMissScore =
-    endpointMatch.leftMatched && endpointMatch.rightMatched ? 0 : 0.62;
+    endpointMatch.leftMatched && endpointMatch.rightMatched
+      ? 0
+      : RELEASE_CONFIDENCE_ENDPOINT_MISS;
 
   return clamp01(
     Math.max(
@@ -1079,19 +1180,26 @@ function computeReGripConfidence({
   palmFacingScore,
   palmUpScore,
   pinchPenalty,
+  trackingConfidence,
 }: {
   endpointScore: number;
   availabilityScore: number;
   palmFacingScore: number;
   palmUpScore: number;
   pinchPenalty: number;
+  trackingConfidence: number;
 }): number {
-  const palmScore = Math.max(palmFacingScore, palmUpScore * 0.75, 0.35);
+  const palmScore = Math.max(
+    palmFacingScore,
+    palmUpScore * REGRIP_CONF_PALM_UP_FACTOR,
+    REGRIP_CONF_PALM_FLOOR,
+  );
 
   return clamp01(
-    endpointScore * 0.58 +
-      availabilityScore * 0.26 +
-      palmScore * 0.16 -
+    endpointScore * REGRIP_CONF_ENDPOINT_WEIGHT +
+      availabilityScore * REGRIP_CONF_AVAILABILITY_WEIGHT +
+      trackingConfidence * REGRIP_CONF_TRACKING_WEIGHT +
+      palmScore * REGRIP_CONF_PALM_WEIGHT -
       pinchPenalty,
   );
 }
@@ -1114,14 +1222,16 @@ function computeScaleIntentScore(
     return 0;
   }
 
-  return clamp01(movementScore * 0.78 + palmFacingScore * 0.22);
+  return clamp01(
+    movementScore * SCALE_MOVEMENT_WEIGHT + palmFacingScore * SCALE_PALM_FACING_WEIGHT,
+  );
 }
 
 function getScaleIntent(
   distanceVelocity: number | null,
   score: number,
 ): WholeSystemScaleIntent {
-  if (score < 0.18 || distanceVelocity === null) {
+  if (score < SCALE_INTENT_MIN_SCORE || distanceVelocity === null) {
     return 'none';
   }
 
@@ -1133,11 +1243,12 @@ function getRotationIntent(
   palmUpScore: number,
   palmFacingScore: number,
 ): WholeSystemRotationIntent {
-  if (score < 0.18) {
+  if (score < ROTATION_INTENT_MIN_SCORE) {
     return 'none';
   }
 
-  return computeSpatialPalmPostureScore(palmUpScore, palmFacingScore) >= 0.28
+  return computeSpatialPalmPostureScore(palmUpScore, palmFacingScore) >=
+    ROTATION_3D_POSTURE_THRESHOLD
     ? 'rotate3d'
     : 'rotate2d';
 }
@@ -1146,9 +1257,11 @@ function computeSpatialPalmPostureScore(
   palmUpScore: number,
   palmFacingScore: number,
 ): number {
-  const notCameraFacingScore = clamp01((0.72 - palmFacingScore) / 0.72);
+  const notCameraFacingScore = clamp01(
+    (SPATIAL_PALM_FACING_PIVOT - palmFacingScore) / SPATIAL_PALM_FACING_PIVOT,
+  );
 
-  return Math.max(palmUpScore, notCameraFacingScore * 0.66);
+  return Math.max(palmUpScore, notCameraFacingScore * SPATIAL_NOT_FACING_WEIGHT);
 }
 
 function averagePalmNormal(
@@ -1177,22 +1290,25 @@ function averagePalmNormal(
 function computeCollapseIntentScore(
   distance: number | null,
   distanceVelocity: number | null,
+  thresholds: GestureThresholds,
 ): number {
   if (distance === null) {
     return 0;
   }
 
   const distanceScore = 1 - inverseLerp(
-    COLLAPSE_COMPLETE_DISTANCE,
-    COLLAPSE_START_DISTANCE,
+    thresholds.collapseCompleteDistance,
+    thresholds.collapseStartDistance,
     distance,
   );
   const inwardMotionScore =
     distanceVelocity !== null && distanceVelocity < -SCALE_VELOCITY_DEADBAND
       ? 1
-      : 0.42;
+      : COLLAPSE_INWARD_RELAXED_SCORE;
 
-  return clamp01(distanceScore * (0.72 + inwardMotionScore * 0.28));
+  return clamp01(
+    distanceScore * (COLLAPSE_DISTANCE_WEIGHT + inwardMotionScore * COLLAPSE_INWARD_WEIGHT),
+  );
 }
 
 function matchEndpoints(
@@ -1224,10 +1340,10 @@ function computePinchPenalty(pair: TrackedHandPair): number {
   const rightPinch = isPinching(pair.right);
 
   if (leftPinch && rightPinch) {
-    return 0.28;
+    return PINCH_PENALTY_BOTH;
   }
 
-  return leftPinch || rightPinch ? 0.18 : 0;
+  return leftPinch || rightPinch ? PINCH_PENALTY_SINGLE : 0;
 }
 
 function isPinching(hand: TrackedHand): boolean {
@@ -1279,111 +1395,3 @@ function createEmptyHandPose(): HandPoseIntentSnapshot {
   };
 }
 
-function averagePoints(points: readonly NormalizedPoint[]): NormalizedPoint {
-  const total = points.reduce(
-    (sum, point) => {
-      sum.x += point.x;
-      sum.y += point.y;
-      sum.z += point.z;
-      return sum;
-    },
-    { x: 0, y: 0, z: 0 },
-  );
-
-  return {
-    x: total.x / points.length,
-    y: total.y / points.length,
-    z: total.z / points.length,
-  };
-}
-
-function subtract(a: NormalizedPoint, b: NormalizedPoint): NormalizedPoint {
-  return {
-    x: a.x - b.x,
-    y: a.y - b.y,
-    z: a.z - b.z,
-  };
-}
-
-function cross(a: NormalizedPoint, b: NormalizedPoint): NormalizedPoint {
-  return {
-    x: a.y * b.z - a.z * b.y,
-    y: a.z * b.x - a.x * b.z,
-    z: a.x * b.y - a.y * b.x,
-  };
-}
-
-function normalize(point: NormalizedPoint): NormalizedPoint | null {
-  const length = distance3d(point, { x: 0, y: 0, z: 0 });
-
-  if (length <= 0.00001) {
-    return null;
-  }
-
-  return {
-    x: point.x / length,
-    y: point.y / length,
-    z: point.z / length,
-  };
-}
-
-function averageNullable(a: number | null, b: number | null): number {
-  if (a === null && b === null) {
-    return 0;
-  }
-
-  if (a === null) {
-    return b ?? 0;
-  }
-
-  if (b === null) {
-    return a;
-  }
-
-  return (a + b) / 2;
-}
-
-function inverseLerp(from: number, to: number, value: number): number {
-  if (from === to) {
-    return value >= to ? 1 : 0;
-  }
-
-  return clamp01((value - from) / (to - from));
-}
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value));
-}
-
-function distance2d(a: NormalizedPoint, b: NormalizedPoint): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function distance3d(a: NormalizedPoint, b: NormalizedPoint): number {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
-}
-
-function cosineSimilarity(a: NormalizedPoint, b: NormalizedPoint): number {
-  const aLength = distance3d(a, { x: 0, y: 0, z: 0 });
-  const bLength = distance3d(b, { x: 0, y: 0, z: 0 });
-
-  if (aLength <= 0.00001 || bLength <= 0.00001) {
-    return 0;
-  }
-
-  return clamp01(
-    (a.x * b.x + a.y * b.y + a.z * b.z) / (aLength * bLength),
-  );
-}
-
-function unwrapAngle(angle: number): number {
-  if (angle > Math.PI) {
-    return angle - Math.PI * 2;
-  }
-
-  if (angle < -Math.PI) {
-    return angle + Math.PI * 2;
-  }
-
-  return angle;
-}

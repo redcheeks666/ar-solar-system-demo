@@ -1,20 +1,19 @@
 import type {
+  GestureThresholds,
   HandStartupGestureSnapshot,
   InteractionState,
   NormalizedPoint,
-  TrackedHand,
   TrackingSnapshot,
 } from '../utils/types';
 import { LowPassNumberFilter, LowPassPointFilter } from '../tracking/smoothing';
+import { clamp01, inverseLerp } from '../utils/math';
+import { getVisualTrackedHandPair } from './handPairing';
 
-const CLOSED_DISTANCE_THRESHOLD = 0.18;
 const CLOSED_STABLE_MS = 220;
-const CLOSED_EVIDENCE_DISTANCE_THRESHOLD = 0.22;
 const LOST_HAND_HOLD_MS = 2200;
 const CLOSED_EVIDENCE_TTL_MS = 2400;
 const HANDS_CLOSED_EXIT_GRACE_MS = 1100;
 const PULL_MOVEMENT_MEMORY_MS = 500;
-const PULL_MIN_DISTANCE_DELTA = 0.08;
 const PULL_VELOCITY_THRESHOLD = 0.05;
 const PULL_STOP_GRACE_MS = 1000;
 const POSITION_SMOOTHING_ALPHA = 0.42;
@@ -27,10 +26,13 @@ const EMPTY_HAND_STARTUP_SNAPSHOT: HandStartupGestureSnapshot = {
   direction: null,
   distance: null,
   distanceVelocity: null,
+  closeIntentScore: 0,
+  pullIntentScore: 0,
   bothHandsVisible: false,
   lostHandHoldActive: false,
   handsClosed: false,
   pullArmed: false,
+  transitionReason: 'no-hands',
 };
 
 interface HandPair {
@@ -58,7 +60,6 @@ export class HandStartupGestureController {
   private closedStableSince: number | null = null;
   private lastClosedEvidenceAt: number | null = null;
   private handsClosedExitSince: number | null = null;
-  private pullTrendSince: number | null = null;
   private pullStartDistance: number | null = null;
   private lastPullMovementAt: number | null = null;
 
@@ -66,10 +67,18 @@ export class HandStartupGestureController {
     tracking: TrackingSnapshot,
     currentState: InteractionState,
     timestamp: number,
+    thresholds: GestureThresholds,
   ): HandStartupGestureUpdate {
     if (!isStartupState(currentState)) {
       return {
-        snapshot: this.createSnapshot(null, false, false, currentState),
+        snapshot: this.createSnapshot(
+          null,
+          false,
+          false,
+          currentState,
+          thresholds,
+          'outside-startup-state',
+        ),
         nextState: null,
       };
     }
@@ -79,7 +88,14 @@ export class HandStartupGestureController {
     if (!pair) {
       this.resetTrackingMemory();
       return {
-        snapshot: this.createSnapshot(null, false, false, currentState),
+        snapshot: this.createSnapshot(
+          null,
+          false,
+          false,
+          currentState,
+          thresholds,
+          'no-valid-hand-pair',
+        ),
         nextState: currentState === 'EmptyIdle' ? null : 'EmptyIdle',
       };
     }
@@ -87,21 +103,12 @@ export class HandStartupGestureController {
     const geometry = computeGeometry(pair.left, pair.right);
     const distance = this.distanceFilter.smooth(geometry.distance);
     const velocity = this.computeVelocity(distance, timestamp, pair.bothHandsVisible);
-    const snapshot = this.createSnapshot(
-      {
-        ...geometry,
-        distance,
-        distanceVelocity: velocity,
-      },
-      pair.bothHandsVisible,
-      pair.lostHandHoldActive,
-      currentState,
-    );
     const hasClosedEvidence = this.updateClosedEvidence(
       distance,
       pair.bothHandsVisible,
       pair.lostHandHoldActive,
       timestamp,
+      thresholds,
     );
     const canEvaluateState =
       pair.bothHandsVisible ||
@@ -113,13 +120,45 @@ export class HandStartupGestureController {
       hasClosedEvidence,
       canEvaluateState,
       timestamp,
+      thresholds,
+    );
+    const closeIntentScore = computeCloseIntentScore(distance, thresholds);
+    const pullIntentScore = computePullIntentScore(
+      velocity,
+      distance,
+      this.pullStartDistance,
+      thresholds,
+    );
+    const transitionReason = describeStartupReason({
+      currentState,
+      nextState,
+      hasClosedEvidence,
+      canEvaluateState,
+      closeIntentScore,
+      pullIntentScore,
+      lostHandHoldActive: pair.lostHandHoldActive,
+    });
+    const snapshot = this.createSnapshot(
+      {
+        ...geometry,
+        distance,
+        distanceVelocity: velocity,
+      },
+      pair.bothHandsVisible,
+      pair.lostHandHoldActive,
+      currentState,
+      thresholds,
+      transitionReason,
     );
 
     return {
       snapshot: {
         ...snapshot,
+        closeIntentScore,
+        pullIntentScore,
         handsClosed: nextState === 'HandsClosed' || currentState === 'HandsClosed',
         pullArmed: nextState === 'PullArmed' || currentState === 'PullArmed',
+        transitionReason,
       },
       nextState,
     };
@@ -137,7 +176,7 @@ export class HandStartupGestureController {
     tracking: TrackingSnapshot,
     timestamp: number,
   ): HandPair | null {
-    const currentPair = getCurrentHandPair(tracking, this.lastVisiblePair);
+    const currentPair = getVisualTrackedHandPair(tracking, this.lastVisiblePair);
 
     if (currentPair) {
       const smoothedPair = {
@@ -201,6 +240,7 @@ export class HandStartupGestureController {
     hasClosedEvidence: boolean,
     canEvaluateState: boolean,
     timestamp: number,
+    thresholds: GestureThresholds,
   ): InteractionState | null {
     if (!canEvaluateState) {
       return null;
@@ -216,6 +256,7 @@ export class HandStartupGestureController {
         velocity,
         hasClosedEvidence,
         timestamp,
+        thresholds,
       );
     }
 
@@ -225,6 +266,7 @@ export class HandStartupGestureController {
         velocity,
         hasClosedEvidence,
         timestamp,
+        thresholds,
       );
     }
 
@@ -236,8 +278,9 @@ export class HandStartupGestureController {
     bothHandsVisible: boolean,
     lostHandHoldActive: boolean,
     timestamp: number,
+    thresholds: GestureThresholds,
   ): boolean {
-    if (bothHandsVisible && distance <= CLOSED_EVIDENCE_DISTANCE_THRESHOLD) {
+    if (bothHandsVisible && distance <= thresholds.closedEvidenceDistance) {
       this.closedStableSince ??= timestamp;
       this.lastClosedEvidenceAt = timestamp;
       return true;
@@ -245,14 +288,14 @@ export class HandStartupGestureController {
 
     if (
       lostHandHoldActive &&
-      distance <= CLOSED_EVIDENCE_DISTANCE_THRESHOLD &&
+      distance <= thresholds.closedEvidenceDistance &&
       this.hasRecentClosedEvidence(timestamp)
     ) {
       this.closedStableSince ??= timestamp;
       return true;
     }
 
-    if (bothHandsVisible && distance > CLOSED_EVIDENCE_DISTANCE_THRESHOLD) {
+    if (bothHandsVisible && distance > thresholds.closedEvidenceDistance) {
       this.closedStableSince = null;
       this.lastClosedEvidenceAt = null;
       this.handsClosedExitSince = null;
@@ -284,7 +327,6 @@ export class HandStartupGestureController {
     this.handsClosedExitSince = null;
 
     if (timestamp - this.closedStableSince >= CLOSED_STABLE_MS) {
-      this.pullTrendSince = null;
       this.pullStartDistance = distance;
       this.lastPullMovementAt = null;
       this.handsClosedExitSince = null;
@@ -299,23 +341,21 @@ export class HandStartupGestureController {
     velocity: number | null,
     hasClosedEvidence: boolean,
     timestamp: number,
+    thresholds: GestureThresholds,
   ): InteractionState | null {
-    if (hasClosedEvidence && distance <= CLOSED_EVIDENCE_DISTANCE_THRESHOLD) {
+    if (hasClosedEvidence && distance <= thresholds.closedEvidenceDistance) {
       this.closedStableSince ??= timestamp;
-      this.pullTrendSince = null;
       this.pullStartDistance = Math.min(this.pullStartDistance ?? distance, distance);
       this.handsClosedExitSince = null;
       return null;
     }
 
-    this.pullStartDistance ??= CLOSED_DISTANCE_THRESHOLD;
+    this.pullStartDistance ??= thresholds.closedDistance;
 
     if ((velocity ?? 0) > PULL_VELOCITY_THRESHOLD) {
-      this.pullTrendSince ??= timestamp;
       this.lastPullMovementAt = timestamp;
       this.handsClosedExitSince = null;
     } else {
-      this.pullTrendSince = null;
       this.handsClosedExitSince ??= timestamp;
     }
 
@@ -325,7 +365,7 @@ export class HandStartupGestureController {
 
     if (
       hasRecentPullMovement &&
-      distance - this.pullStartDistance >= PULL_MIN_DISTANCE_DELTA
+      distance - this.pullStartDistance >= thresholds.pullMinDistanceDelta
     ) {
       this.lastPullMovementAt = timestamp;
       this.handsClosedExitSince = null;
@@ -338,7 +378,6 @@ export class HandStartupGestureController {
     ) {
       this.closedStableSince = null;
       this.handsClosedExitSince = null;
-      this.pullTrendSince = null;
       this.pullStartDistance = null;
       this.lastPullMovementAt = null;
       return 'EmptyIdle';
@@ -352,11 +391,11 @@ export class HandStartupGestureController {
     velocity: number | null,
     hasClosedEvidence: boolean,
     timestamp: number,
+    thresholds: GestureThresholds,
   ): InteractionState | null {
-    if (hasClosedEvidence && distance <= CLOSED_DISTANCE_THRESHOLD) {
+    if (hasClosedEvidence && distance <= thresholds.closedDistance) {
       this.closedStableSince = timestamp;
       this.handsClosedExitSince = null;
-      this.pullTrendSince = null;
       this.pullStartDistance = distance;
       return 'HandsClosed';
     }
@@ -375,7 +414,6 @@ export class HandStartupGestureController {
 
     this.closedStableSince = null;
     this.handsClosedExitSince = null;
-    this.pullTrendSince = null;
     this.pullStartDistance = null;
     return 'EmptyIdle';
   }
@@ -392,6 +430,8 @@ export class HandStartupGestureController {
     bothHandsVisible: boolean,
     lostHandHoldActive: boolean,
     currentState: InteractionState,
+    thresholds: GestureThresholds,
+    transitionReason: string,
   ): HandStartupGestureSnapshot {
     if (!geometry) {
       return {
@@ -400,6 +440,7 @@ export class HandStartupGestureController {
         lostHandHoldActive,
         handsClosed: currentState === 'HandsClosed',
         pullArmed: currentState === 'PullArmed',
+        transitionReason,
       };
     }
 
@@ -410,10 +451,18 @@ export class HandStartupGestureController {
       direction: geometry.direction,
       distance: geometry.distance,
       distanceVelocity: geometry.distanceVelocity,
+      closeIntentScore: computeCloseIntentScore(geometry.distance, thresholds),
+      pullIntentScore: computePullIntentScore(
+        geometry.distanceVelocity,
+        geometry.distance,
+        this.pullStartDistance,
+        thresholds,
+      ),
       bothHandsVisible,
       lostHandHoldActive,
       handsClosed: currentState === 'HandsClosed',
       pullArmed: currentState === 'PullArmed',
+      transitionReason,
     };
   }
 
@@ -427,54 +476,11 @@ export class HandStartupGestureController {
     this.closedStableSince = null;
     this.lastClosedEvidenceAt = null;
     this.handsClosedExitSince = null;
-    this.pullTrendSince = null;
     this.pullStartDistance = null;
     this.lastPullMovementAt = null;
     this.velocityFilter.reset();
     this.distanceFilter.reset();
   }
-}
-
-function getCurrentHandPair(
-  tracking: TrackingSnapshot,
-  previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null,
-): { left: TrackedHand; right: TrackedHand } | null {
-  if (tracking.hands.hands.length >= 2) {
-    const [first, second] = tracking.hands.hands;
-
-    if (first && second) {
-      return assignHandPair(first, second, previousPair);
-    }
-  }
-
-  if (tracking.hands.left && tracking.hands.right) {
-    return assignHandPair(tracking.hands.left, tracking.hands.right, previousPair);
-  }
-
-  return null;
-}
-
-function assignHandPair(
-  first: TrackedHand,
-  second: TrackedHand,
-  previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null,
-): { left: TrackedHand; right: TrackedHand } {
-  if (!previousPair) {
-    return first.center.x <= second.center.x
-      ? { left: first, right: second }
-      : { left: second, right: first };
-  }
-
-  const directCost =
-    distance2d(first.center, previousPair.left) +
-    distance2d(second.center, previousPair.right);
-  const swappedCost =
-    distance2d(first.center, previousPair.right) +
-    distance2d(second.center, previousPair.left);
-
-  return directCost <= swappedCost
-    ? { left: first, right: second }
-    : { left: second, right: first };
 }
 
 function computeGeometry(leftHand: NormalizedPoint, rightHand: NormalizedPoint) {
@@ -507,6 +513,96 @@ function computeGeometry(leftHand: NormalizedPoint, rightHand: NormalizedPoint) 
   };
 }
 
+function describeStartupReason({
+  currentState,
+  nextState,
+  hasClosedEvidence,
+  canEvaluateState,
+  closeIntentScore,
+  pullIntentScore,
+  lostHandHoldActive,
+}: {
+  currentState: InteractionState;
+  nextState: InteractionState | null;
+  hasClosedEvidence: boolean;
+  canEvaluateState: boolean;
+  closeIntentScore: number;
+  pullIntentScore: number;
+  lostHandHoldActive: boolean;
+}): string {
+  if (!canEvaluateState) {
+    return 'waiting-for-recent-two-hand-evidence';
+  }
+
+  if (lostHandHoldActive) {
+    return 'using-lost-hand-hold';
+  }
+
+  if (nextState === 'HandsClosed') {
+    return 'closed-distance-stable';
+  }
+
+  if (nextState === 'PullArmed') {
+    return 'pull-distance-delta';
+  }
+
+  if (nextState === 'EmptyIdle' && currentState === 'HandsClosed') {
+    return 'closed-exit-grace-expired';
+  }
+
+  if (nextState === 'EmptyIdle' && currentState === 'PullArmed') {
+    return 'pull-trend-stopped';
+  }
+
+  if (hasClosedEvidence || closeIntentScore >= 0.72) {
+    return 'close-evidence-stabilizing';
+  }
+
+  if (pullIntentScore >= 0.5) {
+    return 'pulling-apart';
+  }
+
+  return 'waiting-for-close';
+}
+
+function computeCloseIntentScore(
+  distance: number,
+  thresholds: GestureThresholds,
+): number {
+  const raw =
+    1 -
+    inverseLerp(
+      thresholds.closedDistance,
+      thresholds.closedEvidenceDistance,
+      distance,
+    );
+
+  return clamp01(raw);
+}
+
+function computePullIntentScore(
+  velocity: number | null,
+  distance: number,
+  pullStartDistance: number | null,
+  thresholds: GestureThresholds,
+): number {
+  const velocityScore = inverseLerp(
+    PULL_VELOCITY_THRESHOLD,
+    PULL_VELOCITY_THRESHOLD * 3.6,
+    velocity ?? 0,
+  );
+  const distanceScore =
+    pullStartDistance === null
+      ? 0
+      : inverseLerp(
+          0,
+          thresholds.pullMinDistanceDelta,
+          distance - pullStartDistance,
+        );
+
+  return clamp01(velocityScore * 0.58 + distanceScore * 0.42);
+}
+
 function isStartupState(state: InteractionState): boolean {
   return (
     state === 'CameraReady' ||
@@ -514,8 +610,4 @@ function isStartupState(state: InteractionState): boolean {
     state === 'HandsClosed' ||
     state === 'PullArmed'
   );
-}
-
-function distance2d(a: NormalizedPoint, b: NormalizedPoint): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
 }

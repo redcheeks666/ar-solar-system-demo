@@ -1,18 +1,32 @@
 import { FilesetResolver } from '@mediapipe/tasks-vision';
-import type { TrackingSnapshot } from '../utils/types';
+import type { PoseTrackingSnapshot, TrackingSnapshot } from '../utils/types';
 import { HandTracker } from './handTracker';
 import { PoseTracker } from './poseTracker';
-import { MEDIAPIPE_WASM_URL } from './config';
+import {
+  ENABLE_POSE_TRACKING,
+  MEDIAPIPE_WASM_URL,
+  POSE_DETECTION_INTERVAL_MS,
+} from './config';
 
 export type VisionFileset = Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
 
 const MIN_DETECTION_INTERVAL_MS = 33;
+
+const EMPTY_POSE_SNAPSHOT: PoseTrackingSnapshot = {
+  detected: false,
+  leftShoulder: null,
+  rightShoulder: null,
+  landmarks: [],
+  lastUpdatedAt: null,
+};
 
 export class MediaPipeTrackingController {
   private poseTracker: PoseTracker | null = null;
   private handTracker: HandTracker | null = null;
   private initializePromise: Promise<void> | null = null;
   private lastDetectionAt = 0;
+  private lastPoseAt = 0;
+  private poseSnapshot: PoseTrackingSnapshot = EMPTY_POSE_SNAPSHOT;
   private snapshot: TrackingSnapshot = createEmptyTrackingSnapshot('idle');
 
   initialize(): Promise<void> {
@@ -36,7 +50,7 @@ export class MediaPipeTrackingController {
   }
 
   update(video: HTMLVideoElement, timestamp: number): TrackingSnapshot {
-    if (this.snapshot.status !== 'ready' || !this.poseTracker || !this.handTracker) {
+    if (this.snapshot.status !== 'ready' || !this.handTracker) {
       return this.snapshot;
     }
 
@@ -47,8 +61,8 @@ export class MediaPipeTrackingController {
     this.lastDetectionAt = timestamp;
 
     try {
-      const pose = this.poseTracker.detect(video, timestamp);
       const hands = this.handTracker.detect(video, timestamp);
+      const pose = this.detectPose(video, timestamp);
 
       this.snapshot = {
         status: 'ready',
@@ -68,6 +82,24 @@ export class MediaPipeTrackingController {
     return this.snapshot;
   }
 
+  private detectPose(
+    video: HTMLVideoElement,
+    timestamp: number,
+  ): PoseTrackingSnapshot {
+    if (!this.poseTracker) {
+      return this.poseSnapshot;
+    }
+
+    if (timestamp - this.lastPoseAt < POSE_DETECTION_INTERVAL_MS) {
+      return this.poseSnapshot;
+    }
+
+    this.lastPoseAt = timestamp;
+    this.poseSnapshot = this.poseTracker.detect(video, timestamp);
+
+    return this.poseSnapshot;
+  }
+
   getSnapshot(): TrackingSnapshot {
     return this.snapshot;
   }
@@ -83,13 +115,14 @@ export class MediaPipeTrackingController {
 
   private async loadTrackers(): Promise<void> {
     const fileset = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL);
-    const [poseTracker, handTracker] = await Promise.all([
-      PoseTracker.create(fileset),
-      HandTracker.create(fileset),
-    ]);
 
-    this.poseTracker = poseTracker;
-    this.handTracker = handTracker;
+    this.handTracker = await HandTracker.create(fileset);
+
+    if (ENABLE_POSE_TRACKING) {
+      this.poseTracker = await PoseTracker.create(fileset);
+    }
+
+    this.poseSnapshot = EMPTY_POSE_SNAPSHOT;
     this.snapshot = createEmptyTrackingSnapshot('ready');
   }
 }
