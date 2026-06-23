@@ -54,7 +54,8 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Milestone 5.5 one-hand solar inspection controls are retired after `SolarFreeHover`: spread does not zoom in, contract does not shrink, fist-hold does not reset, and push does not pan.
 - [ ] Palm-forward "sliding glass" scaling and palms-up whole-system rotation are retired M5 gesture semantics; keep them only as legacy/debug protocol context unless the user explicitly reopens them.
 - [ ] Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon can be hovered and pinch-activated in MVP.
-- [ ] A pinch-activated body stops its original orbit but keeps natural self-rotation; when activation moves from A to B, A immediately resumes original orbiting and only the currently activated body may have orbit paused.
+- [ ] A pinch-activated body stops its original orbit but keeps natural self-rotation; when activation moves from A to B, A immediately resumes original orbiting and only the currently activated body may have orbit paused, except the Earth-Moon bound pair.
+- [ ] Earth-Moon activation is bound specially: activating Earth pauses Earth's solar orbit while Moon may continue orbiting Earth; activating Moon pauses both Earth's solar orbit and Moon's local orbit; both keep self-rotating.
 - [ ] Main-hand pinch lock plus off-hand open/spread enters a single-planet focus view.
 - [ ] In the single-planet focus view, the background solar system is dimmed and interaction-locked while preserving basic motion.
 - [ ] The focused body keeps self-rotating during activation, focus, support-follow, release-to-floating, and inspection; one-hand focus zoom/pan/reset is retired.
@@ -672,6 +673,7 @@ Tasks:
 - [x] On pinch activation, stop the selected body's original orbit while keeping natural self-rotation.
 - [x] Keep all non-selected bodies orbiting and self-rotating normally.
 - [x] Switch activation from A to B through the unified controller, clearing A so it resumes original orbiting.
+- [x] Add Earth-Moon bound orbit pause semantics: Earth activation freezes Earth's solar orbit but leaves Moon's local orbit running; Moon activation freezes both Earth's solar orbit and Moon's local orbit.
 - [x] Prevent body activation from dragging, re-scaling, panning, or otherwise transforming the whole solar system.
 - [x] Add clear activation feedback and preserve the original orbit target for return behavior.
 - [x] Add short tracking-loss tolerance while pinch activation is held.
@@ -684,6 +686,7 @@ Acceptance criteria:
 - [x] Activated body stops orbiting but keeps self-rotating.
 - [x] Non-selected bodies continue normal motion.
 - [x] Switching from A to B leaves B as the only activated body and lets A resume its original orbit.
+- [x] Earth-Moon activation binding behaves as the special case while both bodies keep self-rotating.
 - [x] Activated body does not drag or scale the whole solar system.
 - [x] Each of the nine bodies can be highlighted and activated through the unified pipeline; needs real-camera verification.
 - [x] `npm run build` passes.
@@ -1048,6 +1051,14 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-24 — Earth-Moon activation binding
+
+- Requirement clarification: Earth and Moon are a special bound pair for M7 activation. Activating Earth pauses Earth's solar orbit while Moon may keep orbiting Earth; activating Moon pauses both Earth's solar orbit and Moon's local orbit around Earth; Earth and Moon keep self-rotating in both cases.
+- Implementation update: moved the special pause rule into the solar-system motion layer so the pinch controller still reports one active body, while the renderer decides which orbit pivots pause.
+- Verification update: extended `tests/unit/solarSystemInteraction.test.ts` to cover Earth activation, Moon activation, and continued self-rotation for both bodies.
+- Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: M7 still needs real webcam confirmation that the visual behavior feels correct when selecting Earth and Moon in the browser.
 
 ### 2026-06-24 — Milestone 7 crash and activation-switch fix
 

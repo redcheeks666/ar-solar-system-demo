@@ -315,7 +315,7 @@ Only one body may be activated or focused at a time in the MVP.
 
 - Pinch near a hovered body enters `PlanetActivated`.
 - A `PlanetActivated` body stops its original orbit but keeps natural self-rotation; other bodies continue normal orbit and self-rotation.
-- Only the currently activated body may have its original orbit paused. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting and B becomes the only paused-orbit body if it is activated.
+- Only the currently activated body may have its original orbit paused, except for the Earth-Moon bound pair. Activating Earth pauses Earth's solar orbit while Moon may keep orbiting Earth. Activating Moon pauses both Earth's solar orbit and Moon's local orbit around Earth. Earth and Moon keep self-rotating in both cases. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting unless it is paused by this Earth-Moon binding.
 - While the main hand keeps the pinch lock, the off-hand open/spread gesture enters `PlanetFocusView`.
 - In `PlanetFocusView`, the background solar system is dimmed and interaction-locked but keeps basic motion.
 - The focused body keeps self-rotating during activation, focus, support-follow, release-to-floating, and inspection.

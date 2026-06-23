@@ -219,7 +219,12 @@ export class CodePlaceholderSolarSystem {
       const body = this.getBodyById(definition.id as InteractiveCelestialBodyId);
       const state = getBodyVisualState(definition.id as InteractiveCelestialBodyId, input);
       body.setInteractionVisualState(state);
-      body.setOrbitPaused(input.activatedBody === definition.id);
+      body.setOrbitPaused(
+        shouldPauseBodyOrbit(
+          definition.id as InteractiveCelestialBodyId,
+          input.activatedBody,
+        ),
+      );
     });
   }
 
@@ -361,4 +366,19 @@ function getBodyVisualState(
   }
 
   return 'idle';
+}
+
+function shouldPauseBodyOrbit(
+  id: InteractiveCelestialBodyId,
+  activatedBody: InteractiveCelestialBodyId | null,
+): boolean {
+  if (!activatedBody) {
+    return false;
+  }
+
+  if (activatedBody === id) {
+    return true;
+  }
+
+  return activatedBody === 'moon' && id === 'earth';
 }

@@ -98,4 +98,96 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       solarSystem.dispose();
     }
   });
+
+  it('keeps the Earth solar orbit fixed on Earth activation while the Moon still orbits Earth', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const earthSpin = solarSystem.group.getObjectByName('earth-spin');
+      const moonSpin = solarSystem.group.getObjectByName('moon-spin');
+      expect(earthSpin).toBeDefined();
+      expect(moonSpin).toBeDefined();
+
+      const earthStart = solarSystem.getBodyWorldPosition(
+        'earth',
+        new Vector3(),
+      ).clone();
+      const moonStart = solarSystem.getBodyWorldPosition(
+        'moon',
+        new Vector3(),
+      ).clone();
+      const earthSpinStart = earthSpin?.rotation.y ?? 0;
+      const moonSpinStart = moonSpin?.rotation.y ?? 0;
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'earth',
+      });
+      solarSystem.update(1);
+
+      const earthAfter = solarSystem.getBodyWorldPosition(
+        'earth',
+        new Vector3(),
+      );
+      const moonAfter = solarSystem.getBodyWorldPosition(
+        'moon',
+        new Vector3(),
+      );
+
+      expect(earthAfter.distanceTo(earthStart)).toBeLessThan(0.000001);
+      expect(moonAfter.distanceTo(moonStart)).toBeGreaterThan(0.1);
+      expect(earthSpin?.rotation.y).toBeGreaterThan(earthSpinStart);
+      expect(moonSpin?.rotation.y).toBeGreaterThan(moonSpinStart);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('freezes both Earth solar orbit and Moon local orbit on Moon activation while both keep self-rotating', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const earthSpin = solarSystem.group.getObjectByName('earth-spin');
+      const moonSpin = solarSystem.group.getObjectByName('moon-spin');
+      expect(earthSpin).toBeDefined();
+      expect(moonSpin).toBeDefined();
+
+      const earthStart = solarSystem.getBodyWorldPosition(
+        'earth',
+        new Vector3(),
+      ).clone();
+      const moonStart = solarSystem.getBodyWorldPosition(
+        'moon',
+        new Vector3(),
+      ).clone();
+      const earthSpinStart = earthSpin?.rotation.y ?? 0;
+      const moonSpinStart = moonSpin?.rotation.y ?? 0;
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'moon',
+      });
+      solarSystem.update(1);
+
+      const earthAfter = solarSystem.getBodyWorldPosition(
+        'earth',
+        new Vector3(),
+      );
+      const moonAfter = solarSystem.getBodyWorldPosition(
+        'moon',
+        new Vector3(),
+      );
+
+      expect(earthAfter.distanceTo(earthStart)).toBeLessThan(0.000001);
+      expect(moonAfter.distanceTo(moonStart)).toBeLessThan(0.000001);
+      expect(earthSpin?.rotation.y).toBeGreaterThan(earthSpinStart);
+      expect(moonSpin?.rotation.y).toBeGreaterThan(moonSpinStart);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
 });

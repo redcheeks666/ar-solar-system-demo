@@ -36,6 +36,7 @@ Status: **done — first slice landed; current total is covered by `npm test`, n
 - [x] `tests/unit/solarSystemData.test.ts` — M6 registry invariants for the nine MVP interactive bodies, activation/focus/return metadata, Moon parentage, and Saturn ring.
 - [x] `tests/unit/stateMachine.test.ts` — M7 regression: released solar browsing states can enter `PlanetActivated` directly without throwing.
 - [x] `tests/unit/solarSystemInteraction.test.ts` — M7 regression: activated bodies pause only orbit movement, keep self-rotation, and previous bodies resume orbit when activation switches.
+- [x] `tests/unit/solarSystemInteraction.test.ts` — Earth-Moon binding: Earth activation lets Moon continue local orbit; Moon activation freezes both Earth solar orbit and Moon local orbit; both keep self-rotation.
 - [x] `tests/gesture/planetActivationController.test.ts` — M7 hover hysteresis, pinch start/end hysteresis, inactive whole-handle guard, and brief tracking-loss tolerance.
 - [x] `tests/gesture/planetActivationController.test.ts` — regression: pinch midpoint can activate a body even when the palm center is far away.
 - [x] `tests/gesture/planetActivationController.test.ts` — regression: activation can switch from A to B so A is no longer the paused-orbit body.
