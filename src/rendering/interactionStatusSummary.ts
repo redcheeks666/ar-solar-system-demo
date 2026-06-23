@@ -47,8 +47,6 @@ export class InteractionStatusSummary {
 }
 
 function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
-  const whole = snapshot.wholeSystem;
-
   if (snapshot.cameraStatus !== 'granted') {
     return {
       title: '等待摄像头',
@@ -73,141 +71,87 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
     };
   }
 
-  if (whole.controlState === 'SolarHandleControl') {
+  if (snapshot.interactionState === 'SolarOpening') {
+    return {
+      title: '正在拉开太阳系',
+      state: '占位太阳系跟随双手展开',
+      reason: '启动手势已成立，当前手距正在驱动 openProgress 和太阳系 transform',
+      params: [
+        `openProgress=${snapshot.openProgress.toFixed(2)}`,
+        `Solar scale=${snapshot.solarScale.toFixed(2)}`,
+        `Distance=${nullable(snapshot.handDistance)}`,
+        `Solar reason=${snapshot.solarReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'SolarActive') {
+    return {
+      title: '太阳系已展开',
+      state: '等待双手扶住左右端点',
+      reason: '太阳系处于悬浮保持状态；只有双手分别靠近左右控制端点后才会重新获得整体控制',
+      params: [
+        `openProgress=${snapshot.openProgress.toFixed(2)}`,
+        `Solar scale=${snapshot.solarScale.toFixed(2)}`,
+        `Solar reason=${snapshot.solarReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'SolarHandleControl') {
+    return {
+      title: '正在控制太阳系',
+      state: '双手已命中左右端点',
+      reason: '左右控制端点被双手稳定扶住，太阳系跟随端点移动；松手后保持悬浮，向内合拢可反向收起',
+      params: [
+        `openProgress=${snapshot.openProgress.toFixed(2)}`,
+        `Solar scale=${snapshot.solarScale.toFixed(2)}`,
+        `Solar reason=${snapshot.solarReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'SolarFreeHover') {
     if (
-      whole.gripHoldActive &&
-      (whole.rotationIntent !== 'none' ||
-        whole.releaseBlockReason === 'rotationHold' ||
-        whole.releaseBlockReason === 'cuppedGrip')
+      snapshot.solarInspection.intent !== 'inactive' &&
+      snapshot.solarInspection.intent !== 'idle'
     ) {
       return {
-        title: '已托住，可以旋转',
-        state: `旋转状态：${rotationText(whole.rotationIntent)}`,
-        reason: releaseBlockText(whole.releaseBlockReason),
+        title: '正在单手观察太阳系',
+        state: solarInspectionState(snapshot.solarInspection.intent),
+        reason: solarInspectionReason(snapshot.solarInspection.intent),
         params: [
-          `Grip hold=${yesNo(whole.gripHoldActive)}`,
-          `Rotation=${whole.rotationIntent} ${score(whole.rotationIntentScore)}`,
-          `Palm up=${score(avg(whole.leftPalm.upScore, whole.rightPalm.upScore))}`,
-          `Release stable=${Math.round(whole.releaseStableMs)}ms`,
-          `Reason=${whole.transitionReason}`,
-        ],
-      };
-    }
-
-    if (whole.collapseIntentScore >= 0.72) {
-      return {
-        title: '正在收起判断',
-        state: '双手向内，可能进入收起',
-        reason: '双手距离接近闭合阈值，收起意图正在升高',
-        params: [
-          `Collapse=${score(whole.collapseIntentScore)}`,
-          `Distance=${nullable(snapshot.handDistance)}`,
-          `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
-        ],
-      };
-    }
-
-    if (whole.scaleIntent !== 'none') {
-      return {
-        title: '已握住，可以缩放',
-        state: scaleText(whole.scaleIntent),
-        reason: '双手仍附着端点，手距变化正在驱动缩放意图',
-        params: [
-          `Scale=${whole.scaleIntent} ${score(whole.scaleIntentScore)}`,
-          `Distance=${nullable(snapshot.handDistance)}`,
-          `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
-          `Control=${score(whole.controlConfidence)}`,
-          `Reason=${whole.transitionReason}`,
+          `Inspect scale=${snapshot.solarInspection.inspectionScale.toFixed(2)}`,
+          `Offset=${offsetText(snapshot.solarInspection.inspectionOffset)}`,
+          `Reset hold=${Math.round(snapshot.solarInspection.resetHoldMs)}ms`,
+          `Solar reason=${snapshot.solarReason}`,
         ],
       };
     }
 
     return {
-      title: '已握住，可以自由操控',
-      state: '端点跟随双手',
-      reason: '双手与左右虚拟端点匹配，整体控制置信度达标',
+      title: '太阳系悬浮中',
+      state: '等待单手观察或重新扶住左右端点',
+      reason: '太阳系保持最后稳定 transform；单手张开/收拢可观察缩放，推动可平移，双手回到端点可重新控制',
       params: [
-        `Control=${score(whole.controlConfidence)}`,
-        `Endpoints=${matchText(whole.leftEndpointMatched, whole.rightEndpointMatched)}`,
-        `Grip hold=${yesNo(whole.gripHoldActive)}`,
-        `Reason=${whole.transitionReason}`,
+        `openProgress=${snapshot.openProgress.toFixed(2)}`,
+        `Solar scale=${snapshot.solarScale.toFixed(2)}`,
+        `Inspect=${snapshot.solarInspection.reason}`,
+        `Solar reason=${snapshot.solarReason}`,
       ],
     };
   }
 
-  if (whole.controlState === 'ReleaseCandidate') {
+  if (snapshot.interactionState === 'SolarClosing') {
     return {
-      title: '正在确认松手',
-      state: '端点已冻结，等待悬浮确认',
-      reason: whole.releaseGestureLatched
-        ? '双手张开已被接受，释放锁已开启'
-        : '控制置信度降低或端点丢失，进入兜底松手候选',
+      title: '正在收起太阳系',
+      state: '双手向内合拢端点',
+      reason: '已进入反向收起，openProgress 随双手距离下降；达到闭合阈值后回到空场',
       params: [
-        `Release=${yesNo(whole.releaseGestureActive)}`,
-        `Lock=${whole.releaseGestureLatched ? 'on' : 'off'}`,
-        `Stable=${Math.round(whole.releaseStableMs)}ms`,
-        `Release conf=${score(whole.releaseConfidence)}`,
-        `Reason=${whole.transitionReason}`,
-      ],
-    };
-  }
-
-  if (whole.controlState === 'SolarFreeHover') {
-    return {
-      title: '已松手，悬浮状态锁定',
-      state: whole.releaseGestureLatched
-        ? '等待双手先离开端点'
-        : '可重新握住两端',
-      reason: whole.releaseGestureLatched
-        ? '释放锁仍开启，防止慢慢撤手时立刻重新粘手'
-        : '端点冻结在最后位置，双手回到磁吸区即可重新控制',
-      params: [
-        `Lock=${whole.releaseGestureLatched ? 'on' : 'off'}`,
-        `Re-grip=${score(whole.reGripConfidence)}`,
-        `Reason=${whole.reGripReason}`,
-        `Transition=${whole.transitionReason}`,
-      ],
-    };
-  }
-
-  if (whole.controlState === 'ReGripCandidate') {
-    return {
-      title: '正在重新握住',
-      state: '即将恢复自由操控',
-      reason: reGripReasonText(whole.reGripReason),
-      params: [
-        `Re-grip=${score(whole.reGripConfidence)}`,
-        `Reason=${whole.reGripReason}`,
-        `Endpoints=${matchText(whole.leftEndpointMatched, whole.rightEndpointMatched)}`,
-        `Transition=${whole.transitionReason}`,
-      ],
-    };
-  }
-
-  if (whole.controlState === 'SolarClosing') {
-    return {
-      title: '正在收起',
-      state: '双手向内合拢',
-      reason: '收起意图已经稳定，未来太阳系会按手距反向收回',
-      params: [
-        `Collapse=${score(whole.collapseIntentScore)}`,
+        `openProgress=${snapshot.openProgress.toFixed(2)}`,
+        `Solar scale=${snapshot.solarScale.toFixed(2)}`,
         `Distance=${nullable(snapshot.handDistance)}`,
-        `Velocity=${nullable(snapshot.handDistanceVelocity)}`,
-        `Reason=${whole.transitionReason}`,
-      ],
-    };
-  }
-
-  if (whole.controlState === 'VirtualOpeningHandle') {
-    return {
-      title: '正在建立双手控制',
-      state: '拉开后协议已启动',
-      reason: '启动手势已进入 PullArmed，正在确认左右端点控制',
-      params: [
-        `Startup=${snapshot.interactionState}`,
-        `Control=${score(whole.controlConfidence)}`,
-        `Both hands=${visibleText(snapshot.bothHandsVisible)}`,
-        `Reason=${whole.transitionReason}`,
+        `Solar reason=${snapshot.solarReason}`,
       ],
     };
   }
@@ -265,92 +209,64 @@ function cameraStateText(status: DebugSnapshot['cameraStatus']): string {
   return `摄像头状态：${status}`;
 }
 
-function scaleText(intent: DebugSnapshot['wholeSystem']['scaleIntent']): string {
-  if (intent === 'scaleUp') {
-    return '缩放状态：正在放大';
-  }
-
-  if (intent === 'scaleDown') {
-    return '缩放状态：正在缩小';
-  }
-
-  return '缩放状态：保持';
-}
-
-function rotationText(
-  intent: DebugSnapshot['wholeSystem']['rotationIntent'],
-): string {
-  if (intent === 'rotate3d') {
-    return '3D 旋转';
-  }
-
-  if (intent === 'rotate2d') {
-    return '2D 旋转';
-  }
-
-  return '托住保持';
-}
-
-function releaseBlockText(
-  reason: DebugSnapshot['wholeSystem']['releaseBlockReason'],
-): string {
-  if (reason === 'rotationHold') {
-    return '掌心朝上且旋转意图存在，优先按托住旋转处理';
-  }
-
-  if (reason === 'cuppedGrip') {
-    return '掌心朝上且手指微弯，优先按托举握持处理';
-  }
-
-  return '双手仍在端点附近，整体控制优先';
-}
-
-function reGripReasonText(
-  reason: DebugSnapshot['wholeSystem']['reGripReason'],
-): string {
-  if (reason === 'endpoint') {
-    return '双手已重新附着精确端点';
-  }
-
-  if (reason === 'wideMagnet') {
-    return '双手进入端点磁吸区，允许恢复控制';
-  }
-
-  return '重新扶住置信度正在升高';
-}
-
-function matchText(leftMatched: boolean, rightMatched: boolean): string {
-  return `${leftMatched ? 'L是' : 'L否'}/${rightMatched ? 'R是' : 'R否'}`;
-}
-
 function visibleText(visible: boolean): string {
   return visible ? 'visible' : 'missing';
-}
-
-function yesNo(value: boolean): string {
-  return value ? 'yes' : 'no';
 }
 
 function nullable(value: number | null): string {
   return value === null ? 'n/a' : value.toFixed(3);
 }
 
-function score(value: number | null): string {
-  return value === null ? 'n/a' : value.toFixed(2);
+function solarInspectionState(intent: DebugSnapshot['solarInspection']['intent']): string {
+  if (intent === 'zoomIn') {
+    return '单手张开放大';
+  }
+
+  if (intent === 'zoomOut') {
+    return '单手收拢缩小';
+  }
+
+  if (intent === 'pan') {
+    return '单手推动平移';
+  }
+
+  if (intent === 'resetHold') {
+    return '握拳复位保持中';
+  }
+
+  if (intent === 'reset') {
+    return '已恢复默认观察';
+  }
+
+  return '单手观察待机';
 }
 
-function avg(left: number | null, right: number | null): number | null {
-  if (left === null && right === null) {
-    return null;
+function solarInspectionReason(
+  intent: DebugSnapshot['solarInspection']['intent'],
+): string {
+  if (intent === 'zoomIn') {
+    return '检测到单手手指展开速度，正在放大自由悬浮的太阳系视图';
   }
 
-  if (left === null) {
-    return right;
+  if (intent === 'zoomOut') {
+    return '检测到单手手指收拢速度，正在缩小自由悬浮的太阳系视图';
   }
 
-  if (right === null) {
-    return left;
+  if (intent === 'pan') {
+    return '检测到单手掌心中心移动，正在平移自由悬浮的太阳系视图';
   }
 
-  return (left + right) / 2;
+  if (intent === 'resetHold') {
+    return '检测到握拳保持，达到约 2 秒后会恢复默认观察位置和大小';
+  }
+
+  if (intent === 'reset') {
+    return '握拳保持已达到复位时间，太阳系回到释放时的默认观察位置和大小';
+  }
+
+  return '等待明确的 M5.5 单手观察动作';
+}
+
+function offsetText(offset: { x: number; y: number; z: number }): string {
+  return `${offset.x.toFixed(2)}, ${offset.y.toFixed(2)}, ${offset.z.toFixed(2)}`;
 }

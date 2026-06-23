@@ -9,10 +9,25 @@ import {
   EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
   WholeSystemIntentController,
 } from './interaction/wholeSystemIntent';
+import {
+  SolarOpeningController,
+  getSolarOpeningRotation,
+  type SolarOpeningSnapshot,
+} from './interaction/solarOpeningController';
+import {
+  EMPTY_SOLAR_INSPECTION_SNAPSHOT,
+  SolarInspectionController,
+} from './interaction/solarInspectionController';
+import { createSolarInspectionVerificationReport } from './interaction/solarInspectionReport';
+import {
+  EMPTY_SOLAR_INSPECTION_VERIFICATION,
+  updateSolarInspectionVerification,
+} from './interaction/solarInspectionVerification';
 import { DebugOverlay } from './rendering/debugOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
-import { TransparentSceneRenderer } from './rendering/scene';
+import { INTERACTION_PLANE_Z, TransparentSceneRenderer } from './rendering/scene';
+import { CodePlaceholderSolarSystem } from './solar/solarSystem';
 import { MediaPipeTrackingController } from './tracking/mediapipe';
 import type {
   CameraPermissionStatus,
@@ -35,9 +50,14 @@ const debugRecorderControls = getElement<HTMLElement>('debug-recorder');
 const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
 const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
 const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
+const debugM55Export = getElement<HTMLButtonElement>('debug-m55-export');
+const debugM55Reset = getElement<HTMLButtonElement>('debug-m55-reset');
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
+const solarPreviewEnabled =
+  new URLSearchParams(window.location.search).get('solarPreview') === '1';
+const placeholderSolarSystem = new CodePlaceholderSolarSystem();
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
 const statusSummary = new InteractionStatusSummary(interactionSummary);
 const landmarkOverlay = new LandmarkOverlay(landmarkCanvas, videoElement);
@@ -47,10 +67,26 @@ const gestureCalibration = new GestureCalibrationController();
 const gestureRecorder = new GestureDebugRecorder();
 const startupGesture = new HandStartupGestureController();
 const wholeSystemIntent = new WholeSystemIntentController();
+const solarOpening = new SolarOpeningController();
+const solarInspection = new SolarInspectionController();
 
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
 let latestTracking = tracking.getSnapshot();
+
+renderer.addObject3D(placeholderSolarSystem.group);
+placeholderSolarSystem.setVisible(solarPreviewEnabled);
+placeholderSolarSystem.setOpeningProgress(solarPreviewEnabled ? 1 : 0);
+
+if (solarPreviewEnabled) {
+  placeholderSolarSystem.setTransform({
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: -0.58, y: 0.12, z: 0.08 },
+    scale: 0.66,
+  });
+  introPanel.hidden = true;
+  guidance.hidden = true;
+}
 
 const debugSnapshot: DebugSnapshot = {
   fps: 0,
@@ -90,8 +126,13 @@ const debugSnapshot: DebugSnapshot = {
     y: null,
   },
   handDistance: null,
-  openProgress: 0,
-  solarScale: 1,
+  openProgress: solarPreviewEnabled ? 1 : 0,
+  solarScale: solarPreviewEnabled ? 0.66 : 1,
+  solarReason: solarPreviewEnabled ? 'dev-preview' : 'inactive',
+  solarStartDistance: null,
+  solarTargetDistance: null,
+  solarInspection: EMPTY_SOLAR_INSPECTION_SNAPSHOT,
+  solarInspectionVerification: EMPTY_SOLAR_INSPECTION_VERIFICATION,
   hoveredBody: null,
   grabbedBody: null,
   pinchState: 'idle',
@@ -128,8 +169,8 @@ debugOverlay.onVisibilityChange((visible) => {
   debugRecorderControls.hidden = !visible;
 });
 
-renderer.start(({ fps, canvasSize }) => {
-  const timestamp = performance.now();
+renderer.start(({ fps, canvasSize, deltaSeconds, timestampMs }) => {
+  const timestamp = timestampMs;
 
   if (cameraStatus === 'granted') {
     latestTracking = tracking.update(videoElement, timestamp);
@@ -168,7 +209,49 @@ renderer.start(({ fps, canvasSize }) => {
       startupUpdate.snapshot,
       debugSnapshot.wholeSystem,
     );
+
+    if (!solarPreviewEnabled) {
+      const previewLayout = createPreviewLayout(canvasSize);
+      const camera = renderer.getCamera();
+      const solarOpeningUpdate = solarOpening.update({
+        tracking: latestTracking,
+        interactionState: interaction.state,
+        thresholds: debugSnapshot.gestureCalibration.thresholds,
+        layout: previewLayout,
+        camera,
+        planeZ: INTERACTION_PLANE_Z,
+        timestamp,
+      });
+
+      if (solarOpeningUpdate.nextState) {
+        interaction.transition(solarOpeningUpdate.nextState);
+        updateGuidanceForState(interaction.state);
+      }
+
+      const solarInspectionUpdate = solarInspection.update({
+        tracking: latestTracking,
+        interactionState: interaction.state,
+        solarSnapshot: solarOpeningUpdate.snapshot,
+        layout: previewLayout,
+        camera,
+        planeZ: INTERACTION_PLANE_Z,
+        timestamp,
+      });
+
+      solarOpening.syncFreeHoverSnapshot(solarInspectionUpdate.solarSnapshot);
+      debugSnapshot.solarInspection = solarInspectionUpdate.snapshot;
+      debugSnapshot.solarInspectionVerification =
+        updateSolarInspectionVerification(
+          debugSnapshot.solarInspectionVerification,
+          interaction.state,
+          solarInspectionUpdate.snapshot,
+          timestamp,
+        );
+      applySolarOpeningSnapshot(solarInspectionUpdate.solarSnapshot);
+    }
   }
+
+  placeholderSolarSystem.update(deltaSeconds);
 
   debugSnapshot.fps = fps;
   debugSnapshot.cameraStatus = cameraStatus;
@@ -178,7 +261,11 @@ renderer.start(({ fps, canvasSize }) => {
   if (debugOverlay.isVisible) {
     updatePreviewDebugMetrics();
   }
-  landmarkOverlay.draw(latestTracking, debugSnapshot.wholeSystem);
+  landmarkOverlay.draw(
+    latestTracking,
+    debugSnapshot.wholeSystem,
+    interaction.state,
+  );
   gestureRecorder.record(timestamp, latestTracking, debugSnapshot);
   debugSnapshot.gestureRecording = gestureRecorder.getStatus();
   updateRecorderControls();
@@ -196,6 +283,10 @@ window.addEventListener('beforeunload', () => {
   handPrimitives.reset();
   gestureCalibration.reset();
   wholeSystemIntent.reset();
+  solarOpening.reset();
+  solarInspection.reset();
+  renderer.removeObject3D(placeholderSolarSystem.group);
+  placeholderSolarSystem.dispose();
   renderer.dispose();
 });
 
@@ -214,6 +305,16 @@ debugRecordExport.addEventListener('click', () => {
 debugRecordClear.addEventListener('click', () => {
   gestureRecorder.clear();
   debugSnapshot.gestureRecording = gestureRecorder.getStatus();
+  updateRecorderControls();
+});
+
+debugM55Export.addEventListener('click', () => {
+  exportM55VerificationJson();
+});
+
+debugM55Reset.addEventListener('click', () => {
+  debugSnapshot.solarInspectionVerification =
+    EMPTY_SOLAR_INSPECTION_VERIFICATION;
   updateRecorderControls();
 });
 
@@ -272,6 +373,37 @@ function updatePreviewDebugMetrics(): void {
   debugSnapshot.overlayDisplaySize.height = overlayRect.height;
 }
 
+function createPreviewLayout(canvasSize: { width: number; height: number }) {
+  return {
+    stageWidth: canvasSize.width,
+    stageHeight: canvasSize.height,
+    sourceWidth: videoElement.videoWidth || canvasSize.width,
+    sourceHeight: videoElement.videoHeight || canvasSize.height,
+    mirrored: true,
+  };
+}
+
+function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
+  debugSnapshot.openProgress = snapshot.progress;
+  debugSnapshot.solarScale = snapshot.scale;
+  debugSnapshot.solarReason = snapshot.reason;
+  debugSnapshot.solarStartDistance = snapshot.startDistance;
+  debugSnapshot.solarTargetDistance = snapshot.targetDistance;
+
+  placeholderSolarSystem.setVisible(snapshot.visible);
+  placeholderSolarSystem.setOpeningProgress(snapshot.progress);
+
+  if (!snapshot.midpointWorld) {
+    return;
+  }
+
+  placeholderSolarSystem.setTransform({
+    position: snapshot.midpointWorld,
+    rotation: getSolarOpeningRotation(snapshot),
+    scale: snapshot.scale,
+  });
+}
+
 async function initializeTracking(): Promise<void> {
   try {
     await tracking.initialize();
@@ -326,6 +458,41 @@ function updateRecorderControls(): void {
     : 'Record';
   debugRecordExport.disabled = status.frameCount === 0;
   debugRecordClear.disabled = status.frameCount === 0;
+  debugM55Export.disabled = false;
+  debugM55Reset.disabled =
+    debugSnapshot.solarInspectionVerification.completedCount === 0;
+}
+
+function exportM55VerificationJson(): void {
+  const payload = createSolarInspectionVerificationReport({
+    createdAt: new Date().toISOString(),
+    cameraStatus: debugSnapshot.cameraStatus,
+    trackingStatus: debugSnapshot.trackingStatus,
+    interactionState: debugSnapshot.interactionState,
+    solar: {
+      openProgress: round(debugSnapshot.openProgress),
+      scale: round(debugSnapshot.solarScale),
+      reason: debugSnapshot.solarReason,
+    },
+    inspection: debugSnapshot.solarInspection,
+    verification: debugSnapshot.solarInspectionVerification,
+  });
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/json',
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+
+  link.href = url;
+  link.download = `ar-solar-m5-5-verification-${new Date()
+    .toISOString()
+    .replace(/[:.]/g, '-')}.json`;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function round(value: number): number {
+  return Math.round(value * 10000) / 10000;
 }
 
 function updateGuidanceForState(state: string): void {
@@ -336,6 +503,31 @@ function updateGuidanceForState(state: string): void {
 
   if (state === 'PullArmed') {
     guidance.textContent = '已识别拉开手势，继续保持双手可见';
+    return;
+  }
+
+  if (state === 'SolarOpening') {
+    guidance.textContent = '继续向两侧拉开，太阳系会跟随双手展开';
+    return;
+  }
+
+  if (state === 'SolarActive') {
+    guidance.textContent = '太阳系已展开，双手分别靠近左右端点即可控制';
+    return;
+  }
+
+  if (state === 'SolarHandleControl') {
+    guidance.textContent = '已扶住左右端点，可以移动或松手悬浮；向内合拢可收起';
+    return;
+  }
+
+  if (state === 'SolarFreeHover') {
+    guidance.textContent = '太阳系悬浮中，单手张开/收拢可观察缩放，握拳约2秒复位；双手靠近端点可重新控制';
+    return;
+  }
+
+  if (state === 'SolarClosing') {
+    guidance.textContent = '继续向内合拢端点，完全合拢后回到空场';
     return;
   }
 

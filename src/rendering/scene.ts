@@ -5,7 +5,7 @@ import {
   Vector2,
   WebGLRenderer,
 } from 'three';
-import type { PerspectiveViewport } from '../interaction/coordinateMapping';
+import type { Object3D } from 'three';
 import type { RenderFrameSnapshot } from '../utils/types';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
@@ -71,11 +71,14 @@ export class TransparentSceneRenderer {
           ? this.smoothedFps + (instantFps - this.smoothedFps) * FPS_SMOOTHING
           : instantFps;
 
-      this.renderer.render(this.scene, this.camera);
       onFrame({
         fps: this.smoothedFps,
         canvasSize: this.getCanvasSize(),
+        deltaMs,
+        deltaSeconds: deltaMs / 1000,
+        timestampMs: time,
       });
+      this.renderer.render(this.scene, this.camera);
 
       this.animationFrameId = window.requestAnimationFrame(tick);
     };
@@ -103,16 +106,21 @@ export class TransparentSceneRenderer {
     };
   }
 
+  addObject3D(object: Object3D): void {
+    this.scene.add(object);
+  }
+
+  removeObject3D(object: Object3D): void {
+    this.scene.remove(object);
+  }
+
   /**
-   * Camera parameters for mapping normalized hand coordinates onto the interaction plane.
-   * Pair with `mapNormalizedToWorld` so 3D content (M4+) stays aligned with the hands.
+   * The scene camera, for mapping normalized hand coordinates onto the interaction plane.
+   * Pass to `mapNormalizedToWorld` (with `INTERACTION_PLANE_Z`) so 3D content (M4+) stays
+   * aligned with the hands.
    */
-  getInteractionViewport(): PerspectiveViewport {
-    return {
-      fovDegrees: CAMERA_FOV,
-      cameraZ: CAMERA_Z,
-      planeZ: INTERACTION_PLANE_Z,
-    };
+  getCamera(): PerspectiveCamera {
+    return this.camera;
   }
 
   private resize(): void {

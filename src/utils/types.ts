@@ -191,6 +191,65 @@ export interface GestureRecordingStatus {
   lastEvent: string | null;
 }
 
+export type SolarInspectionIntent =
+  | 'inactive'
+  | 'idle'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'pan'
+  | 'resetHold'
+  | 'reset';
+
+export type SolarInspectionVerificationHit =
+  | SolarInspectionIntent
+  | 'reGripAfterInspection';
+
+export interface SolarInspectionSnapshot {
+  active: boolean;
+  intent: SolarInspectionIntent;
+  reason: string;
+  fingerSpread: number | null;
+  fingerSpreadVelocity: number | null;
+  panScore: number;
+  palmCenter: {
+    x: number | null;
+    y: number | null;
+  };
+  palmCenterVelocity: number | null;
+  resetHoldMs: number;
+  inspectionScale: number;
+  inspectionOffset: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+
+export interface SolarInspectionVerificationSnapshot {
+  reachedFreeHover: boolean;
+  observedZoomIn: boolean;
+  observedZoomOut: boolean;
+  observedPan: boolean;
+  observedResetHold: boolean;
+  observedReset: boolean;
+  observedDisabledDuringHandleControl: boolean;
+  observedReGripAfterInspection: boolean;
+  completed: boolean;
+  completedAt: number | null;
+  completedCount: number;
+  totalCount: number;
+  remainingItems: string;
+  nextItem: string;
+  lastMatchedIntent: SolarInspectionVerificationHit | null;
+  lastUpdatedAt: number | null;
+  lastInspectionScale: number | null;
+  lastInspectionOffset: {
+    x: number;
+    y: number;
+    z: number;
+  } | null;
+}
+
 export interface DebugSnapshot {
   fps: number;
   cameraStatus: CameraPermissionStatus;
@@ -231,6 +290,11 @@ export interface DebugSnapshot {
   handDistance: number | null;
   openProgress: number;
   solarScale: number;
+  solarReason: string;
+  solarStartDistance: number | null;
+  solarTargetDistance: number | null;
+  solarInspection: SolarInspectionSnapshot;
+  solarInspectionVerification: SolarInspectionVerificationSnapshot;
   hoveredBody: string | null;
   grabbedBody: string | null;
   pinchState: string;
@@ -267,6 +331,9 @@ export interface DebugSnapshot {
 
 export interface RenderFrameSnapshot {
   fps: number;
+  deltaMs: number;
+  deltaSeconds: number;
+  timestampMs: number;
   canvasSize: {
     width: number;
     height: number;

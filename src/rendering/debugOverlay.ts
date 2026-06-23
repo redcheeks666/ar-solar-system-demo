@@ -1,4 +1,5 @@
 import type { DebugSnapshot } from '../utils/types';
+import { getSolarInspectionVerificationChecklist } from '../interaction/solarInspectionVerification';
 
 const UPDATE_INTERVAL_MS = 150;
 
@@ -48,6 +49,9 @@ export class DebugOverlay {
   }
 
   private buildRows(snapshot: DebugSnapshot): HTMLElement[] {
+    const nextM55Item = getSolarInspectionVerificationChecklist(
+      snapshot.solarInspectionVerification,
+    ).find((item) => !item.done);
     const rows: Array<[string, string]> = [
       ['FPS', snapshot.fps.toFixed(1)],
       ['Camera', snapshot.cameraStatus],
@@ -106,7 +110,86 @@ export class DebugOverlay {
       ],
       ['Calibration reason', snapshot.gestureCalibration.reason],
       ['openProgress', snapshot.openProgress.toFixed(2)],
+      [
+        'Open start / target',
+        `${formatNullable(snapshot.solarStartDistance)} / ${formatNullable(
+          snapshot.solarTargetDistance,
+        )}`,
+      ],
       ['Solar scale', snapshot.solarScale.toFixed(2)],
+      ['Solar reason', snapshot.solarReason],
+      [
+        'Solar inspect',
+        `${snapshot.solarInspection.intent} / ${
+          snapshot.solarInspection.active ? 'active' : 'idle'
+        }`,
+      ],
+      ['Inspect reason', snapshot.solarInspection.reason],
+      ['Inspect spread', formatNullable(snapshot.solarInspection.fingerSpread)],
+      [
+        'Inspect spread velocity',
+        formatNullable(snapshot.solarInspection.fingerSpreadVelocity),
+      ],
+      ['Inspect pan score', snapshot.solarInspection.panScore.toFixed(2)],
+      [
+        'Inspect palm',
+        formatPair(
+          snapshot.solarInspection.palmCenter.x,
+          snapshot.solarInspection.palmCenter.y,
+        ),
+      ],
+      [
+        'Inspect palm velocity',
+        formatNullable(snapshot.solarInspection.palmCenterVelocity),
+      ],
+      [
+        'Inspect reset hold',
+        `${Math.round(snapshot.solarInspection.resetHoldMs)}ms`,
+      ],
+      [
+        'Inspect scale / offset',
+        `${snapshot.solarInspection.inspectionScale.toFixed(2)} / ${formatPoint3(
+          snapshot.solarInspection.inspectionOffset,
+        )}`,
+      ],
+      [
+        'M5.5 checklist',
+        `${snapshot.solarInspectionVerification.completed ? 'complete' : 'pending'} ${snapshot.solarInspectionVerification.completedCount}/${snapshot.solarInspectionVerification.totalCount}`,
+      ],
+      [
+        'M5.5 remaining',
+        snapshot.solarInspectionVerification.remainingItems,
+      ],
+      [
+        'M5.5 next',
+        snapshot.solarInspectionVerification.nextItem,
+      ],
+      [
+        'M5.5 next action',
+        nextM55Item?.action ?? 'none',
+      ],
+      [
+        'M5.5 observe',
+        nextM55Item?.observe ?? 'none',
+      ],
+      [
+        'M5.5 pass',
+        nextM55Item?.passCondition ?? 'none',
+      ],
+      [
+        'M5.5 completed at',
+        snapshot.solarInspectionVerification.completedAt === null
+          ? 'n/a'
+          : `${Math.round(snapshot.solarInspectionVerification.completedAt)}ms`,
+      ],
+      [
+        'M5.5 last hit',
+        snapshot.solarInspectionVerification.lastMatchedIntent
+          ? `${snapshot.solarInspectionVerification.lastMatchedIntent} @ ${Math.round(
+              snapshot.solarInspectionVerification.lastUpdatedAt ?? 0,
+            )}ms`
+          : 'none',
+      ],
       ['Hovered body', snapshot.hoveredBody ?? 'none'],
       ['Grabbed body', snapshot.grabbedBody ?? 'none'],
       ['Pinch', snapshot.pinchState],

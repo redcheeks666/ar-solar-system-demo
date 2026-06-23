@@ -1,3 +1,4 @@
+import { Plane, Raycaster, Vector2, Vector3, type Camera } from 'three';
 import type { NormalizedPoint } from '../utils/types';
 
 /**
@@ -21,12 +22,6 @@ export interface PreviewLayout {
   sourceHeight: number;
   /** Whether the preview is mirrored for selfie view. */
   mirrored: boolean;
-}
-
-export interface PerspectiveViewport {
-  fovDegrees: number;
-  cameraZ: number;
-  planeZ: number;
 }
 
 export interface Rect {
@@ -86,26 +81,45 @@ export function mapNormalizedToStagePixel(
   };
 }
 
+// Reused across calls so per-frame mapping does not allocate. The plane normal is fixed to +Z;
+// only its `constant` is updated per call to represent the plane z = planeZ.
+const raycaster = new Raycaster();
+const ndcPoint = new Vector2();
+const intersectionTarget = new Vector3();
+const interactionPlane = new Plane(new Vector3(0, 0, 1), 0);
+
 /**
- * Map a normalized point to a world position on the interaction plane so that it projects
- * exactly onto its on-screen pixel for the given perspective camera.
+ * Map a normalized point to a world position on the interaction plane (z = planeZ) so that it
+ * projects exactly onto its on-screen pixel.
+ *
+ * Uses three's Raycaster to invert the camera's actual projection + view matrices, so it stays
+ * correct for any camera pose (position / rotation / fov) instead of assuming a fixed,
+ * axis-aligned camera. Returns null when the layout has no size or the ray never meets the plane
+ * (camera looking parallel to it).
  */
 export function mapNormalizedToWorld(
   point: NormalizedPoint,
   layout: PreviewLayout,
-  viewport: PerspectiveViewport,
-): Vec3 {
-  const pixel = mapNormalizedToStagePixel(point, layout);
-  const ndcX = layout.stageWidth > 0 ? (pixel.x / layout.stageWidth) * 2 - 1 : 0;
-  const ndcY = layout.stageHeight > 0 ? 1 - (pixel.y / layout.stageHeight) * 2 : 0;
-  const aspect = layout.stageHeight > 0 ? layout.stageWidth / layout.stageHeight : 1;
-  const distance = viewport.cameraZ - viewport.planeZ;
-  const halfHeight = Math.tan((viewport.fovDegrees * Math.PI) / 360) * distance;
-  const halfWidth = halfHeight * aspect;
+  camera: Camera,
+  planeZ: number,
+): Vec3 | null {
+  if (layout.stageWidth <= 0 || layout.stageHeight <= 0) {
+    return null;
+  }
 
-  return {
-    x: ndcX * halfWidth,
-    y: ndcY * halfHeight,
-    z: viewport.planeZ,
-  };
+  const pixel = mapNormalizedToStagePixel(point, layout);
+  ndcPoint.set(
+    (pixel.x / layout.stageWidth) * 2 - 1,
+    1 - (pixel.y / layout.stageHeight) * 2,
+  );
+  raycaster.setFromCamera(ndcPoint, camera);
+  interactionPlane.constant = -planeZ;
+
+  const hit = raycaster.ray.intersectPlane(interactionPlane, intersectionTarget);
+
+  if (!hit) {
+    return null;
+  }
+
+  return { x: hit.x, y: hit.y, z: hit.z };
 }

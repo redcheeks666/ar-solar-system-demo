@@ -14,7 +14,7 @@ const VALID_TRANSITIONS: Record<InteractionState, ReadonlySet<InteractionState>>
   ]),
   SolarFreeHover: new Set(['SolarHandleControl', 'BodyHover']),
   SolarHandleControl: new Set(['SolarActive', 'SolarFreeHover', 'SolarClosing']),
-  SolarClosing: new Set(['SolarActive', 'EmptyIdle']),
+  SolarClosing: new Set(['SolarActive', 'SolarFreeHover', 'SolarHandleControl', 'EmptyIdle']),
   BodyHover: new Set(['SolarActive', 'SolarFreeHover', 'BodyGrabbed']),
   BodyGrabbed: new Set(['BodyDetached', 'BodyReturning']),
   BodyDetached: new Set(['BodyGrabbed', 'BodyReturning']),

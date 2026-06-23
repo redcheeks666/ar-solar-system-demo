@@ -1,37 +1,23 @@
+import { HandLandmarker } from '@mediapipe/tasks-vision';
 import {
   mapNormalizedToStagePixel,
   type PreviewLayout,
 } from '../interaction/coordinateMapping';
 import type {
+  InteractionState,
   NormalizedPoint,
   TrackedHand,
   TrackingSnapshot,
   WholeSystemIntentSnapshot,
 } from '../utils/types';
 
-const HAND_CONNECTIONS: ReadonlyArray<readonly [number, number]> = [
-  [0, 1],
-  [1, 2],
-  [2, 3],
-  [3, 4],
-  [0, 5],
-  [5, 6],
-  [6, 7],
-  [7, 8],
-  [5, 9],
-  [9, 10],
-  [10, 11],
-  [11, 12],
-  [9, 13],
-  [13, 14],
-  [14, 15],
-  [15, 16],
-  [13, 17],
-  [0, 17],
-  [17, 18],
-  [18, 19],
-  [19, 20],
-];
+/**
+ * Canonical 21-point hand skeleton edges, sourced from MediaPipe instead of a hand-copied table.
+ * The drawing itself stays custom (see `drawHand`) because it must route through
+ * `mapNormalizedToStagePixel` for mirror + `object-fit: contain` alignment, which the library's
+ * `DrawingUtils` does not support.
+ */
+const HAND_CONNECTIONS = HandLandmarker.HAND_CONNECTIONS;
 
 const LEFT_COLOR = '#7dd3fc';
 const RIGHT_COLOR = '#f6c177';
@@ -75,6 +61,7 @@ export class LandmarkOverlay {
   draw(
     snapshot: TrackingSnapshot,
     wholeSystem?: WholeSystemIntentSnapshot,
+    interactionState?: InteractionState,
   ): void {
     if (!this.visible) {
       return;
@@ -100,7 +87,7 @@ export class LandmarkOverlay {
     }
     snapshot.hands.hands.forEach((hand) => this.drawHand(hand));
 
-    if (wholeSystem) {
+    if (wholeSystem && shouldDrawLegacyVirtualEndpoints(interactionState)) {
       this.drawVirtualEndpoints(wholeSystem);
     }
   }
@@ -137,9 +124,9 @@ export class LandmarkOverlay {
   private drawHand(hand: TrackedHand): void {
     const color = hand.side === 'left' ? LEFT_COLOR : RIGHT_COLOR;
 
-    HAND_CONNECTIONS.forEach(([fromIndex, toIndex]) => {
-      const from = hand.landmarks[fromIndex];
-      const to = hand.landmarks[toIndex];
+    HAND_CONNECTIONS.forEach(({ start, end }) => {
+      const from = hand.landmarks[start];
+      const to = hand.landmarks[end];
 
       if (from && to) {
         this.drawLine(from, to, color, 1.6);
@@ -209,4 +196,20 @@ export class LandmarkOverlay {
   private mapPoint(point: NormalizedPoint): { x: number; y: number } {
     return mapNormalizedToStagePixel(point, this.layout);
   }
+}
+
+function shouldDrawLegacyVirtualEndpoints(
+  interactionState?: InteractionState,
+): boolean {
+  return (
+    interactionState !== 'SolarOpening' &&
+    interactionState !== 'SolarActive' &&
+    interactionState !== 'SolarFreeHover' &&
+    interactionState !== 'SolarHandleControl' &&
+    interactionState !== 'SolarClosing' &&
+    interactionState !== 'BodyHover' &&
+    interactionState !== 'BodyGrabbed' &&
+    interactionState !== 'BodyDetached' &&
+    interactionState !== 'BodyReturning'
+  );
 }

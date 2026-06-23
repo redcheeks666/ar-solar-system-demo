@@ -19,6 +19,7 @@ const docsToSnapshot = [
   "ar_solar_system_prd.md",
   "README.md",
   "package.json",
+  "docs/testing/test-and-replay-harness.md",
 ];
 
 function run(command, commandArgs, cwd, options = {}) {
@@ -81,8 +82,12 @@ async function main() {
       continue;
     }
 
-    await copyFile(sourcePath, join(latestSnapshotDir, doc));
-    await copyFile(sourcePath, join(pointSnapshotDir, doc));
+    const latestDocPath = join(latestSnapshotDir, doc);
+    const pointDocPath = join(pointSnapshotDir, doc);
+    await mkdir(dirname(latestDocPath), { recursive: true });
+    await mkdir(dirname(pointDocPath), { recursive: true });
+    await copyFile(sourcePath, latestDocPath);
+    await copyFile(sourcePath, pointDocPath);
     copiedDocs.push(doc);
   }
 
