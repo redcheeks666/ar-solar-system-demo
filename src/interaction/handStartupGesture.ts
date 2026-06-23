@@ -70,6 +70,7 @@ export class HandStartupGestureController {
     thresholds: GestureThresholds,
   ): HandStartupGestureUpdate {
     if (!isStartupState(currentState)) {
+      this.resetTrackingMemory();
       return {
         snapshot: this.createSnapshot(
           null,
@@ -607,7 +608,6 @@ function computePullIntentScore(
 
 function isStartupState(state: InteractionState): boolean {
   return (
-    state === 'CameraReady' ||
     state === 'EmptyIdle' ||
     state === 'HandsClosed' ||
     state === 'PullArmed'

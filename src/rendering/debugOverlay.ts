@@ -1,5 +1,4 @@
 import type { DebugSnapshot } from '../utils/types';
-import { getSolarInspectionVerificationChecklist } from '../interaction/solarInspectionVerification';
 
 const UPDATE_INTERVAL_MS = 150;
 
@@ -49,9 +48,6 @@ export class DebugOverlay {
   }
 
   private buildRows(snapshot: DebugSnapshot): HTMLElement[] {
-    const nextM55Item = getSolarInspectionVerificationChecklist(
-      snapshot.solarInspectionVerification,
-    ).find((item) => !item.done);
     const rows: Array<[string, string]> = [
       ['FPS', snapshot.fps.toFixed(1)],
       ['Camera', snapshot.cameraStatus],
@@ -118,81 +114,39 @@ export class DebugOverlay {
       ],
       ['Solar scale', snapshot.solarScale.toFixed(2)],
       ['Solar reason', snapshot.solarReason],
+      ['Hovered body', snapshot.hoveredBody ?? 'none'],
+      ['Activated body', snapshot.activatedBody ?? 'none'],
+      ['Pinch', snapshot.pinchState],
+      ['Pinch ratio', formatNullable(snapshot.planetActivation.pinchRatio)],
       [
-        'Solar inspect',
-        `${snapshot.solarInspection.intent} / ${
-          snapshot.solarInspection.active ? 'active' : 'idle'
-        }`,
-      ],
-      ['Inspect reason', snapshot.solarInspection.reason],
-      ['Inspect spread', formatNullable(snapshot.solarInspection.fingerSpread)],
-      [
-        'Inspect spread velocity',
-        formatNullable(snapshot.solarInspection.fingerSpreadVelocity),
-      ],
-      ['Inspect pan score', snapshot.solarInspection.panScore.toFixed(2)],
-      [
-        'Inspect palm',
-        formatPair(
-          snapshot.solarInspection.palmCenter.x,
-          snapshot.solarInspection.palmCenter.y,
-        ),
+        'Pinch dist px',
+        formatNullable(snapshot.planetActivation.pinchDistancePx),
       ],
       [
-        'Inspect palm velocity',
-        formatNullable(snapshot.solarInspection.palmCenterVelocity),
+        'Pinch thresholds',
+        `${snapshot.planetActivation.pinchStartThreshold.toFixed(2)} / ${snapshot.planetActivation.pinchEndThreshold.toFixed(2)}`,
       ],
       [
-        'Inspect reset hold',
-        `${Math.round(snapshot.solarInspection.resetHoldMs)}ms`,
-      ],
-      [
-        'Inspect scale / offset',
-        `${snapshot.solarInspection.inspectionScale.toFixed(2)} / ${formatPoint3(
-          snapshot.solarInspection.inspectionOffset,
+        'Hover dist/radius px',
+        `${formatNullable(snapshot.planetActivation.hoverDistancePx)} / ${formatNullable(
+          snapshot.planetActivation.hoverHitRadiusPx,
         )}`,
       ],
       [
-        'M5.5 checklist',
-        `${snapshot.solarInspectionVerification.completed ? 'complete' : 'pending'} ${snapshot.solarInspectionVerification.completedCount}/${snapshot.solarInspectionVerification.totalCount}`,
+        'Hover screen',
+        formatPoint2(snapshot.planetActivation.hoverScreenPosition),
+      ],
+      ['Hover point', snapshot.planetActivation.hoverPointKind ?? 'none'],
+      ['Activation hand', snapshot.planetActivation.activeHandKey ?? 'none'],
+      [
+        'Activation lost',
+        `${Math.round(snapshot.planetActivation.trackingLossMs)}ms`,
       ],
       [
-        'M5.5 remaining',
-        snapshot.solarInspectionVerification.remainingItems,
+        'Activation orbit',
+        formatOrbit(snapshot.planetActivation.activatedOriginalOrbit),
       ],
-      [
-        'M5.5 next',
-        snapshot.solarInspectionVerification.nextItem,
-      ],
-      [
-        'M5.5 next action',
-        nextM55Item?.action ?? 'none',
-      ],
-      [
-        'M5.5 observe',
-        nextM55Item?.observe ?? 'none',
-      ],
-      [
-        'M5.5 pass',
-        nextM55Item?.passCondition ?? 'none',
-      ],
-      [
-        'M5.5 completed at',
-        snapshot.solarInspectionVerification.completedAt === null
-          ? 'n/a'
-          : `${Math.round(snapshot.solarInspectionVerification.completedAt)}ms`,
-      ],
-      [
-        'M5.5 last hit',
-        snapshot.solarInspectionVerification.lastMatchedIntent
-          ? `${snapshot.solarInspectionVerification.lastMatchedIntent} @ ${Math.round(
-              snapshot.solarInspectionVerification.lastUpdatedAt ?? 0,
-            )}ms`
-          : 'none',
-      ],
-      ['Hovered body', snapshot.hoveredBody ?? 'none'],
-      ['Grabbed body', snapshot.grabbedBody ?? 'none'],
-      ['Pinch', snapshot.pinchState],
+      ['Activation reason', snapshot.planetActivation.transitionReason],
       ['Throw velocity', formatNullable(snapshot.throwVelocity)],
       ['Whole control', snapshot.wholeSystem.controlState],
       [
@@ -392,4 +346,14 @@ function formatSize(width: number | null, height: number | null): string {
   }
 
   return `${Math.round(width)} x ${Math.round(height)}`;
+}
+
+function formatOrbit(
+  orbit: DebugSnapshot['planetActivation']['activatedOriginalOrbit'],
+): string {
+  if (!orbit) {
+    return 'n/a';
+  }
+
+  return `${orbit.parentId ?? 'sun'} r=${orbit.orbitRadius.toFixed(2)} p=${orbit.orbitPhase.toFixed(2)}`;
 }

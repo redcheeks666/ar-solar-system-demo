@@ -1,7 +1,7 @@
 # TODO.md
 
 Project: AR Solar System Webcam Gesture Demo
-Current planning baseline: PRD v0.5, 2026-06-23
+Current planning baseline: PRD v0.7, 2026-06-24
 Primary delivery target: Web Demo first
 
 ## How to Use This File
@@ -43,7 +43,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 
 - [ ] Web Demo first.
 - [ ] Initial AR scene is empty: no 3D sun, planet, orbit, nebula, singularity, star dust, or decorative 3D object before the pull-open gesture.
-- [ ] Solar system appears only after the user brings both hands/fists together anywhere in the visible camera frame and pulls them apart.
+- [ ] Solar system appears only after the scene is in `EmptyIdle`, the user brings both hands/fists together anywhere in the visible camera frame to enter `HandsClosed`, and then pulls them apart from that baseline to enter `PullArmed`.
 - [ ] Closed hands/fists alone do not play any solar-system animation or show 3D content.
 - [ ] Opening progress is driven by hand distance and should not auto-complete if hands stop.
 - [ ] Opening endpoints visually follow both hands.
@@ -51,13 +51,13 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Releasing the whole-system two-hand handle leaves the solar system hovering at its last stable transform.
 - [ ] Re-gripping the left and right endpoints lets the user continue whole-system handle control for placement, release, and collapse.
 - [ ] Moving gripped hands inward from the opened state collapses the solar system in reverse and returns to the empty camera view when fully closed.
-- [ ] Current solar-system inspection controls are the Milestone 5.5 one-hand controls after `SolarFreeHover`: spread to zoom in, contract to shrink, fist-hold to reset, and push to pan.
+- [ ] Milestone 5.5 one-hand solar inspection controls are retired after `SolarFreeHover`: spread does not zoom in, contract does not shrink, fist-hold does not reset, and push does not pan.
 - [ ] Palm-forward "sliding glass" scaling and palms-up whole-system rotation are retired M5 gesture semantics; keep them only as legacy/debug protocol context unless the user explicitly reopens them.
 - [ ] Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon can be hovered and pinch-activated in MVP.
-- [ ] A pinch-activated body stops its original orbit but keeps natural self-rotation; other bodies continue normal orbit and self-rotation.
+- [ ] A pinch-activated body stops its original orbit but keeps natural self-rotation; when activation moves from A to B, A immediately resumes original orbiting and only the currently activated body may have orbit paused.
 - [ ] Main-hand pinch lock plus off-hand open/spread enters a single-planet focus view.
 - [ ] In the single-planet focus view, the background solar system is dimmed and interaction-locked while preserving basic motion.
-- [ ] The focused body keeps self-rotating during activation, focus, zoom, pan, support-follow, release-to-floating, and inspection.
+- [ ] The focused body keeps self-rotating during activation, focus, support-follow, release-to-floating, and inspection; one-hand focus zoom/pan/reset is retired.
 - [ ] Main-hand support plus off-hand `PinchTap` releases follow-control and leaves the body floating in the focus view.
 - [ ] A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit and exits back to the solar-system view.
 - [ ] Documentation is updated when requirements or completed scope change, including `TODO.zh-CN.md` whenever `TODO.md` changes.
@@ -212,7 +212,7 @@ Done when:
 
 Status: `NEEDS_MANUAL_VERIFY`
 
-Goal: Detect the startup gesture based only on both hands: both hands close together, then pull apart. This gesture must not depend on the chest anchor, shoulders, or body pose. The user should be able to trigger the prepared pull state with both hands near the chest, above the head, at the side of the body, or anywhere else in the visible camera frame.
+Goal: Detect the startup gesture based only on both hands while the scene is empty: both hands close together in `EmptyIdle`, then pull apart from that `HandsClosed` baseline. This gesture must not depend on the chest anchor, shoulders, or body pose. The user should be able to trigger the prepared pull state with both hands near the chest, above the head, at the side of the body, or anywhere else in the visible camera frame, but the same closed/pull motion must not re-enter startup after solar-system or body-interaction content is active.
 
 Tasks:
 
@@ -222,6 +222,9 @@ Tasks:
 - [x] Briefly hold the last stable hand positions when hand tracking is temporarily lost.
 - [x] Detect when both hands are close together in any visible area of the camera frame.
 - [x] Detect when both hands continuously move apart after the closed-hands state.
+- [x] Gate `HandsClosed` entry to `EmptyIdle` empty-scene startup only.
+- [x] Require `PullArmed` to come from `HandsClosed`; generic two-hand pull-apart motion cannot arm startup directly.
+- [x] Clear startup gesture memory outside the empty startup chain so later scene states cannot inherit stale close evidence.
 - [x] Tolerate short one-hand tracking loss when closed hands/fists overlap, using only recent valid two-hand close evidence.
 - [x] Add grace windows so `HandsClosed` and `PullArmed` do not flicker during slow starts, brief pauses, or short hand occlusion.
 - [x] Add interaction states: `CameraReady`, `EmptyIdle`, `HandsClosed`, and `PullArmed`.
@@ -234,8 +237,9 @@ Tasks:
 Acceptance Criteria:
 
 - [x] After the camera starts, the app visually remains empty with no 3D solar content.
-- [x] When both hands close together anywhere in the visible camera frame, the app can enter `HandsClosed`.
-- [x] When both hands continuously pull apart from the closed state, the app can enter `PullArmed`.
+- [x] When the app is in `EmptyIdle` with an empty camera scene, both hands close together anywhere in the visible camera frame can enter `HandsClosed`.
+- [x] When both hands continuously pull apart from the `HandsClosed` baseline, the app can enter `PullArmed`.
+- [x] In non-empty scene states such as `SolarFreeHover`, `SolarHandleControl`, or body interaction states, the same closed-to-pull motion does not enter `HandsClosed` or `PullArmed`.
 - [x] Closing and pulling both hands above the head can enter `PullArmed`, pending manual camera verification.
 - [x] Closing and pulling both hands near the chest can enter `PullArmed`, pending manual camera verification.
 - [x] Closing and pulling both hands at the side of the body can enter `PullArmed`, pending manual camera verification.
@@ -254,17 +258,18 @@ Implement Milestone 3: hand-only closed-to-pull armed idle state.
 
 Context:
 Read @AGENTS.md, @TODO.md, and @ar_solar_system_prd.md.
-This is a requirement adjustment. The startup gesture must no longer depend on the chest anchor, shoulders, or body position. The core trigger is hand gesture only: both hands close together, then pulled apart.
+This is a requirement adjustment. The startup gesture must no longer depend on the chest anchor, shoulders, or body position. The core trigger is hand gesture only while the scene is empty: both hands close together in `EmptyIdle` to enter `HandsClosed`, then pull apart from that baseline to enter `PullArmed`.
 
 Requirements:
 1. Detect left-hand and right-hand centers.
 2. Smooth both hand positions.
 3. Compute hand midpoint, hand distance, hand distance velocity, and hand direction vector.
-4. Detect when both hands are close together anywhere in the visible camera frame.
-5. Detect when both hands continuously move apart after being close.
+4. Detect when both hands are close together anywhere in the visible camera frame, but only while the current interaction state is `EmptyIdle`.
+5. Detect when both hands continuously move apart after entering `HandsClosed`; generic two-hand pull-apart motion must not directly arm startup.
 6. Add states: `CameraReady`, `EmptyIdle`, `HandsClosed`, and `PullArmed`.
 7. Show debug values for left hand, right hand, hand midpoint, hand distance, distance velocity, current state, both-hands-visible, and lost-hand hold.
 8. Keep the AR scene empty. Do not render the solar system yet.
+9. Outside the empty startup chain, closed/pull hand motion must be interpreted by the active scene state or ignored; it must not re-enter `HandsClosed` or `PullArmed`.
 
 Constraints:
 - Do not use chest anchor, shoulder landmarks, or body pose as required conditions for this milestone.
@@ -290,7 +295,8 @@ Done When:
 - Hands closed near the chest can enter `HandsClosed`.
 - Hands closed above the head can enter `HandsClosed`.
 - Hands closed at the side of the body can enter `HandsClosed`.
-- Pulling hands apart from any of those positions can enter `PullArmed`.
+- Pulling hands apart from any of those `HandsClosed` positions can enter `PullArmed`.
+- After the solar system is open or free-hovering, ordinary two-hand close/pull motion away from endpoints does not re-enter `HandsClosed` or `PullArmed`.
 - `TODO.md` is updated with implementation status and manual verification notes.
 ```
 
@@ -335,7 +341,7 @@ Acceptance Criteria:
 - [x] Reverse collapse returns to the initial empty camera view when fully closed.
 - [x] Palms-up gentle rotation and palm-normal motion are kept only as legacy debug/protocol diagnostics; they are not current user-facing whole-system rotation controls.
 - [x] Debug panel exposes whole-system protocol values without rendering solar-system 3D content.
-- [x] The top-right Chinese status summary avoids presenting retired scale/rotation diagnostics as product controls; visible solar behavior is explained through the current interaction state, release/re-grip/close lifecycle, and M5.5 inspection intent.
+- [x] The top-right Chinese status summary avoids presenting retired scale/rotation diagnostics or retired M5.5 inspection controls as product controls; visible solar behavior is explained through the current interaction state and release/re-grip/close lifecycle.
 - [x] Debug overlay may show only 2D virtual endpoint markers when debug mode is enabled.
 - [x] `npm run typecheck` passes.
 - [x] `npm run build` passes.
@@ -466,7 +472,7 @@ Status: `IN_PROGRESS`
 
 Goal: Implement the first high-impact moment: the user pulls the solar system open from the empty scene using both hands.
 
-Implementation note (2026-06-23): M4-A/B/C/D code is in place. `PullArmed` now enters `SolarOpening`; the code placeholder solar system is driven by hand distance, midpoint, visual hand axis, and `openProgress`; and fully opening transitions to `SolarActive`. The opening affordance is two solar-system-local 3D control endpoints at the left and right edges, with no connecting rod-style control line. After opening completes, `SolarActive` now holds the last stable transform by default; arbitrary visible hands no longer move the model. Whole-system control resumes only when both hands stably hit the left/right endpoints, which transitions to `SolarHandleControl`. Releasing endpoint control transitions to `SolarFreeHover` and keeps the last stable transform; and (2026-06-23 stabilization) when the hands are not holding both endpoints, `SolarActive` itself now settles into `SolarFreeHover` after a short grace, so one-hand inspection starts without forcing an endpoint re-grip first. Moving controlled endpoint hands inward enters `SolarClosing`; reaching the collapse threshold hides all solar content and returns to `EmptyIdle`. No hand-pose gate is required yet, so endpoint re-grip remains easy. Abrupt hand-geometry outliers during fast withdrawal or edge mis-tracking are rejected so they do not shrink or jump the model. This still needs real webcam verification.
+Implementation note (2026-06-23, updated 2026-06-24): M4-A/B/C/D code is in place. `PullArmed` now enters `SolarOpening`; the code placeholder solar system is driven by hand distance, midpoint, visual hand axis, and `openProgress`; and fully opening transitions to `SolarActive`. The opening affordance is two solar-system-local 3D control endpoints at the left and right edges, with no connecting rod-style control line. After opening completes, `SolarActive` now holds the last stable transform by default; arbitrary visible hands no longer move the model. Whole-system control resumes only when both hands stably hit the left/right endpoints, which transitions to `SolarHandleControl`. Releasing endpoint control transitions to `SolarFreeHover` and keeps the last stable transform; when the hands are not holding both endpoints, `SolarActive` itself settles into `SolarFreeHover` after a short grace. Retired M5.5 one-hand inspection controls no longer run in `SolarFreeHover`; the released system waits for endpoint re-grip or reverse collapse. Moving controlled endpoint hands inward enters `SolarClosing`; reaching the collapse threshold hides all solar content and returns to `EmptyIdle`. No hand-pose gate is required yet, so endpoint re-grip remains easy. Abrupt hand-geometry outliers during fast withdrawal or edge mis-tracking are rejected so they do not shrink or jump the model. This still needs real webcam verification.
 
 Tasks:
 
@@ -482,7 +488,7 @@ Tasks:
 - [x] During opening, bind visual left/right endpoints to left/right hands.
 - [x] Render the opening controls as two independent 3D endpoints on the solar-system edges, not as a connected joystick/rod overlay.
 - [x] Reject abrupt hand-geometry outliers so fast hand withdrawal or edge mis-tracking holds the last stable solar-system transform instead of shrinking/jumping.
-- [x] After full opening, hold the last stable transform in `SolarActive`; both hands stably hitting the endpoints re-grip to `SolarHandleControl`, and not holding the endpoints settles into `SolarFreeHover` (2026-06-23) so one-hand inspection works without an extra re-grip.
+- [x] After full opening, hold the last stable transform in `SolarActive`; both hands stably hitting the endpoints re-grip to `SolarHandleControl`, and not holding the endpoints settles into `SolarFreeHover` without enabling retired one-hand inspection controls.
 - [x] Use `SolarHandleControl` as the only state where post-opening two-hand endpoint movement can resume whole-system handle control, release, or reverse collapse.
 - [x] Keep endpoint re-grip hand-pose-free for now; open hands passing near the model should not control unless both endpoints are hit.
 - [x] Keep the user-facing status summary aligned with the latest M4 state machine; old `wholeSystemIntent` release/re-grip values stay debug-only.
@@ -561,80 +567,67 @@ Tasks:
 
 - [x] Remove active TODO acceptance criteria for two-hand pull-apart zoom, palm-forward sliding-glass scaling, and palms-up whole-system rotation.
 - [x] Keep endpoint re-grip, release, free-hover, and reverse-collapse in M4 as the current whole-system handle lifecycle.
-- [x] Treat M5.5 as the active milestone for solar-system zoom, shrink, reset, and pan after release into `SolarFreeHover`.
+- [x] Do not reintroduce the retired two-hand/palm gesture semantics as active controls.
 
 Acceptance criteria:
 
-- [x] Future implementation prompts point to M5.5 for user-facing solar inspection controls.
+- [x] Future implementation prompts no longer point to two-hand/palm gestures as user-facing solar inspection controls.
 - [x] `SolarHandleControl` is not expanded with the old palm-forward or palms-up M5 gesture semantics unless the user explicitly reopens that requirement.
 - [x] Documentation distinguishes legacy protocol debug fields from current product controls.
 
-## Milestone 5.5 — Solar Free-Hover Single-Hand Inspection Controls
+## Milestone 5.5 — Retired Solar Free-Hover Single-Hand Inspection Controls
 
-Status: `NEEDS_MANUAL_VERIFY`
+Status: `DONE`
 
-Goal: Let the user zoom, shrink, reset, and pan the released solar-system view with one hand after the whole-system handle has been released into `SolarFreeHover`.
+Goal: Remove the retired M5.5 one-hand zoom, shrink, reset, and pan controls after the whole-system handle has been released into `SolarFreeHover`.
 
-Current control baseline (2026-06-23): This is the latest user-approved solar-system inspection gesture model and supersedes the retired M5 two-hand/palm gesture semantics.
-
-Tuning note (2026-06-23): Zoom gestures are now phase-locked. A spread-to-zoom-in gesture consumes only the finger-opening phase; the natural return after opening is ignored until the hand settles back into a neutral spread range. A shrink gesture starts from a briefly stable open hand and consumes only the closing phase; the natural relaxation after shrinking is ignored. Pan uses a stable-spread clutch and smoothed palm displacement from an anchor, not raw per-frame palm delta.
+Retirement note (2026-06-24): The user removed M5.5 one-hand spread zoom, one-hand contraction shrink, fist-hold reset, and one-hand push pan from the product. `SolarFreeHover` now keeps the last stable transform and waits for endpoint re-grip or reverse collapse.
 
 Tasks:
 
-- [x] Add a single-hand intent layer for `fingerSpread`, `fingerSpreadVelocity`, `palmCenter`, `palmCenterVelocity`, fist hold time, and transition reasons.
-- [x] Enable single-hand solar inspection only while the solar system is in `SolarFreeHover`; keep it disabled during two-hand endpoint control.
-- [x] Map five-finger spread to solar view zoom-in when hand center movement is low, with rebound lock so the natural hand return does not immediately zoom out.
-- [x] Map five-finger contraction from a briefly stable open hand to solar view zoom-out when hand center movement is low, with rebound lock so the natural relaxation does not immediately zoom in.
-- [x] Map contraction into a fist held for about 2 seconds to default solar size and position.
-- [x] Map left/right/up/down hand pushes to solar view pan after a stable-spread clutch, using smoothed palm displacement from the clutch anchor.
-- [x] Limit M5.5 inspection zoom rate and low-pass pan offset so slow/quick hand motion stays recoverable.
-- [x] Allow a zoomed solar system to move partially outside the screen while preserving a recoverable default reset.
-- [x] Add debug values for single-hand intent, spread score, pan score, reset hold time, solar inspection scale, and solar inspection offset.
-- [x] Add a runtime Debug checklist that records whether the current browser session has actually hit M5.5 free-hover, zoom-in, zoom-out, pan, reset-hold, reset, handle-control-disabled, and re-grip-after-inspection signals, with progress count, remaining item labels, the next required item, next action, observation point, and pass condition; zoom, pan, and reset checklist items require actual inspection scale/offset evidence rather than intent labels alone.
-- [x] Add a Debug-only `Export M5.5` control that downloads a compact verification summary JSON without raw camera video, including a self-describing checklist array with stable ids, user actions, observation points, and pass conditions built through a typed report helper covered by `npm run verify:m5.5`; the export stays available even at 0/8 so failed or blocked manual attempts can produce evidence.
-- [x] Add a Debug-only `Reset M5.5` control so manual testers can clear the runtime checklist without refreshing the page.
-- [x] Add `npm run verify:m5.5` to deterministically exercise M5.5 controller state transitions with synthetic hand landmarks, including slow gesture stability and zoom bounds.
+- [x] Remove `SolarInspectionController` and its one-hand spread/contract/fist/push transform logic.
+- [x] Remove runtime M5.5 Debug checklist, `Export M5.5`, `Reset M5.5`, verification report helper, and verification accumulator.
+- [x] Remove `npm run verify:m5.5` and the ported `solarInspectionController` gesture test.
+- [x] Keep `SolarFreeHover` itself: it preserves the last stable solar transform and allows endpoint re-grip/reverse collapse.
+- [x] Update status summary and guidance so `SolarFreeHover` no longer tells the user to use one-hand inspection gestures.
 
 Acceptance criteria:
 
-- [x] In `SolarFreeHover`, one-hand spread zooms the solar system larger without the return motion immediately shrinking it again, pending manual camera verification.
-- [x] One-hand contraction from a briefly stable open hand shrinks it without the relaxation motion immediately enlarging it again, pending manual camera verification.
-- [x] Contract-to-fist held for about 2 seconds restores default size and centered position with endpoints visible, pending manual camera verification.
-- [x] One-hand push pans the zoomed solar-system view smoothly after clutching, without requiring two-hand endpoint control, pending manual camera verification.
-- [x] Single-hand solar inspection does not trigger during `SolarHandleControl`, pending manual camera verification.
-- [x] Re-grip after M5.5 zoom/pan uses the visually updated endpoints instead of the old release center, pending manual camera verification.
-- [x] Zoom/pan and spread/pan classification do not flicker during slow gestures, pending manual camera verification.
-- [x] `npm run verify:m5.5` passes.
+- [x] In `SolarFreeHover`, one-hand spread does not zoom the solar system.
+- [x] In `SolarFreeHover`, one-hand contraction does not shrink the solar system.
+- [x] In `SolarFreeHover`, fist-hold does not reset the solar-system view.
+- [x] In `SolarFreeHover`, one-hand push does not pan the solar system.
+- [x] There is no M5.5 Debug checklist/export/reset UI and no `verify:m5.5` npm script.
 - [x] `npm run build` passes.
-- [x] Behavior is marked `NEEDS_MANUAL_VERIFY` until the Milestone 5.5 camera checklist passes.
+- [x] Runtime code path no longer imports or runs solar-inspection controller logic.
 
 ## Milestone 6 — Celestial Body Data Model and Nine Interactive Targets
 
-Status: `TODO`
+Status: `DONE`
 
 Goal: Create a unified data-driven model for all MVP interactive celestial bodies, including hover, activation, focus, and return metadata.
 
 Tasks:
 
-- [ ] Define `CelestialBodyId` for Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
-- [ ] Define body metadata: name, label, approximate visual size, orbit radius, orbit speed, self-rotation speed, color/texture placeholder, activation hit radius, focus default transform, return/orbit target, parent body if any.
-- [ ] Implement simplified visual models for each body.
-- [ ] Add recognizable Saturn ring.
-- [ ] Make Moon orbit Earth by default.
-- [ ] Keep all bodies in a registry used by rendering, hover, activation, focus, floating, and return logic.
-- [ ] Add labels that can be shown during hover/activation/focus.
-- [ ] Add original orbit transform data for return behavior.
-- [ ] Ensure no duplicated one-off activation or focus logic per planet.
+- [x] Define `CelestialBodyId` / `InteractiveCelestialBodyId` for Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
+- [x] Define body metadata: name, label, approximate visual size, orbit radius, orbit speed, self-rotation speed, color/texture placeholder, activation hit radius, focus default transform, return/orbit target, parent body if any.
+- [x] Implement simplified visual models for each body.
+- [x] Add recognizable Saturn ring.
+- [x] Make Moon orbit Earth by default.
+- [x] Keep all bodies in a registry used by rendering, hover, activation, focus, floating, and return logic.
+- [x] Add labels that can be shown during hover/activation/focus.
+- [x] Add original orbit transform data for return behavior.
+- [x] Ensure no duplicated one-off activation or focus logic per planet.
 
 Acceptance criteria:
 
-- [ ] All nine MVP bodies are represented in one data model.
-- [ ] Bodies render on simplified orbits after solar opening.
-- [ ] Moon is visually distinguishable from Earth.
-- [ ] Saturn has a clear ring.
-- [ ] Original orbit position/layer data is available for return-to-orbit logic.
-- [ ] Focus default size/position and activation hit radii are available for the later gesture pipeline.
-- [ ] `npm run build` passes.
+- [x] All nine MVP bodies are represented in one data model.
+- [x] Bodies render on simplified orbits after solar opening.
+- [x] Moon is visually distinguishable from Earth.
+- [x] Saturn has a clear ring.
+- [x] Original orbit position/layer data is available for return-to-orbit logic.
+- [x] Focus default size/position and activation hit radii are available for the later gesture pipeline.
+- [x] `npm run build` passes.
 
 Suggested Codex prompt:
 
@@ -661,37 +654,40 @@ Done when:
 
 ## Milestone 7 — Hover, Highlight, and Pinch Activation
 
-Status: `TODO`
+Status: `NEEDS_MANUAL_VERIFY`
 
 Goal: Let the user's hand select and pinch-activate any of the nine MVP bodies without dragging the solar system or freezing self-rotation.
 
 Tasks:
 
-- [ ] Project each interactive body's 3D position to screen coordinates.
-- [ ] Compute hand-to-body screen-space distance.
-- [ ] Add expanded hit areas for Mercury and Moon.
-- [ ] Select nearest valid body with hysteresis to avoid flickering.
-- [ ] Add hover visual feedback: glow ring, label, and orbit highlight.
-- [ ] Detect pinch start and pinch end using thumb/index distance and hand scale.
-- [ ] Use different pinch start and end thresholds.
-- [ ] Implement `BodyHover` and `PlanetActivated` transitions.
-- [ ] On pinch activation, stop the selected body's original orbit while keeping natural self-rotation.
-- [ ] Keep all non-selected bodies orbiting and self-rotating normally.
-- [ ] Prevent solar-system zoom/pan/drag while a body is pinch-activated.
-- [ ] Add clear activation feedback and preserve the original orbit target for return behavior.
-- [ ] Add short tracking-loss tolerance while pinch activation is held.
+- [x] Project each interactive body's 3D position to screen coordinates.
+- [x] Compute hand-to-body screen-space distance.
+- [x] Add expanded hit areas for Mercury and Moon.
+- [x] Select nearest valid body with hysteresis to avoid flickering.
+- [x] Add hover visual feedback: glow ring, label, and orbit highlight.
+- [x] Detect pinch start and pinch end using thumb/index distance and hand scale.
+- [x] Use different pinch start and end thresholds.
+- [x] Implement `BodyHover` and `PlanetActivated` transitions.
+- [x] Allow direct `PlanetActivated` entry from both `SolarActive` and `SolarFreeHover` so released solar-system browsing can activate bodies without crashing the render loop.
+- [x] On pinch activation, stop the selected body's original orbit while keeping natural self-rotation.
+- [x] Keep all non-selected bodies orbiting and self-rotating normally.
+- [x] Switch activation from A to B through the unified controller, clearing A so it resumes original orbiting.
+- [x] Prevent body activation from dragging, re-scaling, panning, or otherwise transforming the whole solar system.
+- [x] Add clear activation feedback and preserve the original orbit target for return behavior.
+- [x] Add short tracking-loss tolerance while pinch activation is held.
 
 Acceptance criteria:
 
-- [ ] Hand near a body highlights it clearly.
-- [ ] Highlight does not flicker rapidly between nearby bodies.
-- [ ] Pinch near a highlighted body activates it.
-- [ ] Activated body stops orbiting but keeps self-rotating.
-- [ ] Non-selected bodies continue normal motion.
-- [ ] Activated body does not drag or scale the whole solar system.
-- [ ] Each of the nine bodies can be highlighted and activated.
-- [ ] `npm run build` passes.
-- [ ] Behavior is manually tested or marked `NEEDS_MANUAL_VERIFY`.
+- [x] Hand near a body highlights it clearly in code and dev preview; needs real-camera verification.
+- [x] Highlight uses hysteresis and does not flicker rapidly between nearby bodies in controller tests; needs real-camera verification.
+- [x] Pinch near a highlighted body activates it in controller tests; needs real-camera verification.
+- [x] Activated body stops orbiting but keeps self-rotating.
+- [x] Non-selected bodies continue normal motion.
+- [x] Switching from A to B leaves B as the only activated body and lets A resume its original orbit.
+- [x] Activated body does not drag or scale the whole solar system.
+- [x] Each of the nine bodies can be highlighted and activated through the unified pipeline; needs real-camera verification.
+- [x] `npm run build` passes.
+- [x] Behavior is marked `NEEDS_MANUAL_VERIFY` for real webcam hover/pinch testing.
 
 Suggested Codex prompt:
 
@@ -715,22 +711,21 @@ Done when:
 - TODO.md is updated.
 ```
 
-## Milestone 8 — Planet Focus View and Single-Planet Controls
+## Milestone 8 — Planet Focus View and Support Controls
 
 Status: `TODO`
 
-Goal: Enter a single-planet focus view from an activated body, then let the user inspect, zoom, pan, support, and reset the focused body while it keeps self-rotating.
+Goal: Enter a single-planet focus view from an activated body, then let the user inspect, support-move, release-to-floating, and later return the focused body while it keeps self-rotating. Retired one-hand focus zoom, pan, and reset controls must not be implemented.
 
 Tasks:
 
 - [ ] Add `PlanetFocusView`, `PlanetFocusControlled`, and `PlanetFocusFloating` lifecycle states or equivalent substates.
 - [ ] Detect the entry gesture: main-hand pinch lock on the activated body plus off-hand five-finger open/spread.
 - [ ] Dim and interaction-lock the background solar system while preserving basic motion.
-- [ ] Keep the focused body self-rotating during activation, focus, zoom, pan, support-follow, floating, and inspection.
-- [ ] Map one-hand spread to focused-body zoom-in.
-- [ ] Map one-hand contraction to focused-body zoom-out.
-- [ ] Map contract-to-fist held for about 2 seconds to focused-body default size and position.
-- [ ] Map one-hand pushes to focused-body pan.
+- [ ] Keep the focused body self-rotating during activation, focus, support-follow, floating, and inspection.
+- [ ] Do not map one-hand spread/contraction to focused-body zoom.
+- [ ] Do not map contract-to-fist hold to focused-body reset.
+- [ ] Do not map one-hand pushes to focused-body pan.
 - [ ] Detect support-follow using stable conditions: hand open, palm center below the body, close to the lower body edge, low velocity, and 300-500ms dwell.
 - [ ] Keep the focused body constrained within the visible screen during support-follow.
 - [ ] Ensure focused-body controls do not affect the whole solar-system transform.
@@ -741,9 +736,9 @@ Acceptance criteria:
 - [ ] Main-hand pinch lock plus off-hand open/spread enters `PlanetFocusView`.
 - [ ] Background solar system is dimmed, interaction-locked, and still has basic motion.
 - [ ] Focused body remains self-rotating throughout all focus interactions.
-- [ ] One-hand spread/contraction zooms the focused body.
-- [ ] Fist hold for about 2 seconds restores default focus size and position.
-- [ ] One-hand push pans the focused body without moving the solar system.
+- [ ] One-hand spread/contraction does not zoom the focused body.
+- [ ] Fist hold does not reset the focused-body size or position.
+- [ ] One-hand push does not pan the focused body.
 - [ ] Support-follow moves the focused body and keeps it inside the screen.
 - [ ] `npm run build` passes.
 - [ ] Behavior is manually tested or marked `NEEDS_MANUAL_VERIFY`.
@@ -752,7 +747,7 @@ Suggested Codex prompt:
 
 ```text
 Goal:
-Implement Milestone 8: planet focus view and single-planet controls.
+Implement Milestone 8: planet focus view and support controls.
 
 Context:
 Read @ar_solar_system_prd.md sections 5.5, 7.10, and 7.11.
@@ -760,12 +755,13 @@ Read @ar_solar_system_prd.md sections 5.5, 7.10, and 7.11.
 Constraints:
 - A focused body keeps self-rotating; do not freeze self-rotation.
 - Background solar-system interaction is locked during PlanetFocusView.
-- Single-body manipulation must not affect solar-system scale or rotation.
+- Retired one-hand focus zoom/pan/reset gestures must remain no-ops.
+- Single-body manipulation must not affect solar-system scale, pan, or rotation.
 - Keep the focused body inside the visible screen during support-follow.
 - Update docs if any interaction mapping changes.
 
 Done when:
-- Activation -> focus view -> zoom/pan/support works.
+- Activation -> focus view -> support/floating works, and retired one-hand focus zoom/pan/reset gestures remain inactive.
 - npm run build passes.
 - TODO.md is updated.
 ```
@@ -907,7 +903,7 @@ Status: `TODO`
 
 Status: `TODO`
 
-Goal: Reduce repeated manual webcam gesture regression testing by adding deterministic tests first, then structured gesture replay, and finally browser-level replay once M5.5 is stable.
+Goal: Reduce repeated manual webcam gesture regression testing by keeping deterministic tests first, then adding structured gesture replay and browser-level replay only after the active startup, opening, endpoint, and planet-focus surfaces are stable.
 
 Reference document:
 
@@ -916,14 +912,14 @@ Reference document:
 Plan:
 
 - [x] Document the latest test strategy, including the user review that leaf pure functions and controller tests should come before replay/E2E.
-- [ ] Add Vitest (`environment: 'node'`) without changing `main.ts` or the live camera/runtime bootstrap.
-- [ ] Add a determinism guardrail test that fails if `src/interaction/**` uses `Math.random`/`Date.now`/`performance.now`.
-- [ ] Extract synthetic builders from `scripts/verify-m5_5-solar-inspection.ts` into shared `tests/helpers/` (single source, not re-written).
-- [ ] Add Layer 0 tests for pure modules: `math`, `coordinateMapping`, `handPairing`, `palmOrientation`, `handPose`, and `intentScoring`.
-- [ ] Add Layer 1 controller sequence tests for startup, solar opening, free-hover/re-grip basics, and reverse collapse using synthetic `TrackingSnapshot` data and injected timestamps; reuse `solarInspectionVerification` as an oracle where available.
-- [ ] Absorb the M5.5 verification cases into a Vitest gesture test and reduce `npm run verify:m5.5` to an alias instead of keeping two parallel harnesses.
+- [x] Add Vitest (`environment: 'node'`) without changing `main.ts` or the live camera/runtime bootstrap.
+- [x] Add a determinism guardrail test that fails if `src/interaction/**` uses `Math.random`/`Date.now`/`performance.now`.
+- [x] Add shared synthetic builders under `tests/helpers/` for hand landmarks, tracking snapshots, test camera, and fixed thresholds.
+- [x] Add Layer 0 tests for pure modules: `math`, `coordinateMapping`, `handPairing`, `palmOrientation`, `handPose`, and `intentScoring`.
+- [x] Add Layer 1 controller sequence tests for startup, solar opening, whole-system release/re-grip basics, and reverse collapse using synthetic `TrackingSnapshot` data and injected timestamps.
+- [x] Remove the retired M5.5 solar-inspection verification harness instead of preserving `solarInspectionVerification` or `npm run verify:m5.5`.
 - [ ] Add CI (GitHub Actions) running `typecheck` + unit + gesture + `build` on push/PR.
-- [ ] Defer JSON fixture replay (multi-frame sequences) until the pure/controller test layers are useful and M5.5 has stabilized.
+- [ ] Defer JSON fixture replay (multi-frame sequences) until the pure/controller test layers are useful and the currently active interaction surfaces have stabilized.
 - [ ] Defer Playwright/browser replay and any `main.ts`/`TrackingSource` seam until replay timing requirements are clear.
 
 Constraints:
@@ -954,13 +950,14 @@ Manual verification handoff rule:
 7. Pause hands halfway and confirm opening does not auto-complete.
 8. Complete opening and confirm the solar system appears where the hands opened it and can later hover where released.
 9. Release the endpoint handle and confirm the solar system stays at the released transform instead of following the torso or screen center.
-10. In `SolarFreeHover`, use one-hand spread/contract to confirm solar inspection zoom and shrink.
-11. In `SolarFreeHover`, use one-hand push to pan and contract-to-fist for about 2 seconds to reset the solar-system view.
+10. In `SolarFreeHover`, use one-hand spread/contract/fist/push and confirm these retired M5.5 motions do not zoom, shrink, reset, or pan the solar-system view.
+11. Bring both hands back near the left/right endpoints and confirm endpoint re-grip still works after the retired one-hand motions.
 12. Hover over each interactive body and confirm label/glow.
 13. Pinch-activate a body and confirm it stops orbiting but keeps self-rotating.
 14. Hold the pinch lock with the main hand and open/spread the off-hand to enter the planet focus view.
-15. Support the focused body, then use off-hand PinchTap to place it down; confirm it floats in the focus view and keeps self-rotating.
-16. Pinch the floating body again and throw toward the orbit target; confirm it returns to orbit and exits back to the solar-system view.
+15. In the focus view, confirm one-hand spread/contract/fist/push does not zoom, pan, or reset the focused body.
+16. Support the focused body, then use off-hand PinchTap to place it down; confirm it floats in the focus view and keeps self-rotating.
+17. Pinch the floating body again and throw toward the orbit target; confirm it returns to orbit and exits back to the solar-system view.
 17. Repeat with Moon and Saturn.
 18. Run recording mode and confirm debug UI is hidden.
 
@@ -983,43 +980,42 @@ Use this checklist to verify the hand-only closed-to-pull startup state.
 | Lost hands return idle | Hide one or both hands for longer than about 2.5 seconds. | Debug panel `Both hands`, `Lost-hand hold`, and `Startup state`. | `Both hands` becomes `missing`; `Lost-hand hold` becomes `inactive`; `Startup state` returns to `EmptyIdle` or another appropriate idle state. |
 | Pull stops return idle | Enter `PullArmed`, then stop moving the hands apart and hold them steady. | Debug panel `Startup state` and `Distance velocity`. | After a short pause, `Startup state` returns to `EmptyIdle` or another appropriate idle state. |
 | No 3D content in startup states | Repeat any `HandsClosed` or `PullArmed` test. | Camera preview. | Entering `HandsClosed` or `PullArmed` never displays solar-system content. |
+| No restart after opening | Open the solar system until it reaches `SolarFreeHover`, then bring both hands/fists together and pull apart away from the endpoints. | Camera preview, status summary, and Debug `Startup state`. | The app does not re-enter `HandsClosed` or `PullArmed`; the visible solar system remains in the active/free-hover flow unless the hands deliberately re-grip endpoints. |
 
 ### Milestone 3.5 Manual Verification Checklist
 
 Use this checklist to verify the debug-only whole-system interaction protocol before Milestone 4.
 
-Note (2026-06-23): after M4 visible solar content is active, the user-facing top-right status summary follows `interactionState` plus `solarReason`. The legacy `Whole control` / `wholeSystemIntent` values are protocol-debug rows only, and should not be used as the main status explanation for visible solar-system behavior. Its scale/rotation/palm rows are historical protocol diagnostics only; M5.5 is the current user-facing solar inspection control model.
+Note (2026-06-24): after M4 visible solar content is active, the user-facing top-right status summary follows `interactionState` plus `solarReason`. The legacy `Whole control` / `wholeSystemIntent` values are protocol-debug rows only, and should not be used as the main status explanation for visible solar-system behavior. Its scale/rotation/palm rows are historical protocol diagnostics only, and retired M5.5 one-hand solar-inspection rows should not appear as current product controls.
 
 | Item | User action | Where to look | Pass condition |
 |---|---|---|---|
 | M3.5 empty scene | Open the page, click `开启摄像头`, turn on `Debug`, and keep hands out of view. | Camera preview, debug panel, and debug overlay. | Camera preview shows no 3D sun, planets, orbits, nebula, particles, singularity, or model. `Whole control` reads `Inactive`. |
 | Legacy protocol debug fields | Keep `Debug` open and perform any M3.5 action. | Debug panel protocol rows such as `Whole control`, release/re-grip fields, intent scores, and endpoint circles. | Legacy protocol values remain inspectable in Debug. The top-right status card should not show stale protocol labels such as `Lock`, `Re-grip`, or `Transition` for visible M4 solar behavior. |
-| Protocol arms after pull | Close both hands anywhere visible, then pull them apart until `Startup state` reaches `PullArmed`. | Debug panel `Whole control`, `Control confidence`, and 2D endpoint circles. | `Whole control` changes from `Inactive` to `VirtualOpeningHandle` and then `SolarHandleControl`. Two small 2D debug endpoint circles appear near the hands only when `Debug` is on. |
+| Protocol arms after pull | From `EmptyIdle`, close both hands anywhere visible until `Startup state` reaches `HandsClosed`, then pull them apart until `Startup state` reaches `PullArmed`. | Debug panel `Whole control`, `Control confidence`, and 2D endpoint circles. | `Whole control` changes from `Inactive` to `VirtualOpeningHandle` and then `SolarHandleControl`. Two small 2D debug endpoint circles appear near the hands only when `Debug` is on. |
 | Palm orientation values | Hold both hands visible and slowly rotate each palm toward the camera, sideways, and upward. | Debug panel `Visual L palm normal`, `Visual R palm normal`, `Visual L palm facing/up`, and `Visual R palm facing/up`. | Palm normal values update continuously. Facing/up scores stay in the `0.00-1.00` range and visibly change when palm orientation changes. |
 | Bent-hand hold | While `Whole control` is `SolarHandleControl`, keep both hands slightly curved as if holding two handles. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Grip hold`, `Release stable`, `Release gesture`, and `Whole control`. | `Grip hold` reads `yes`, `Release stable` stays near `0ms`, `Release gesture` stays `no`, and `Whole control` stays in `SolarHandleControl`. The virtual endpoints continue to follow the hands. |
 | Legacy palms-up hold diagnostic | While `Whole control` is `SolarHandleControl`, turn both palms upward with slightly curved fingers as if holding a tray, then gently move the two-hand handle. | Debug panel `Rotation intent`, `Release blocked`, `Grip hold`, `Release stable`, `Release gesture`, and `Whole control`. | Legacy `Rotation intent` may change, and `Release blocked` may read `rotationHold` or `cuppedGrip`; this is only a debug/protocol diagnostic. `Grip hold` should read `yes`, `Release stable` should not climb to the release threshold, and `Whole control` should remain `SolarHandleControl`. |
 | Open-hand release | While `Whole control` is `SolarHandleControl`, fully open both hands with fingers clearly extended and stop rotating. After `Release stable` climbs past about `280ms` and `Release gesture` reads `yes / lock on`, slowly pull the hands back or relax them. | Debug panel `Visual L open/grip`, `Visual R open/grip`, `Release stable`, `Release blocked`, `Release gesture`, `Whole control`, and the 2D endpoint circles. | Open scores rise, grip scores fall, `Release blocked` reads `none`, `Release stable` climbs past about `280ms`, `Release gesture` becomes `yes / lock on`, `Whole control` changes to `ReleaseCandidate`, then becomes `SolarFreeHover`. The endpoint circles freeze even if the fingers relax during slow withdrawal, and `Whole control` must not jump back to `SolarHandleControl` until both hands first leave the frozen endpoints and then intentionally return. |
-| Legacy scale-intent diagnostic | While `Whole control` is `SolarHandleControl`, move both hands farther apart and closer together without fully closing. | Debug panel `Scale intent`, `Hand distance`, `Distance velocity`, and `Collapse intent`. | Legacy `Scale intent` may change with hand distance; this is only a debug/protocol diagnostic. Current user-facing solar inspection zoom belongs to M5.5 one-hand controls after `SolarFreeHover`. |
+| Legacy scale-intent diagnostic | While `Whole control` is `SolarHandleControl`, move both hands farther apart and closer together without fully closing. | Debug panel `Scale intent`, `Hand distance`, `Distance velocity`, and `Collapse intent`. | Legacy `Scale intent` may change with hand distance; this is only a debug/protocol diagnostic. `SolarFreeHover` no longer has one-hand solar inspection zoom; it waits for endpoint re-grip or reverse collapse. |
 | Reverse-collapse intent | From `SolarHandleControl`, keep moving both hands inward until they are close together. | Debug panel `Whole control` and `Collapse intent`. | `Collapse intent` rises toward `1.00`; `Whole control` can enter `SolarClosing` and then reset toward `Inactive` when fully closed. No 3D content appears. |
 | Fallback release | Reach `SolarHandleControl`, then move both hands out of frame or hide them for a few seconds. | Debug panel `Whole control`, `Release confidence`, and endpoint circles. | `Whole control` changes to `ReleaseCandidate`, then `SolarFreeHover`. The virtual endpoint circles remain frozen at the last stable positions. |
 | Re-grip frozen endpoints | After `SolarFreeHover`, first move both hands clearly away from the frozen endpoint circles, then bring both hands back near those two circles. You should not need to perfectly realign your body or camera distance. | Debug panel `Release gesture`, `Whole control`, `Re-grip confidence`, `Re-grip reason`, and `Visual endpoint matched`. | After the hands leave the endpoints, `Release gesture` changes to `no / lock off`. When the hands return near the circles, `Re-grip reason` should become `endpoint` or `wideMagnet`, `Re-grip confidence` rises, and `Whole control` changes through `ReGripCandidate` back to `SolarHandleControl`. |
 | Legacy rotation-intent diagnostic | While `SolarHandleControl`, hold palms generally upward or tilted away from camera and gently rotate/twist the two-hand handle. | Debug panel `Rotation intent`, `Rotation intent score`, palm facing/up scores, and palm normals. | Legacy `Rotation intent` may change from `none` to `rotate2d` or `rotate3d`; this is only protocol/debug output and not a current product acceptance gesture. |
 | Whole vs pinch separation | While `SolarHandleControl`, pinch with one hand as if activating a future planet. | Debug panel `Control confidence`. | `Control confidence` should drop rather than treating a strong pinch as better whole-system control. No planet is activated in this milestone. |
 
-### Milestone 5.5 Manual Verification Checklist
+### Retired M5.5 Manual Verification Checklist
 
-Use this checklist to verify the current solar-system inspection controls after the whole system is released into `SolarFreeHover`.
+Use this checklist to verify that the retired one-hand solar inspection controls no longer move the solar system after it is released into `SolarFreeHover`.
 
 | Item | User action | Where to look | Pass condition |
 |---|---|---|---|
-| Reach free hover | Open the camera, pull the solar system open, enter endpoint control, then release the endpoint handle so it floats. | Camera preview, top-right status summary, and Debug panel. | Solar content remains visible at the released transform. `Startup state` / interaction state reads `SolarFreeHover`, and the status summary says the system is waiting for one-hand inspection or endpoint re-grip. |
-| One-hand zoom in | In `SolarFreeHover`, show one hand near the preview and spread the fingers open while keeping the hand center mostly still, then naturally relax the hand back. A brief second-hand flash at the edge should not reset the gesture (dominant-hand lock). | Camera preview and Debug rows `Solar inspect`, `Inspect spread`, `Inspect spread velocity`, and `Inspect scale / offset`. | The solar system grows during the opening phase. `Solar inspect` becomes `zoomIn / active`, `Inspect spread velocity` is positive, and inspection scale rises above `1.00`. The natural return should not immediately produce a matching `zoomOut` shrink jump. |
-| One-hand shrink | In `SolarFreeHover`, show exactly one open hand, hold the open pose briefly, then contract the fingers while keeping the hand center mostly still; after shrinking, naturally relax the hand. | Camera preview and Debug rows `Solar inspect`, `Inspect spread velocity`, and `Inspect scale / offset`. | The solar system shrinks during the closing phase. `Solar inspect` becomes `zoomOut / active`, `Inspect spread velocity` is negative, and inspection scale decreases from its previous value. The natural relaxation should not immediately produce a matching `zoomIn` jump. |
-| One-hand pan | After zooming in, keep one hand open enough, let the spread feel stable, then push it left/right/up/down without changing finger spread much. | Camera preview and Debug rows `Solar inspect`, `Inspect pan score`, `Inspect palm velocity`, and `Inspect scale / offset`. | The solar system pans smoothly in the push direction after the pan clutch engages. `Solar inspect` becomes `pan / active`, `Inspect pan score` rises above `0.00`, and inspection offset changes without obvious frame-to-frame jumping. |
-| Fist reset hold | In `SolarFreeHover`, contract the same hand into a fist and hold for about 2 seconds. | Camera preview, top-right status summary, and Debug rows `Solar inspect`, `Inspect reset hold`, and `Inspect scale / offset`. | During the hold, `Solar inspect` reads `resetHold / active` and reset hold time climbs toward about `2000ms`. After completion, `Solar inspect` reads `reset / active`, inspection scale returns near `1.00`, offset returns near `0, 0, 0`, and endpoints are visible/recoverable. |
-| Endpoint control priority | While in or returning to `SolarHandleControl`, keep one hand moving or spreading as if trying M5.5 controls. | Debug panel and camera preview. | Single-hand inspection does not move the solar system during endpoint control. `Solar inspect` reads `inactive / idle` or remains non-active while `SolarHandleControl` owns the transform. |
-| Re-grip after inspection | Pan or zoom the free-hovered solar system, then bring both hands near the visible left/right endpoints. | Camera preview and Debug rows `Startup state`, `Solar reason`, and endpoint/re-grip rows. | Re-grip still works at the visually updated endpoint positions, and the state can return to `SolarHandleControl` without snapping back to the old release center. |
-| Slow gesture stability | Repeat slow spread, natural hand return, stable-open contract, natural relaxation, and slow push motions. | Top-right status summary and Debug rows `Solar inspect`, `Inspect spread velocity`, and `Inspect pan score`. | The classification is understandable and does not rapidly flicker between zoom and pan during deliberate slow gestures. Rebound motions after zoom-in/zoom-out should be ignored instead of becoming the opposite zoom. If it does flicker, keep Milestone 5.5 in `NEEDS_MANUAL_VERIFY` and tune thresholds. |
+| Reach free hover | Open the camera, pull the solar system open, enter endpoint control, then release the endpoint handle so it floats. | Camera preview, top-right status summary, and Debug panel. | Solar content remains visible at the released transform. `Startup state` / interaction state reads `SolarFreeHover`, and the status summary says the system is waiting for endpoint re-grip or reverse collapse, not one-hand inspection. |
+| One-hand spread no-op | In `SolarFreeHover`, show one hand and spread the fingers open. | Camera preview, top-right status summary, and Debug panel. | The solar-system scale and position stay at the released transform. Debug does not show `Solar inspect`, M5.5 checklist, inspection scale, or inspection offset rows. |
+| One-hand contraction no-op | In `SolarFreeHover`, show one open hand, then contract the fingers. | Camera preview, top-right status summary, and Debug panel. | The solar system does not shrink and does not enter a one-hand inspection state. Endpoint/re-grip rows remain the only relevant whole-system controls. |
+| Fist hold no-op | In `SolarFreeHover`, close one hand into a fist and hold it for about 2 seconds. | Camera preview, top-right status summary, and Debug panel. | The solar-system view does not reset, and no reset timer/checklist appears. |
+| One-hand push no-op | In `SolarFreeHover`, push one hand left/right/up/down. | Camera preview, top-right status summary, and Debug panel. | The solar system does not pan. Any visible transform changes should come only from valid two-hand endpoint control, not from a single-hand push. |
+| Endpoint re-grip still works | After trying the no-op one-hand motions, bring both hands near the visible left/right endpoints. | Camera preview and Debug rows `Startup state`, `Solar reason`, and endpoint/re-grip rows. | Re-grip still works at the released endpoint positions, and the state can return to `SolarHandleControl` without needing or exposing M5.5 inspection state. |
 
 ## Open Questions to Resolve During Implementation
 
@@ -1053,6 +1049,60 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 
 ## Change Log
 
+### 2026-06-24 — Milestone 7 crash and activation-switch fix
+
+- Bug fix from user evidence: `/var/folders/cw/d9jps_sj2gd8j6tvg92z2c3m0000gn/T/codex-clipboard-e493c513-12bc-4ed7-ab54-13648310e106.png` showed `Invalid interaction transition: SolarFreeHover -> PlanetActivated`, which could stop the render loop when a released solar system tried to activate a body.
+- Implementation update: the state machine now permits direct `SolarActive` / `SolarFreeHover` to `PlanetActivated` transitions; activation can switch from A to B through the unified controller; clearing or switching A makes it resume original orbiting while the currently activated body remains the only paused-orbit body.
+- Product clarification: an activated body pauses only its original orbit/position movement and must keep natural self-rotation. When the user moves from A to B, A resumes original orbiting immediately.
+- Verification update: added regression coverage for direct free-hover activation, A-to-B activation switching, and the placeholder solar-system rule that paused orbit does not stop self-rotation and previous bodies resume orbit after activation switches.
+- Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/stateMachine.ts`, `src/interaction/planetActivationController.ts`, `tests/unit/stateMachine.test.ts`, `tests/unit/solarSystemInteraction.test.ts`, and `tests/gesture/planetActivationController.test.ts`.
+- Remaining ambiguity: M7 remains `NEEDS_MANUAL_VERIFY` until the user confirms the real webcam flow no longer freezes and the A/B activation behavior feels correct in-browser.
+
+### 2026-06-24 — Milestone 7 real-camera evidence fix
+
+- Bug fix from user evidence: `~/ChromeDownload/ar-solar-gesture-log-2026-06-23T17-54-45-833Z.json` showed only 12 `BodyHover` frames, no `PlanetActivated` frames, and hover was driven by palm-center proximity while the user's pinch fingertips were the intended target. The lowest logged activation-ratio near hover was about `0.42`, which the old synthetic-only `0.18` start threshold rejected.
+- Implementation update: M7 hover/activation now chooses the nearest hand interaction point among thumb/index midpoint, thumb tip, index tip, and palm center; pinch start/end thresholds were retuned to `0.48 / 0.62` with screen-pixel distance guards; general hit radius was expanded so real fingertip targeting is less brittle.
+- Debug update: the Debug panel and recorder now include `pinchDistancePx` and `hoverPointKind`, so future recordings can distinguish palm-center hits from fingertip/pinch-midpoint hits.
+- Verification update: added a regression test where the palm center is far from Saturn but the pinch midpoint is on Saturn, and activation must enter `PlanetActivated`.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/planetActivationController.ts`, `src/rendering/debugOverlay.ts`, `src/solar/solarSystem.ts`, `src/utils/types.ts`, and `tests/gesture/planetActivationController.test.ts`.
+- Remaining ambiguity: the user should re-run the real webcam checklist to confirm the new thresholds and hit radii feel right across all nine bodies.
+
+### 2026-06-24 — Milestone 7 hover and pinch activation implemented
+
+- Implementation update: added the unified `PlanetActivationController` for screen-space body hover, nearest-target hysteresis, pinch start/end hysteresis, `BodyHover` / `PlanetActivated` transitions, and short tracking-loss tolerance while pinch activation is held.
+- Rendering update: interactive bodies now expose projected screen targets, expanded Mercury/Moon hit areas, hover/activated glow rings, labels, orbit highlight, and orbit pause for the activated body while self-rotation continues.
+- State/debug update: replaced the old code-only `BodyGrabbed` / `BodyDetached` names with product-aligned `PlanetActivated` and future focus states; debug/status/recorder output now includes hover distance, pinch ratio, active hand, activation reason, and original orbit data.
+- Verification: added `tests/gesture/planetActivationController.test.ts`, extended `tests/gesture/solarOpeningLifecycle.test.ts`, and extended `tests/unit/coordinateMapping.test.ts`. `npm run typecheck`, `npm test`, `npm run build`, `npm run lint --if-present`, and `git diff --check` pass. Local Chrome CDP checks confirmed `/` keeps the WebGL canvas transparent while `/?solarPreview=1` renders nonblank solar content on desktop and mobile viewports. Real webcam hover/pinch feel still needs manual verification before M7 can move from `NEEDS_MANUAL_VERIFY` to `DONE`.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/coordinateMapping.ts`, `src/interaction/gestureDebugRecorder.ts`, `src/interaction/planetActivationController.ts`, `src/interaction/solarOpeningController.ts`, `src/interaction/stateMachine.ts`, `src/main.ts`, `src/rendering/debugOverlay.ts`, `src/rendering/interactionStatusSummary.ts`, `src/rendering/landmarkOverlay.ts`, `src/solar/celestialBody.ts`, `src/solar/solarSystem.ts`, `src/utils/types.ts`, `tests/gesture/planetActivationController.test.ts`, `tests/gesture/solarOpeningLifecycle.test.ts`, and `tests/unit/coordinateMapping.test.ts`.
+- Remaining ambiguity: real camera testing must tune effective hit radii, hover hysteresis feel, and pinch thresholds for different lighting, hand sizes, and webcam distances.
+
+### 2026-06-24 — Milestone 6 celestial body registry completed
+
+- Implementation update: completed M6 by tightening the celestial-body registry around the nine MVP interactive targets, adding explicit interactive body ids, body names, activation/focus metadata, original orbit transform helpers, and label sprites that can be shown later during hover/activation/focus.
+- Rendering/data update: the placeholder solar-system facade now exposes reusable body definitions, world positions, label visibility, and original orbit transforms for M7-M9 without adding one-off per-planet activation or focus code.
+- Verification: added `tests/unit/solarSystemData.test.ts` to cover registry uniqueness, the nine MVP targets, Moon parentage, Saturn ring metadata, and activation/focus/return metadata. `npm run typecheck`, `npm test`, `npm run build`, and `git diff --check` pass. Local Chrome CDP checks also confirmed `/` keeps the WebGL canvas transparent while `/?solarPreview=1` renders nonblank, moving solar content on desktop and mobile viewports.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/solar/solarSystemData.ts`, `src/solar/celestialBody.ts`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemData.test.ts`.
+- Remaining ambiguity: none for M6 data/model scope; M7 still owns real hover/highlight/pinch activation behavior.
+
+### 2026-06-24 — M5.5 one-hand inspection and focus one-hand controls retired
+
+- Requirement change: the user removed M5.5 one-hand spread zoom, one-hand contraction shrink, fist-hold reset, and one-hand push pan for the free-hovered solar system.
+- Requirement change: the user also removed single-planet focus one-hand zoom, pan, and reset controls; focused bodies should remain self-rotating and support/floating/return behavior stays in scope.
+- Implementation update: deleted the solar-inspection controller path, runtime M5.5 checklist/export/reset/report/verification helpers, `verify:m5.5`, and the dedicated solar-inspection gesture test. `SolarFreeHover` now preserves the last stable transform and waits for endpoint re-grip or reverse collapse.
+- Documentation update: this entry supersedes the 2026-06-23 M5.5 implementation/tuning/checklist entries below, which remain only as project history.
+- Verification: `npm run typecheck`, `npm run test:gesture`, `npm test`, `npm run build`, and `git diff --check` passed. `npm run lint` is unavailable because this repo has no `lint` script.
+- Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `docs/testing/test-and-replay-harness.md`, `index.html`, `package.json`, `src/main.ts`, `src/interaction/solarOpeningController.ts`, `src/rendering/debugOverlay.ts`, `src/rendering/interactionStatusSummary.ts`, `src/utils/types.ts`, and deleted `src/interaction/solarInspection*.ts` plus `tests/gesture/solarInspectionController.test.ts`.
+- Remaining ambiguity: real camera verification should confirm the retired one-hand free-hover gestures are no-ops; focus-view no-op behavior should be manually verified when the planet-focus controller is implemented.
+
+### 2026-06-24 — Startup closed-to-pull chain gated to empty scene
+
+- Changed requirement: `HandsClosed` can only be entered from `EmptyIdle` while the visible scene is still the empty camera view, and `PullArmed` can only be entered from the preceding `HandsClosed` baseline.
+- Implemented a startup-controller guard that clears startup gesture memory outside the empty startup chain, including `CameraReady`, so pre-empty or later-scene hand poses cannot be inherited as startup evidence.
+- Added gesture tests for CameraReady evidence isolation and for ignoring closed-to-pull motion in non-empty scene states.
+- Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, `docs/testing/testing-todo.md`, `docs/testing/test-and-replay-harness.md`, `src/interaction/handStartupGesture.ts`, and `tests/gesture/handStartupGesture.test.ts`.
+- Manual verification: user confirmed after opening/free-hovering that ordinary two-hand close/pull motions away from endpoints do not look like a restart.
+- Remaining ambiguity: none for the empty-scene startup gate; broader real-camera threshold tuning remains tracked by the milestone-level manual verification notes.
+
 ### 2026-06-23 — Gesture pipeline stabilization (8-task refactor)
 
 - Stabilized the hand-tracking → gesture pipeline before adding new gestures, targeting real-camera jitter / over-sensitivity / dropouts. No new product gestures; no speculative threshold tuning; the initial empty scene and the disabled pose tracking are unchanged.
@@ -1060,8 +1110,8 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - Pairing before smoothing (`gestureInputFrame.ts`): `HandTracker` builds raw hands, assigns visual-left/right by trajectory, then smooths per visual slot — a MediaPipe handedness flip during a crossing no longer swaps smoother history.
 - Screen-plane distances use 2D x/y only (startup, primitives, solar-opening), removing noisy image-landmark z from "are the hands close / far" and the pull axis.
 - `TrackedHand.worldLandmarks` added; hand-shape (open-hand / fist in `handPose`, pinch in `intentScoring`) prefers metric world landmarks when present, with image fallback.
-- `SolarActive` releases to `SolarFreeHover` when the hands stop holding the endpoints, so one-hand inspection starts after opening without an extra endpoint re-grip.
-- Single-hand inspection locks onto a dominant hand instead of requiring exactly one detected hand, so a weak second-hand blip no longer resets the gesture.
+- `SolarActive` releases to `SolarFreeHover` when the hands stop holding the endpoints, so the released transform can persist without an extra endpoint re-grip. Historical note: the one-hand inspection behavior originally described here was removed on 2026-06-24.
+- Historical note: single-hand inspection dominant-hand locking from this refactor was removed with the retired M5.5 solar-inspection controller on 2026-06-24.
 - Tests: 85 → 97 passing. Added regression tests for fresh-frame gating, opening→free-hover, second-hand blip, 2D-distance vs z jitter, visual-identity-before-smoothing, and world-landmark hand shape.
 - Affected files: `src/main.ts`, `src/tracking/handTracker.ts`, `src/utils/types.ts`, `src/interaction/{freshFrameGate,gestureInputFrame,handStartupGesture,handPrimitives,handPose,intentScoring,solarOpeningController,solarInspectionController}.ts`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, and new `tests/` files.
 - Remaining ambiguity: real-camera verification still needed (handedness-flip stability, feel, thresholds); the structural fixes intentionally avoided threshold tuning. No product behavior / acceptance change, so `ar_solar_system_prd.md` is unchanged.
@@ -1086,7 +1136,7 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 
 - Workflow update: added a dedicated testing strategy document that prioritizes leaf pure-function tests and controller sequence tests before JSON replay or browser E2E.
 - Planning update: added a cross-cutting `Test & Replay Harness` workflow to TODO instead of inserting a stale `Milestone 3.7` into the product timeline.
-- Durable rule update: AGENTS now points future sessions to the test strategy document and cautions against touching `main.ts`/runtime replay seams before M5.5 stabilizes.
+- Durable rule update: AGENTS pointed future sessions to the test strategy document and cautioned against touching `main.ts`/runtime replay seams before the then-active M5.5 surface stabilized. Superseded note: M5.5 one-hand inspection was removed on 2026-06-24, so current replay gating is based on active interaction surfaces.
 - Affected files: `docs/testing/test-and-replay-harness.md`, `TODO.md`, `TODO.zh-CN.md`, `AGENTS.md`, `scripts/sync-agent-repo.mjs`.
 - Remaining ambiguity: exact Vitest test files and fixture formats are deferred until the first implementation slice.
 
@@ -1226,7 +1276,7 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 
 ### 2026-06-22 — Planet focus gesture model and milestone plan updated
 
-- Requirement refinement: replaced the old body grab/freeze/release flow with the new planet interaction model: hover, pinch activation, main-hand pinch lock plus off-hand spread to enter `PlanetFocusView`, always-on self-rotation, single-planet zoom/pan/support, off-hand `PinchTap` release-to-floating, and pinch-and-throw return.
+- Requirement refinement: replaced the old body grab/freeze/release flow with the new planet interaction model: hover, pinch activation, main-hand pinch lock plus off-hand spread to enter `PlanetFocusView`, always-on self-rotation, then-current single-planet zoom/pan/support, off-hand `PinchTap` release-to-floating, and pinch-and-throw return. Superseded note: single-planet one-hand zoom/pan/reset was removed on 2026-06-24; support/floating/return remain.
 - Added Milestone 5.5 for one-hand solar-system free-hover inspection controls, and rewrote Milestones 6-9 around interactive body metadata, pinch activation, planet focus view, PinchTap release, floating focus, and throw return.
 - Updated PRD and durable agent rules so activated/focused bodies stop original orbiting but keep self-rotation; normal place-down does not return to orbit or exit the focus view.
 - Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, and `~/CodeXProject/物理宇宙资料/手势操控语义整理.md`.

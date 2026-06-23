@@ -1,7 +1,7 @@
 # TODO.zh-CN.md
 
 项目：AR Solar System Webcam Gesture Demo
-当前规划基线：PRD v0.5，2026-06-23
+当前规划基线：PRD v0.6，2026-06-24
 主要交付目标：Web Demo 优先
 
 ## 如何使用本文件
@@ -43,7 +43,7 @@
 
 - [ ] Web Demo 优先。
 - [ ] 初始 AR 场景为空：在拉开手势之前，不显示 3D 太阳、行星、轨道、星云、奇点、星尘或装饰性 3D 物体。
-- [ ] 太阳系只在用户双手/双拳在摄像头可见画面任意位置合拢并向两侧拉开之后出现。
+- [ ] 太阳系只在画面处于 `EmptyIdle` 空场，用户双手/双拳在摄像头可见画面任意位置合拢进入 `HandsClosed`，再从该基线向两侧拉开进入 `PullArmed` 之后出现。
 - [ ] 只合拢双手/双拳本身不会播放任何太阳系动画，也不会显示 3D 内容。
 - [ ] 展开进度由手距驱动；如果手停住，不应自动展开完成。
 - [ ] 展开端点需要视觉上跟随双手。
@@ -51,13 +51,13 @@
 - [ ] 松开整体双手控制后，太阳系保持悬浮在最后稳定 transform。
 - [ ] 双手重新扶住左右端点后，可以继续进行整体把手控制，用于放置、松手和收起。
 - [ ] 已展开状态下，双手扶住端点向内合拢会让太阳系反向收起，并在完全合拢后回到空摄像头画面。
-- [ ] 当前太阳系观察控制以 Milestone 5.5 为准：进入 `SolarFreeHover` 后，单手五指张开放大、收拢缩小、握拳保持复位、推动平移。
+- [ ] Milestone 5.5 单手太阳系观察控制已退役：进入 `SolarFreeHover` 后，单手五指张开不放大、收拢不缩小、握拳保持不复位、推动不平移。
 - [ ] 掌心朝前“推拉玻璃窗”缩放和掌心朝上整体旋转属于已退役的 M5 旧手势语义；除非用户明确重新启用，否则只保留为历史/debug 协议上下文。
 - [ ] MVP 中水星、金星、地球、火星、木星、土星、天王星、海王星和月球均可 hover 并 pinch 激活。
-- [ ] 被 pinch 激活的天体停止原轨道公转但保持自然自转；其他天体继续正常公转和自转。
+- [ ] 被 pinch 激活的天体停止原轨道公转但保持自然自转；当激活从 A 切换到 B 时，A 立即恢复原轨道公转，且只有当前激活天体可以暂停公转。
 - [ ] 主手 pinch 锁定目标，副手张开/扩张手势进入单颗行星画面。
 - [ ] 单颗行星画面中，背景太阳系弱化并锁定交互，但保留基础动效。
-- [ ] 当前行星在激活、焦点、缩放、平移、托住跟手、放下悬浮和观赏期间都保持自转。
+- [ ] 当前行星在激活、焦点、托住跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
 - [ ] 主手托住 + 副手 `PinchTap` 会解除跟手控制，并让行星悬浮在单颗行星画面中。
 - [ ] 明确朝原轨道目标 pinch-and-throw 的手势会让当前行星回轨，并退出回太阳系画面。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
@@ -212,7 +212,7 @@ Done when:
 
 状态：`NEEDS_MANUAL_VERIFY`
 
-目标：只基于双手检测启动手势：双手合拢，然后向两侧拉开。该手势不得依赖胸前锚点、肩膀或身体姿态。只要双手在摄像头可见画面中，用户应能在胸前、头顶、身体侧边或其他任意可见位置触发拉开预备状态。
+目标：只在空场画面中基于双手检测启动手势：在 `EmptyIdle` 中双手合拢，然后从 `HandsClosed` 合拢基线向两侧拉开。该手势不得依赖胸前锚点、肩膀或身体姿态。只要双手在摄像头可见画面中，用户应能在胸前、头顶、身体侧边或其他任意可见位置触发拉开预备状态；但太阳系或天体交互内容已经激活后，同样的合拢/拉开动作不得重新进入启动链路。
 
 任务：
 
@@ -222,6 +222,9 @@ Done when:
 - [x] 当手部追踪短暂丢失时，短暂保持上一稳定手部位置。
 - [x] 检测双手是否在摄像头可见画面的任意位置合拢。
 - [x] 检测双手在合拢状态后是否持续向两侧拉开。
+- [x] 将 `HandsClosed` 入口限制为 `EmptyIdle` 空场启动链路。
+- [x] 要求 `PullArmed` 必须来自 `HandsClosed`；普通双手拉开动作不能直接启动。
+- [x] 离开空场启动链路后清空启动手势记忆，避免后续场景继承旧的合拢证据。
 - [x] 当双手/双拳重叠导致一只手短时间丢失时，只基于最近有效的双手合拢证据进行容错。
 - [x] 添加宽限窗口，避免 `HandsClosed` 和 `PullArmed` 在慢速起步、短暂停顿或短暂遮挡时闪烁。
 - [x] 添加交互状态：`CameraReady`、`EmptyIdle`、`HandsClosed` 和 `PullArmed`。
@@ -234,8 +237,9 @@ Done when:
 验收标准：
 
 - [x] 摄像头开启后，应用视觉上保持没有 3D 太阳内容。
-- [x] 当双手在摄像头可见画面的任意位置合拢时，应用可以进入 `HandsClosed`。
-- [x] 当双手从合拢状态持续拉开时，应用可以进入 `PullArmed`。
+- [x] 当应用处于 `EmptyIdle` 且画面为空场时，双手在摄像头可见画面的任意位置合拢可以进入 `HandsClosed`。
+- [x] 当双手从 `HandsClosed` 合拢基线持续拉开时，应用可以进入 `PullArmed`。
+- [x] 在 `SolarFreeHover`、`SolarHandleControl` 或天体交互等非空场状态下，同样的合拢到拉开动作不会进入 `HandsClosed` 或 `PullArmed`。
 - [x] 双手在头顶合拢并拉开可以进入 `PullArmed`，待人工摄像头验证。
 - [x] 双手在胸前合拢并拉开可以进入 `PullArmed`，待人工摄像头验证。
 - [x] 双手在身体侧边合拢并拉开可以进入 `PullArmed`，待人工摄像头验证。
@@ -254,17 +258,18 @@ Implement Milestone 3: hand-only closed-to-pull armed idle state.
 
 Context:
 Read @AGENTS.md, @TODO.md, and @ar_solar_system_prd.md.
-This is a requirement adjustment. The startup gesture must no longer depend on the chest anchor, shoulders, or body position. The core trigger is hand gesture only: both hands close together, then pulled apart.
+This is a requirement adjustment. The startup gesture must no longer depend on the chest anchor, shoulders, or body position. The core trigger is hand gesture only while the scene is empty: both hands close together in `EmptyIdle` to enter `HandsClosed`, then pull apart from that baseline to enter `PullArmed`.
 
 Requirements:
 1. Detect left-hand and right-hand centers.
 2. Smooth both hand positions.
 3. Compute hand midpoint, hand distance, hand distance velocity, and hand direction vector.
-4. Detect when both hands are close together anywhere in the visible camera frame.
-5. Detect when both hands continuously move apart after being close.
+4. Detect when both hands are close together anywhere in the visible camera frame, but only while the current interaction state is `EmptyIdle`.
+5. Detect when both hands continuously move apart after entering `HandsClosed`; generic two-hand pull-apart motion must not directly arm startup.
 6. Add states: `CameraReady`, `EmptyIdle`, `HandsClosed`, and `PullArmed`.
 7. Show debug values for left hand, right hand, hand midpoint, hand distance, distance velocity, current state, both-hands-visible, and lost-hand hold.
 8. Keep the AR scene empty. Do not render the solar system yet.
+9. Outside the empty startup chain, closed/pull hand motion must be interpreted by the active scene state or ignored; it must not re-enter `HandsClosed` or `PullArmed`.
 
 Constraints:
 - Do not use chest anchor, shoulder landmarks, or body pose as required conditions for this milestone.
@@ -290,7 +295,8 @@ Done when:
 - Hands closed near the chest can enter `HandsClosed`.
 - Hands closed above the head can enter `HandsClosed`.
 - Hands closed at the side of the body can enter `HandsClosed`.
-- Pulling hands apart from any of those positions can enter `PullArmed`.
+- Pulling hands apart from any of those `HandsClosed` positions can enter `PullArmed`.
+- After the solar system is open or free-hovering, ordinary two-hand close/pull motion away from endpoints does not re-enter `HandsClosed` or `PullArmed`.
 - `TODO.md` is updated with implementation status and manual verification notes.
 ```
 
@@ -335,7 +341,7 @@ Done when:
 - [x] 反向收起完成后，回到初始空摄像头画面。
 - [x] 掌心朝上轻轻旋转和掌心法线变化只保留为历史 debug/协议诊断；它们不是当前用户可见的整体太阳系旋转控制。
 - [x] Debug 面板暴露整体太阳系协议值，且不渲染太阳系 3D 内容。
-- [x] 右上角中文状态说明避免把已退役的缩放/旋转诊断显示成产品控制；可见太阳系行为应通过当前交互状态、松手/重新扶住/收起生命周期和 M5.5 观察意图解释。
+- [x] 右上角中文状态说明避免把已退役的缩放/旋转诊断或已退役的 M5.5 观察控制显示成产品控制；可见太阳系行为应通过当前交互状态和松手/重新扶住/收起生命周期解释。
 - [x] Debug overlay 只可在 debug 模式下显示 2D 虚拟端点标记。
 - [x] `npm run typecheck` 通过。
 - [x] `npm run build` 通过。
@@ -466,7 +472,7 @@ Done when:
 
 目标：实现第一个高光交互瞬间：用户从空场中用双手把太阳系拉开。
 
-实现备注（2026-06-23）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、视觉手轴和 `openProgress` 驱动；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定 transform；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定 transform；并且（2026-06-23 稳定性）当双手没有扶住左右端点时，`SolarActive` 自身也会在短暂宽限后落到 `SolarFreeHover`，使展开后无需再 re-grip 端点即可单手观察。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。这仍需要真实摄像头验证。
+实现备注（2026-06-23，2026-06-24 更新）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、视觉手轴和 `openProgress` 驱动；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定 transform；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定 transform；当双手没有扶住左右端点时，`SolarActive` 自身也会在短暂宽限后落到 `SolarFreeHover`。已退役的 M5.5 单手观察控制不再在 `SolarFreeHover` 中运行；释放后的太阳系等待端点重新扶住或反向收起。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。这仍需要真实摄像头验证。
 
 任务：
 
@@ -482,7 +488,7 @@ Done when:
 - [x] 展开期间，将视觉左右端点绑定到左右手。
 - [x] 将展开控制表现为太阳系边缘两个独立 3D 端点，而不是连接式操纵杆/杆状 overlay。
 - [x] 拒绝突变的双手几何异常帧，使快速撤手或边缘误检时保持最后稳定的太阳系 transform，而不是突然缩小/跳位。
-- [x] 完全展开后，`SolarActive` 保持最后稳定 transform；双手稳定命中端点会 re-grip 进入 `SolarHandleControl`，不扶住端点则落到 `SolarFreeHover`（2026-06-23），使无需再 re-grip 即可单手观察。
+- [x] 完全展开后，`SolarActive` 保持最后稳定 transform；双手稳定命中端点会 re-grip 进入 `SolarHandleControl`，不扶住端点则落到 `SolarFreeHover`，但不会启用已退役的单手观察控制。
 - [x] 使用 `SolarHandleControl` 作为展开后唯一可以恢复整体端点把手控制、松手或反向收起的状态。
 - [x] 当前暂不要求手型门槛；张开的手从模型附近经过时，除非双手同时命中端点，否则不应获得控制。
 - [x] 让用户可见状态说明与最新 M4 状态机保持一致；旧 `wholeSystemIntent` 松手/重新扶住数值只保留在 Debug 面板。
@@ -555,86 +561,73 @@ Done when:
 
 目标：退役旧 M5 手势面，避免后续工作继续把它当成当前产品计划实现。
 
-决策说明（2026-06-23）：最新经用户确认的太阳系观察控制在 Milestone 5.5 中。旧版“双手距离控制放大/缩小”“掌心朝前左右推拉像玻璃窗一样缩放”“掌心朝上扭动触发整体 3D 旋转”不再是当前产品验收标准。M3.5 中的缩放/旋转/掌心协议字段只作为历史 debug 诊断保留，直到后续代码清理。
+决策说明（2026-06-24）：旧版“双手距离控制放大/缩小”“掌心朝前左右推拉像玻璃窗一样缩放”“掌心朝上扭动触发整体 3D 旋转”不再是当前产品验收标准。2026-06-23 曾引入的 M5.5 单手太阳系观察控制也已按用户最新要求退役并删除。M3.5 中的缩放/旋转/掌心协议字段只作为历史 debug 诊断保留。
 
 任务：
 
 - [x] 移除双手拉远放大、掌心朝前玻璃窗缩放、掌心朝上整体旋转的活跃 TODO 验收项。
 - [x] 保留 M4 中的端点重新扶住、松手、自由悬浮和反向收起作为当前整体把手生命周期。
-- [x] 将 M5.5 作为 `SolarFreeHover` 后太阳系放大、缩小、复位和平移的当前实现里程碑。
+- [x] 不再把 M5.5 作为 `SolarFreeHover` 后太阳系放大、缩小、复位和平移的当前实现里程碑。
 
 验收标准：
 
-- [x] 后续实现提示应指向 M5.5 作为用户可见的太阳系观察控制。
+- [x] 后续实现提示不再指向 M5.5 作为用户可见的太阳系观察控制。
 - [x] 除非用户明确重新启用旧需求，否则不得把旧掌心朝前或掌心朝上 M5 语义扩展进 `SolarHandleControl`。
 - [x] 文档明确区分历史协议 debug 字段和当前产品控制。
 
-## Milestone 5.5 — 太阳系自由悬浮后的单手观察控制
+## Milestone 5.5 — 已退役的太阳系自由悬浮单手观察控制
 
-状态：`NEEDS_MANUAL_VERIFY`
+状态：`DONE`
 
-目标：当太阳系已释放到 `SolarFreeHover` 后，让用户用单手放大、缩小、恢复默认和平移太阳系画面。
+目标：删除太阳系释放到 `SolarFreeHover` 后的单手放大、缩小、恢复默认和平移控制。
 
-当前控制基准（2026-06-23）：这是最新经用户确认的太阳系观察手势模型，并取代已退役的 M5 双手/掌心手势语义。
-
-调优说明（2026-06-23）：缩放手势现在带相位锁。张开放大只消费手指张开的阶段；张开后的自然收手会被忽略，直到手回到稳定中性展开区。缩小从短暂稳定的开掌开始，只消费收拢阶段；收拢后的自然放松会被忽略。平移使用稳定展开程度的 clutch 和从锚点开始的平滑手掌位移，不再直接吃逐帧手掌 delta。
+退役说明（2026-06-24）：用户移除了 M5.5 单手五指张开放大、单手收拢缩小、握拳保持复位和单手推动平移。`SolarFreeHover` 现在保持最后稳定 transform，并等待端点重新扶住或反向收起。
 
 任务：
 
-- [x] 增加单手意图层，输出 `fingerSpread`、`fingerSpreadVelocity`、`palmCenter`、`palmCenterVelocity`、握拳保持时长和 transition reason。
-- [x] 单手太阳系观察只在 `SolarFreeHover` 生效；双手端点控制期间禁用。
-- [x] 当手掌中心移动较小时，将五指张开映射为太阳系画面放大，并用回弹锁避免自然收手立刻触发缩小。
-- [x] 当手掌中心移动较小时，将短暂稳定开掌后的五指收拢映射为太阳系画面缩小，并用回弹锁避免自然放松立刻触发放大。
-- [x] 将收拢成拳并保持约 2 秒映射为恢复默认太阳系大小和位置。
-- [x] 当手指展开程度稳定并进入 clutch 后，将左/右/上/下推动映射为太阳系画面平移，使用从 clutch 锚点开始的平滑手掌位移。
-- [x] 限制 M5.5 观察缩放速度，并对平移偏移做低通，使慢速/快速手部动作都可恢复。
-- [x] 允许放大后的太阳系部分移出屏幕，同时保留可恢复的默认重置路径。
-- [x] 添加单手意图、spread 分数、pan 分数、reset hold time、太阳系观察缩放和偏移调试值。
-- [x] 添加运行时 Debug checklist，记录当前浏览器 session 是否实际命中过 M5.5 自由悬浮、放大、缩小、平移、复位保持、复位、端点控制禁用和观察后重新扶住信号，并显示进度计数、剩余项目标签、下一个必测项目、下一步动作、观察位置和通过条件；缩放、平移和复位 checklist 项需要实际 inspection scale/offset 证据，而不能只依赖 intent 标签。
-- [x] 添加仅 Debug 可见的 `Export M5.5` 控件，可下载一份不含原始摄像头视频的紧凑验收摘要 JSON，包含带稳定 id、用户动作、观察位置和通过条件的自描述 checklist 数组；该摘要由带类型的 report helper 构建，并由 `npm run verify:m5.5` 覆盖；即使当前进度是 0/8，导出也保持可用，方便失败或卡住的人工测试生成证据。
-- [x] 添加仅 Debug 可见的 `Reset M5.5` 控件，使人工测试者可以不刷新页面就清空运行时 checklist。
-- [x] 添加 `npm run verify:m5.5`，用合成手部关键点确定性验证 M5.5 控制器状态转换，包括慢动作稳定性和缩放边界。
+- [x] 删除 `SolarInspectionController` 及其单手张开/收拢/握拳/推动 transform 逻辑。
+- [x] 删除运行时 M5.5 Debug checklist、`Export M5.5`、`Reset M5.5`、验收报告 helper 和验证累积器。
+- [x] 删除 `npm run verify:m5.5` 和移植过来的 `solarInspectionController` gesture 测试。
+- [x] 保留 `SolarFreeHover` 本身：它保存最后稳定太阳系 transform，并允许端点重新扶住/反向收起。
+- [x] 更新状态说明和引导文案，使 `SolarFreeHover` 不再提示用户使用单手观察手势。
 
 验收标准：
 
-- [x] `SolarFreeHover` 中，单手五指张开会放大太阳系，且自然回手不会立刻让它缩小，待人工摄像头验证。
-- [x] 从短暂稳定开掌开始的单手五指收拢会缩小太阳系，且自然放松不会立刻让它放大，待人工摄像头验证。
-- [x] 收拢成拳并保持约 2 秒会恢复默认大小和居中位置，端点仍可见，待人工摄像头验证。
-- [x] 单手推动在 clutch 后可以平滑平移放大后的太阳系画面，无需双手端点控制，待人工摄像头验证。
-- [x] 双手端点控制期间，单手太阳系观察不会触发，待人工摄像头验证。
-- [x] M5.5 放大/平移后重新扶住使用视觉更新后的端点，而不是旧释放中心，待人工摄像头验证。
-- [x] 慢速手势下，缩放/平移分类不会明显闪烁，待人工摄像头验证。
-- [x] `npm run verify:m5.5` 通过。
+- [x] `SolarFreeHover` 中，单手五指张开不会放大太阳系。
+- [x] `SolarFreeHover` 中，单手五指收拢不会缩小太阳系。
+- [x] `SolarFreeHover` 中，握拳保持不会复位太阳系视图。
+- [x] `SolarFreeHover` 中，单手推动不会平移太阳系。
+- [x] 没有 M5.5 Debug checklist/export/reset UI，也没有 `verify:m5.5` npm 脚本。
 - [x] `npm run build` 通过。
-- [x] 行为保持 `NEEDS_MANUAL_VERIFY`，直到 Milestone 5.5 摄像头 checklist 通过。
+- [x] 运行时代码路径不再 import 或运行 solar-inspection controller 逻辑。
 
 ## Milestone 6 — 天体数据模型和九个可交互目标
 
-状态：`TODO`
+状态：`DONE`
 
 目标：为所有 MVP 可交互天体创建统一的数据驱动模型，包含 hover、激活、焦点画面和回轨元数据。
 
 任务：
 
-- [ ] 为水星、金星、地球、火星、木星、土星、天王星、海王星和月球定义 `CelestialBodyId`。
-- [ ] 定义天体元数据：名称、标签、近似视觉尺寸、轨道半径、轨道速度、自转速度、颜色/占位纹理、激活命中半径、焦点默认 transform、回轨/原轨道目标、父级天体（如有）。
-- [ ] 为每个天体实现简化视觉模型。
-- [ ] 添加可识别的土星环。
-- [ ] 让月球默认围绕地球运行。
-- [ ] 将所有天体保存在一个 registry 中，供渲染、hover、激活、焦点、悬浮和回轨逻辑使用。
-- [ ] 添加可在 hover/激活/焦点状态显示的标签。
-- [ ] 添加原始轨道 transform 数据，以支持返回行为。
-- [ ] 确保没有为每个行星编写重复的一次性激活或焦点逻辑。
+- [x] 为水星、金星、地球、火星、木星、土星、天王星、海王星和月球定义 `CelestialBodyId` / `InteractiveCelestialBodyId`。
+- [x] 定义天体元数据：名称、标签、近似视觉尺寸、轨道半径、轨道速度、自转速度、颜色/占位纹理、激活命中半径、焦点默认 transform、回轨/原轨道目标、父级天体（如有）。
+- [x] 为每个天体实现简化视觉模型。
+- [x] 添加可识别的土星环。
+- [x] 让月球默认围绕地球运行。
+- [x] 将所有天体保存在一个 registry 中，供渲染、hover、激活、焦点、悬浮和回轨逻辑使用。
+- [x] 添加可在 hover/激活/焦点状态显示的标签。
+- [x] 添加原始轨道 transform 数据，以支持返回行为。
+- [x] 确保没有为每个行星编写重复的一次性激活或焦点逻辑。
 
 验收标准：
 
-- [ ] 九个 MVP 天体都由同一个数据模型表示。
-- [ ] 太阳系展开后，天体在简化轨道上渲染。
-- [ ] 月球与地球视觉上可区分。
-- [ ] 土星有明确的环。
-- [ ] 返回轨道逻辑可获取原始轨道位置/层级数据。
-- [ ] 后续手势管线可获取焦点默认大小/位置和激活热区半径。
-- [ ] `npm run build` 通过。
+- [x] 九个 MVP 天体都由同一个数据模型表示。
+- [x] 太阳系展开后，天体在简化轨道上渲染。
+- [x] 月球与地球视觉上可区分。
+- [x] 土星有明确的环。
+- [x] 返回轨道逻辑可获取原始轨道位置/层级数据。
+- [x] 后续手势管线可获取焦点默认大小/位置和激活热区半径。
+- [x] `npm run build` 通过。
 
 建议 Codex 提示词：
 
@@ -659,37 +652,40 @@ Done when:
 
 ## Milestone 7 — Hover、高亮和 Pinch 激活
 
-状态：`TODO`
+状态：`NEEDS_MANUAL_VERIFY`
 
 目标：让用户可以 hover 并 pinch 激活九个 MVP 天体中的任意一个，同时避免拖动太阳系，并确保激活不会冻结自转。
 
 任务：
 
-- [ ] 将每个可交互天体的 3D 位置投影到屏幕坐标。
-- [ ] 计算手到天体的屏幕空间距离。
-- [ ] 为水星和月球添加更大的命中区域。
-- [ ] 使用迟滞选择最近的有效天体，避免闪烁。
-- [ ] 添加 hover 视觉反馈：光环、标签和轨道高亮。
-- [ ] 使用拇指/食指距离和手掌尺度检测 pinch start 与 pinch end。
-- [ ] 使用不同的 pinch start 和 pinch end 阈值。
-- [ ] 实现 `BodyHover` 和 `PlanetActivated` 转换。
-- [ ] pinch 激活时，停止选中天体的原轨道公转，但保持自然自转。
-- [ ] 所有未选中天体继续正常公转和自转。
-- [ ] 天体 pinch 激活期间，禁止误触发太阳系缩放/平移/拖动。
-- [ ] 添加清楚的激活反馈，并保留原轨道目标供回轨使用。
-- [ ] pinch 激活保持期间，添加短暂追踪丢失容忍。
+- [x] 将每个可交互天体的 3D 位置投影到屏幕坐标。
+- [x] 计算手到天体的屏幕空间距离。
+- [x] 为水星和月球添加更大的命中区域。
+- [x] 使用迟滞选择最近的有效天体，避免闪烁。
+- [x] 添加 hover 视觉反馈：光环、标签和轨道高亮。
+- [x] 使用拇指/食指距离和手掌尺度检测 pinch start 与 pinch end。
+- [x] 使用不同的 pinch start 和 pinch end 阈值。
+- [x] 实现 `BodyHover` 和 `PlanetActivated` 转换。
+- [x] 允许从 `SolarActive` 和 `SolarFreeHover` 直接进入 `PlanetActivated`，让已释放的太阳系也能激活天体且不让渲染循环崩溃。
+- [x] pinch 激活时，停止选中天体的原轨道公转，但保持自然自转。
+- [x] 所有未选中天体继续正常公转和自转。
+- [x] 通过统一 controller 支持从 A 激活切换到 B，并清除 A 的激活状态，使 A 恢复原轨道公转。
+- [x] 天体 pinch 激活期间，禁止误触发太阳系拖动、缩放、平移或其他整体 transform。
+- [x] 添加清楚的激活反馈，并保留原轨道目标供回轨使用。
+- [x] pinch 激活保持期间，添加短暂追踪丢失容忍。
 
 验收标准：
 
-- [ ] 手靠近天体时，该天体清楚高亮。
-- [ ] 高亮不会在相邻天体之间快速闪烁。
-- [ ] 在高亮天体附近 pinch 可以激活该天体。
-- [ ] 激活天体停止公转但保持自转。
-- [ ] 未选中天体继续正常运动。
-- [ ] 激活天体不会拖动或缩放整个太阳系。
-- [ ] 九个天体都可以高亮并激活。
-- [ ] `npm run build` 通过。
-- [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
+- [x] 手靠近天体时，代码和 dev preview 中该天体会清楚高亮；仍需真实摄像头验证。
+- [x] 高亮使用迟滞，controller 测试中不会在相邻天体之间快速闪烁；仍需真实摄像头验证。
+- [x] 在高亮天体附近 pinch 可在 controller 测试中激活该天体；仍需真实摄像头验证。
+- [x] 激活天体停止公转但保持自转。
+- [x] 未选中天体继续正常运动。
+- [x] 从 A 切换到 B 时，B 是唯一激活天体，A 恢复原轨道公转。
+- [x] 激活天体不会拖动或缩放整个太阳系。
+- [x] 九个天体都通过统一管线支持高亮和激活；仍需真实摄像头验证。
+- [x] `npm run build` 通过。
+- [x] 行为已标记为 `NEEDS_MANUAL_VERIFY`，等待真实摄像头 hover/pinch 测试。
 
 建议 Codex 提示词：
 
@@ -714,22 +710,21 @@ Done when:
 - TODO.md is updated.
 ```
 
-## Milestone 8 — 单颗行星画面和单体操控
+## Milestone 8 — 单颗行星画面和托住控制
 
 状态：`TODO`
 
-目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、放大、平移、托住和默认恢复。
+目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、托住移动、放下悬浮和后续甩回。已退役的单手焦点缩放、平移和复位控制不得实现。
 
 任务：
 
 - [ ] 添加 `PlanetFocusView`、`PlanetFocusControlled` 和 `PlanetFocusFloating` 生命周期状态或等价子状态。
 - [ ] 检测进入手势：主手 pinch 锁定激活天体 + 副手五指张开/扩张。
 - [ ] 背景太阳系弱化并锁定交互，但保留基础动效。
-- [ ] 当前行星在激活、焦点、缩放、平移、托住跟手、悬浮和观赏期间都保持自转。
-- [ ] 将单手五指张开映射为当前行星放大。
-- [ ] 将单手五指收拢映射为当前行星缩小。
-- [ ] 将收拢成拳并保持约 2 秒映射为当前行星恢复默认大小和位置。
-- [ ] 将单手推动映射为当前行星平移。
+- [ ] 当前行星在激活、焦点、托住跟手、悬浮和观赏期间都保持自转。
+- [ ] 不将单手五指张开/收拢映射为当前行星缩放。
+- [ ] 不将收拢成拳保持映射为当前行星复位。
+- [ ] 不将单手推动映射为当前行星平移。
 - [ ] 使用稳定条件检测托住跟手：手掌打开、手掌中心位于行星下方、靠近行星下缘、低速、停留 300-500ms。
 - [ ] 托住跟手期间，当前行星限制在可见屏幕内。
 - [ ] 确保当前行星控制不影响整个太阳系 transform。
@@ -740,9 +735,9 @@ Done when:
 - [ ] 主手 pinch 锁定 + 副手张开/扩张进入 `PlanetFocusView`。
 - [ ] 背景太阳系弱化、锁定交互，并保留基础动效。
 - [ ] 当前行星在所有焦点交互中持续自转。
-- [ ] 单手张开/收拢可以缩放当前行星。
-- [ ] 握拳保持约 2 秒可以恢复焦点默认大小和位置。
-- [ ] 单手推动可以平移当前行星，而不会移动太阳系。
+- [ ] 单手张开/收拢不会缩放当前行星。
+- [ ] 握拳保持不会复位当前行星大小或位置。
+- [ ] 单手推动不会平移当前行星。
 - [ ] 托住跟手可以移动当前行星，并保持在屏幕内。
 - [ ] `npm run build` 通过。
 - [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
@@ -751,7 +746,7 @@ Done when:
 
 ```text
 Goal:
-Implement Milestone 8: planet focus view and single-planet controls.
+Implement Milestone 8: planet focus view and support controls.
 
 Context:
 Read @ar_solar_system_prd.md sections 5.5, 7.10, and 7.11.
@@ -759,12 +754,13 @@ Read @ar_solar_system_prd.md sections 5.5, 7.10, and 7.11.
 Constraints:
 - A focused body keeps self-rotating; do not freeze self-rotation.
 - Background solar-system interaction is locked during PlanetFocusView.
-- Single-body manipulation must not affect solar-system scale or rotation.
+- Retired one-hand focus zoom/pan/reset gestures must remain no-ops.
+- Single-body manipulation must not affect solar-system scale, pan, or rotation.
 - Keep the focused body inside the visible screen during support-follow.
 - Update docs if any interaction mapping changes.
 
 Done when:
-- Activation -> focus view -> zoom/pan/support works.
+- Activation -> focus view -> support/floating works, and retired one-hand focus zoom/pan/reset gestures remain inactive.
 - npm run build passes.
 - TODO.md is updated.
 ```
@@ -906,7 +902,7 @@ Done when:
 
 状态：`TODO`
 
-目标：通过先加入确定性的自动化测试，再逐步加入结构化手势回放和浏览器层回放，减少每次回归都需要人工打开摄像头挥手测试的成本。
+目标：继续以确定性自动化测试优先，再在当前活跃的启动、展开、端点和行星焦点交互面稳定后逐步加入结构化手势回放和浏览器层回放，减少每次回归都需要人工打开摄像头挥手测试的成本。
 
 参考文档：
 
@@ -915,14 +911,14 @@ Done when:
 计划：
 
 - [x] 整理最新测试策略，包括用户评估中强调的“叶子纯函数和控制器测试应先于 replay/E2E”的顺序。
-- [ ] 添加 Vitest（`environment: 'node'`），但不修改 `main.ts` 或真实摄像头/运行时 bootstrap。
-- [ ] 添加确定性护栏测试：`src/interaction/**` 一旦出现 `Math.random`/`Date.now`/`performance.now` 即失败。
-- [ ] 把 `scripts/verify-m5_5-solar-inspection.ts` 的合成构造器抽进共享 `tests/helpers/`（单一来源，不重写）。
-- [ ] 添加 Layer 0 纯模块测试：`math`、`coordinateMapping`、`handPairing`、`palmOrientation`、`handPose`、`intentScoring`。
-- [ ] 添加 Layer 1 控制器序列测试：使用合成 `TrackingSnapshot` 和注入时间戳，覆盖启动、太阳系展开、自由悬浮/重新扶住基础路径和反向收起；可复用 `solarInspectionVerification` 当 oracle。
-- [ ] 把 M5.5 验证用例吸收进 Vitest gesture 测试，并将 `npm run verify:m5.5` 降为 alias，而不是维护两套平行 harness。
+- [x] 添加 Vitest（`environment: 'node'`），但不修改 `main.ts` 或真实摄像头/运行时 bootstrap。
+- [x] 添加确定性护栏测试：`src/interaction/**` 一旦出现 `Math.random`/`Date.now`/`performance.now` 即失败。
+- [x] 在 `tests/helpers/` 中维护合成手部、tracking snapshot、测试相机和固定阈值构造器。
+- [x] 添加 Layer 0 纯模块测试：`math`、`coordinateMapping`、`handPairing`、`palmOrientation`、`handPose`、`intentScoring`。
+- [x] 添加 Layer 1 控制器序列测试：使用合成 `TrackingSnapshot` 和注入时间戳，覆盖启动、太阳系展开、whole-system release/re-grip 基础路径和反向收起。
+- [x] 删除已退役的 M5.5 太阳系观察验证 harness，不保留 `solarInspectionVerification` 或 `npm run verify:m5.5`。
 - [ ] 添加 CI（GitHub Actions），在 push/PR 上跑 `typecheck` + unit + gesture + `build`。
-- [ ] 在纯函数/控制器测试层有实际价值且 M5.5 稳定后，再加入 JSON fixture replay（多帧序列）。
+- [ ] 在纯函数/控制器测试层有实际价值且当前活跃交互面稳定后，再加入 JSON fixture replay（多帧序列）。
 - [ ] 在回放时间驱动要求明确后，再加入 Playwright/browser replay 以及任何 `main.ts`/`TrackingSource` 接缝。
 
 约束：
@@ -953,15 +949,16 @@ Done when:
 7. 中途暂停双手，确认展开不会自动完成。
 8. 完成展开，确认太阳系出现在双手拉开的位置，并且之后可以停在松手位置。
 9. 松开端点把手，确认太阳系保持在释放时的 transform，而不是跟随身体或回到屏幕中心。
-10. 在 `SolarFreeHover` 中，用单手五指张开/收拢确认太阳系观察放大和缩小。
-11. 在 `SolarFreeHover` 中，用单手推动平移，并收拢成拳保持约 2 秒确认太阳系观察复位。
+10. 在 `SolarFreeHover` 中，用单手五指张开/收拢/握拳/推动，确认这些已退役 M5.5 动作不会放大、缩小、复位或平移太阳系画面。
+11. 将双手重新靠近左右端点，确认尝试过这些单手 no-op 动作后端点重握仍然有效。
 12. 依次 hover 每个可交互天体，确认标签/光晕。
 13. Pinch 激活天体，确认它停止公转但保持自转。
 14. 主手保持 pinch 锁定，副手张开/扩张进入单颗行星画面。
-15. 托住当前行星后，用副手 PinchTap 放下；确认它仍在单颗行星画面中悬浮并自转。
-16. 再次 pinch 悬浮行星并朝原轨道目标甩回；确认它回轨并退出到太阳系画面。
-17. 用月球和土星重复测试。
-18. 运行录制模式，确认 debug UI 已隐藏。
+15. 在单颗行星画面中，确认单手张开/收拢/握拳/推动不会缩放、平移或复位当前行星。
+16. 托住当前行星后，用副手 PinchTap 放下；确认它仍在单颗行星画面中悬浮并自转。
+17. 再次 pinch 悬浮行星并朝原轨道目标甩回；确认它回轨并退出到太阳系画面。
+18. 用月球和土星重复测试。
+19. 运行录制模式，确认 debug UI 已隐藏。
 
 ### Milestone 3 人工验收 Checklist
 
@@ -982,43 +979,42 @@ Done when:
 | 丢手回空闲 | 遮住一只或两只手超过约 2.5 秒。 | Debug 面板里的 `Both hands`、`Lost-hand hold`、`Startup state`。 | `Both hands` 变成 `missing`；`Lost-hand hold` 变成 `inactive`；`Startup state` 回到 `EmptyIdle` 或其他合适空闲状态。 |
 | 拉开停止回空闲 | 进入 `PullArmed` 后，不再继续拉开，双手保持不动。 | Debug 面板里的 `Startup state` 和 `Distance velocity`。 | 短暂停顿后，`Startup state` 回到 `EmptyIdle` 或其他合适空闲状态。 |
 | 启动状态无 3D 内容 | 重复任意 `HandsClosed` 或 `PullArmed` 测试。 | 摄像头预览。 | 进入 `HandsClosed` 或 `PullArmed` 时，绝不会显示太阳系内容。 |
+| 展开后不重启 | 把太阳系打开到 `SolarFreeHover`，然后在远离端点的位置双手/双拳合拢再拉开。 | 摄像头预览、状态说明和 Debug 的 `Startup state`。 | 应用不会重新进入 `HandsClosed` 或 `PullArmed`；可见太阳系继续保持当前激活/悬浮流程，除非双手明确重新扶住左右端点。 |
 
 ### Milestone 3.5 人工验收清单
 
 用这份清单验证 Milestone 4 之前的 debug-only 整体太阳系交互协议。
 
-备注（2026-06-23）：M4 可见太阳系内容接入后，用户可见的右上角状态说明以 `interactionState` + `solarReason` 为准。旧 `Whole control` / `wholeSystemIntent` 值只作为协议 Debug 行存在，不应再作为可见太阳系行为的主状态说明。其中缩放/旋转/掌心相关行只是历史协议诊断；M5.5 才是当前用户可见的太阳系观察控制模型。
+备注（2026-06-24）：M4 可见太阳系内容接入后，用户可见的右上角状态说明以 `interactionState` + `solarReason` 为准。旧 `Whole control` / `wholeSystemIntent` 值只作为协议 Debug 行存在，不应再作为可见太阳系行为的主状态说明。其中缩放/旋转/掌心相关行只是历史协议诊断，已退役的 M5.5 单手太阳系观察行也不应作为当前产品控制出现。
 
 | 项目 | 用户动作 | 观察位置 | 通过条件 |
 |---|---|---|---|
 | M3.5 空场 | 打开页面，点击 `开启摄像头`，打开 `Debug`，先不要把手放进画面。 | 摄像头预览、Debug 面板和 debug overlay。 | 摄像头预览不出现 3D 太阳、行星、轨道、星云、粒子、奇点或模型。`Whole control` 显示 `Inactive`。 |
 | 旧协议 Debug 字段 | 保持 `Debug` 打开，执行任意 M3.5 手势动作。 | Debug 面板里的 `Whole control`、松手/重新扶住字段、意图分数和端点圆圈。 | 旧协议值仍可在 Debug 中检查。右上角状态卡不应在可见 M4 太阳系行为中显示 `Lock`、`Re-grip` 或 `Transition` 这类旧协议标签。 |
-| 拉开后协议启动 | 双手在画面任意位置合拢，然后拉开，直到 `Startup state` 进入 `PullArmed`。 | Debug 面板里的 `Whole control`、`Control confidence` 和 2D 端点圆圈。 | `Whole control` 从 `Inactive` 变为 `VirtualOpeningHandle`，随后变为 `SolarHandleControl`。只有打开 `Debug` 时，双手附近会出现两个小的 2D 调试端点圆圈。 |
+| 拉开后协议启动 | 从 `EmptyIdle` 开始，双手在画面任意位置合拢直到 `Startup state` 进入 `HandsClosed`，然后拉开直到 `Startup state` 进入 `PullArmed`。 | Debug 面板里的 `Whole control`、`Control confidence` 和 2D 端点圆圈。 | `Whole control` 从 `Inactive` 变为 `VirtualOpeningHandle`，随后变为 `SolarHandleControl`。只有打开 `Debug` 时，双手附近会出现两个小的 2D 调试端点圆圈。 |
 | 掌心朝向数值 | 保持双手可见，慢慢把掌心转向摄像头、转到侧面、再转成朝上。 | Debug 面板里的 `Visual L palm normal`、`Visual R palm normal`、`Visual L palm facing/up` 和 `Visual R palm facing/up`。 | 掌心法线数值持续更新。facing/up 分数保持在 `0.00-1.00` 范围，并且会随掌心方向变化而明显变化。 |
 | 微弯手保持抓住 | 当 `Whole control` 为 `SolarHandleControl` 时，双手保持微微弯曲，像握住两个把手。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Grip hold`、`Release stable`、`Release gesture` 和 `Whole control`。 | `Grip hold` 显示 `yes`，`Release stable` 基本保持在 `0ms` 附近，`Release gesture` 保持 `no`，`Whole control` 保持 `SolarHandleControl`。虚拟端点继续跟随双手。 |
 | 历史掌心朝上保持诊断 | 当 `Whole control` 为 `SolarHandleControl` 时，把双掌转成大致朝上，手指微弯，像托住托盘一样，然后轻轻移动双手控制柄。 | Debug 面板里的 `Rotation intent`、`Release blocked`、`Grip hold`、`Release stable`、`Release gesture` 和 `Whole control`。 | 历史 `Rotation intent` 可能变化，`Release blocked` 可能显示 `rotationHold` 或 `cuppedGrip`；这只是协议/debug 诊断。`Grip hold` 应显示 `yes`，`Release stable` 不应攒到松手阈值，`Whole control` 应保持 `SolarHandleControl`。 |
 | 张开手松手 | 当 `Whole control` 为 `SolarHandleControl` 时，双手五指完全张开并明显伸展，且先停止旋转。看到 `Release stable` 超过约 `280ms`、`Release gesture` 变成 `yes / lock on` 后，慢慢把手收回或放松手指。 | Debug 面板里的 `Visual L open/grip`、`Visual R open/grip`、`Release stable`、`Release blocked`、`Release gesture`、`Whole control` 和 2D 端点圆圈。 | open 分数升高，grip 分数降低，`Release blocked` 显示 `none`，`Release stable` 超过约 `280ms`，`Release gesture` 变成 `yes / lock on`，`Whole control` 进入 `ReleaseCandidate`，随后进入 `SolarFreeHover`。即使慢慢收手时手指放松，端点圆圈也应冻结；在双手先离开冻结端点、再主动回到端点前，`Whole control` 不能跳回 `SolarHandleControl`。 |
-| 历史缩放意图诊断 | 当 `Whole control` 为 `SolarHandleControl` 时，双手向外拉远再靠近，但不要完全合拢。 | Debug 面板里的 `Scale intent`、`Hand distance`、`Distance velocity` 和 `Collapse intent`。 | 历史 `Scale intent` 可能随手距变化；这只是协议/debug 诊断。当前用户可见的太阳系观察缩放属于 M5.5 的 `SolarFreeHover` 后单手控制。 |
+| 历史缩放意图诊断 | 当 `Whole control` 为 `SolarHandleControl` 时，双手向外拉远再靠近，但不要完全合拢。 | Debug 面板里的 `Scale intent`、`Hand distance`、`Distance velocity` 和 `Collapse intent`。 | 历史 `Scale intent` 可能随手距变化；这只是协议/debug 诊断。`SolarFreeHover` 不再有单手太阳系观察缩放；它等待端点重新扶住或反向收起。 |
 | 反向收起意图 | 从 `SolarHandleControl` 开始，继续让双手向内靠近，直到接近合拢。 | Debug 面板里的 `Whole control` 和 `Collapse intent`。 | `Collapse intent` 向 `1.00` 升高；`Whole control` 可以进入 `SolarClosing`，完全合拢后回到 `Inactive` 附近。画面不出现 3D 内容。 |
 | 兜底松手 | 进入 `SolarHandleControl` 后，把双手移出画面或遮住几秒。 | Debug 面板里的 `Whole control`、`Release confidence` 和端点圆圈。 | `Whole control` 先变成 `ReleaseCandidate`，再变成 `SolarFreeHover`。虚拟端点圆圈冻结在最后稳定位置。 |
 | 重新扶住冻结端点 | 进入 `SolarFreeHover` 后，先把双手明显移离冻结端点圆圈，再把双手重新放到两个圆圈附近。不应该需要非常精确地重新调整身体或摄像头距离。 | Debug 面板里的 `Release gesture`、`Whole control`、`Re-grip confidence`、`Re-grip reason` 和 `Visual endpoint matched`。 | 双手离开端点后，`Release gesture` 变成 `no / lock off`。双手回到圆圈附近时，`Re-grip reason` 应变成 `endpoint` 或 `wideMagnet`，`Re-grip confidence` 升高，`Whole control` 经过 `ReGripCandidate` 回到 `SolarHandleControl`。 |
 | 历史旋转意图诊断 | 当 `Whole control` 为 `SolarHandleControl` 时，掌心大致朝上或明显不朝摄像头，轻轻旋转/扭动双手形成的控制柄。 | Debug 面板里的 `Rotation intent`、`Rotation intent score`、掌心 facing/up 分数和掌心法线。 | 历史 `Rotation intent` 可能从 `none` 变成 `rotate2d` 或 `rotate3d`；这只是协议/debug 输出，不是当前产品验收手势。 |
 | 整体控制与 pinch 分离 | 当 `Whole control` 为 `SolarHandleControl` 时，用一只手做 pinch，像未来要激活某颗行星一样。 | Debug 面板里的 `Control confidence`。 | `Control confidence` 应下降，而不是把强 pinch 当成更强的整体太阳系控制。本里程碑不会激活任何行星。 |
 
-### Milestone 5.5 人工验收清单
+### 已退役 M5.5 人工验收清单
 
-用这份清单验证整体太阳系释放到 `SolarFreeHover` 后的当前太阳系观察控制。
+用这份清单验证整体太阳系释放到 `SolarFreeHover` 后，已退役的单手太阳系观察控制不会再移动太阳系。
 
 | 项目 | 用户动作 | 观察位置 | 通过条件 |
 |---|---|---|---|
-| 进入自由悬浮 | 打开摄像头，拉开太阳系，进入端点控制，然后松开端点把手，让太阳系悬浮。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系内容保持在释放时的 transform。`Startup state` / interaction state 显示 `SolarFreeHover`，状态说明提示等待单手观察或重新扶住端点。 |
-| 单手放大 | 在 `SolarFreeHover` 中，让一只手进入画面，尽量保持手掌中心不动，同时五指张开，然后自然把手放松收回。第二只手在边缘闪一下不应 reset 手势（主手锁定）。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect spread`、`Inspect spread velocity`、`Inspect scale / offset`。 | 太阳系在张开阶段变大。`Solar inspect` 变为 `zoomIn / active`，`Inspect spread velocity` 为正，inspection scale 上升到 `1.00` 以上。自然回手不应立刻产生对应的 `zoomOut` 缩小跳变。 |
-| 单手缩小 | 在 `SolarFreeHover` 中，只让一只开掌进入画面，短暂保持开掌，然后尽量保持手掌中心不动并五指收拢；缩小后自然放松手。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect spread velocity`、`Inspect scale / offset`。 | 太阳系在收拢阶段变小。`Solar inspect` 变为 `zoomOut / active`，`Inspect spread velocity` 为负，inspection scale 相比前一刻下降。自然放松不应立刻产生对应的 `zoomIn` 放大跳变。 |
-| 单手平移 | 放大后，保持单手足够张开，让展开程度稳定一下，然后在手指展开程度变化不大的情况下向左/右/上/下推动。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect pan score`、`Inspect palm velocity`、`Inspect scale / offset`。 | 太阳系在 pan clutch 生效后顺滑地朝推动方向平移。`Solar inspect` 变为 `pan / active`，`Inspect pan score` 高于 `0.00`，inspection offset 发生变化，且没有明显逐帧跳动。 |
-| 握拳复位保持 | 在 `SolarFreeHover` 中，将同一只手收拢成拳并保持约 2 秒。 | 摄像头预览、右上角状态说明，以及 Debug 的 `Solar inspect`、`Inspect reset hold`、`Inspect scale / offset`。 | 保持期间 `Solar inspect` 显示 `resetHold / active`，reset hold time 接近约 `2000ms`。完成后 `Solar inspect` 显示 `reset / active`，inspection scale 回到接近 `1.00`，offset 接近 `0, 0, 0`，端点可见或可恢复。 |
-| 端点控制优先 | 处于或回到 `SolarHandleControl` 时，移动或张开单手，模拟 M5.5 控制动作。 | Debug 面板和摄像头预览。 | 端点控制期间单手观察不会移动太阳系。`Solar inspect` 显示 `inactive / idle`，或在 `SolarHandleControl` 拥有 transform 时保持非 active。 |
-| 观察后重新扶住 | 在自由悬浮中平移或缩放太阳系，然后把双手放回可见左右端点附近。 | 摄像头预览，以及 Debug 的 `Startup state`、`Solar reason`、端点/重新扶住相关行。 | 重新扶住仍在视觉更新后的端点位置生效，状态可以回到 `SolarHandleControl`，不会跳回旧释放中心。 |
-| 慢速手势稳定性 | 重复慢速张开、自然回手、稳定开掌后收拢、自然放松，以及慢速推动动作。 | 右上角状态说明，以及 Debug 的 `Solar inspect`、`Inspect spread velocity`、`Inspect pan score`。 | 分类结果可理解，不会在刻意慢动作中快速来回闪烁 zoom 与 pan。放大/缩小后的回弹动作应被忽略，而不是变成反向缩放。如果闪烁明显，Milestone 5.5 保持 `NEEDS_MANUAL_VERIFY` 并继续调阈值。 |
+| 进入自由悬浮 | 打开摄像头，拉开太阳系，进入端点控制，然后松开端点把手，让太阳系悬浮。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系内容保持在释放时的 transform。`Startup state` / interaction state 显示 `SolarFreeHover`，状态说明提示等待端点重新扶住或反向收起，而不是等待单手观察。 |
+| 单手张开 no-op | 在 `SolarFreeHover` 中，让一只手进入画面并五指张开。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系缩放和位置保持释放时的 transform。Debug 不出现 `Solar inspect`、M5.5 checklist、inspection scale 或 inspection offset 行。 |
+| 单手收拢 no-op | 在 `SolarFreeHover` 中，让一只开掌进入画面，然后五指收拢。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系不会缩小，也不会进入单手观察状态。端点/重新扶住相关行仍是唯一相关的整体控制。 |
+| 握拳保持 no-op | 在 `SolarFreeHover` 中，将一只手收拢成拳并保持约 2 秒。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系视图不会复位，也不会出现复位计时器/checklist。 |
+| 单手推动 no-op | 在 `SolarFreeHover` 中，用一只手向左/右/上/下推动。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系不会平移。任何可见 transform 变化都只能来自有效的双手端点控制，而不是单手推动。 |
+| 端点重新扶住仍有效 | 尝试上述 no-op 单手动作后，将双手放回可见左右端点附近。 | 摄像头预览，以及 Debug 的 `Startup state`、`Solar reason`、端点/重新扶住相关行。 | 重新扶住仍在释放时的端点位置生效，状态可以回到 `SolarHandleControl`，不需要也不会暴露 M5.5 观察状态。 |
 
 ## 实现过程中待解决的问题
 
@@ -1052,6 +1048,60 @@ Done when:
 
 ## 变更日志
 
+### 2026-06-24 — Milestone 7 卡死与激活切换修复
+
+- 根据用户证据修复 bug：`/var/folders/cw/d9jps_sj2gd8j6tvg92z2c3m0000gn/T/codex-clipboard-e493c513-12bc-4ed7-ab54-13648310e106.png` 显示 `Invalid interaction transition: SolarFreeHover -> PlanetActivated`，这会在已释放太阳系尝试激活天体时停止渲染循环。
+- 实现更新：状态机现在允许从 `SolarActive` / `SolarFreeHover` 直接进入 `PlanetActivated`；激活可通过统一 controller 从 A 切到 B；清除或切换 A 后，A 会恢复原轨道公转，当前激活天体才是唯一暂停公转的天体。
+- 产品澄清：激活天体只暂停原轨道/位置移动，必须保持自然自转。用户从 A 转到 B 时，A 立即恢复原轨道公转。
+- 验证更新：新增回归覆盖自由悬浮后直接激活、A 到 B 的激活切换，以及占位太阳系中“暂停公转不停止自转，切换激活后前一个天体恢复公转”的规则。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/stateMachine.ts`、`src/interaction/planetActivationController.ts`、`tests/unit/stateMachine.test.ts`、`tests/unit/solarSystemInteraction.test.ts` 和 `tests/gesture/planetActivationController.test.ts`。
+- 剩余不明确项：M7 仍保持 `NEEDS_MANUAL_VERIFY`，直到用户确认真实摄像头流程不再卡死，且 A/B 激活行为在浏览器里符合预期。
+
+### 2026-06-24 — Milestone 7 真实摄像头证据修复
+
+- 根据用户证据修复 bug：`~/ChromeDownload/ar-solar-gesture-log-2026-06-23T17-54-45-833Z.json` 显示只有 12 帧 `BodyHover`，没有任何 `PlanetActivated`；hover 是由手掌中心靠近触发的，但用户实际意图是用 pinch 指尖命中目标。靠近 hover 时最低激活 ratio 约为 `0.42`，旧的 synthetic-only `0.18` start 阈值会全部拒绝。
+- 实现更新：M7 hover/activation 现在会在拇指/食指中点、拇指尖、食指尖和手掌中心之间选择离天体最近的交互点；pinch start/end 阈值调整为 `0.48 / 0.62`，并加入屏幕像素距离保护；通用命中半径也放大，使真实指尖瞄准不那么脆弱。
+- 调试更新：Debug 面板和 recorder 现在包含 `pinchDistancePx` 和 `hoverPointKind`，后续录制可以区分手掌中心命中和指尖/捏合中点命中。
+- 验证更新：新增回归测试，覆盖“手掌中心远离土星，但 pinch 中点落在土星上时必须进入 `PlanetActivated`”。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts`、`src/rendering/debugOverlay.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts` 和 `tests/gesture/planetActivationController.test.ts`。
+- 剩余不明确项：需要用户重新跑真实摄像头 checklist，确认新阈值和热区在九个天体上的手感是否合适。
+
+### 2026-06-24 — Milestone 7 hover 和 pinch 激活已实现
+
+- 实现更新：新增统一的 `PlanetActivationController`，负责屏幕空间天体 hover、最近目标迟滞、pinch start/end 迟滞、`BodyHover` / `PlanetActivated` 转换，以及 pinch 激活保持期间的短暂追踪丢失容忍。
+- 渲染更新：可交互天体现在暴露投影后的屏幕目标、水星/月球扩展热区、hover/activated 光环、标签、轨道高亮；被激活天体会暂停原轨道公转，同时继续自转。
+- 状态/调试更新：将旧的代码态 `BodyGrabbed` / `BodyDetached` 替换为产品一致的 `PlanetActivated` 和后续 focus 状态；Debug/status/recorder 输出现在包含 hover 距离、pinch ratio、active hand、激活原因和原轨道数据。
+- 验证：新增 `tests/gesture/planetActivationController.test.ts`，扩展 `tests/gesture/solarOpeningLifecycle.test.ts` 和 `tests/unit/coordinateMapping.test.ts`。`npm run typecheck`、`npm test`、`npm run build`、`npm run lint --if-present` 和 `git diff --check` 通过。本地 Chrome CDP 检查确认 `/` 的 WebGL canvas 保持透明空场，而 `/?solarPreview=1` 在桌面和移动视口都会渲染非空太阳系内容。真实摄像头 hover/pinch 手感仍需人工验证后，M7 才能从 `NEEDS_MANUAL_VERIFY` 推进到 `DONE`。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/coordinateMapping.ts`、`src/interaction/gestureDebugRecorder.ts`、`src/interaction/planetActivationController.ts`、`src/interaction/solarOpeningController.ts`、`src/interaction/stateMachine.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/rendering/landmarkOverlay.ts`、`src/solar/celestialBody.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts`、`tests/gesture/planetActivationController.test.ts`、`tests/gesture/solarOpeningLifecycle.test.ts` 和 `tests/unit/coordinateMapping.test.ts`。
+- 剩余不明确项：真实摄像头测试需要调优有效热区、hover 迟滞手感，以及不同光线、手型和摄像头距离下的 pinch 阈值。
+
+### 2026-06-24 — Milestone 6 天体 registry 完成
+
+- 实现更新：完成 M6，将天体 registry 收紧到九个 MVP 可交互目标，新增明确的 interactive body id、天体名称、激活/焦点元数据、原始轨道 transform helper，以及后续 hover/激活/焦点可显示的 label sprite。
+- 渲染/数据更新：placeholder 太阳系 facade 现在暴露可复用的天体定义、world position、label 显隐和原始轨道 transform，供 M7-M9 使用，同时没有添加按行星分叉的一次性激活或焦点逻辑。
+- 验证：新增 `tests/unit/solarSystemData.test.ts`，覆盖 registry 唯一性、九个 MVP 目标、月球父级、土星环元数据，以及激活/焦点/回轨元数据。`npm run typecheck`、`npm test`、`npm run build` 和 `git diff --check` 通过。本地 Chrome CDP 检查也确认 `/` 的 WebGL canvas 保持透明空场，而 `/?solarPreview=1` 在桌面和移动视口都会渲染非空且持续运动的太阳系内容。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/solarSystemData.ts`、`src/solar/celestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemData.test.ts`。
+- 剩余不明确项：M6 数据/模型范围内无；真实 hover/highlight/pinch 激活仍属于 M7。
+
+### 2026-06-24 — M5.5 单手观察和焦点行星单手控制退役
+
+- 需求调整：用户移除了 free-hovered 太阳系的 M5.5 单手五指张开放大、单手收拢缩小、握拳保持复位和单手推动平移。
+- 需求调整：用户也移除了单颗行星焦点里的单手缩放、平移和复位控制；当前行星保持自转，托住/悬浮/甩回仍在范围内。
+- 实现更新：删除太阳系单手观察 controller 路径、运行时 M5.5 checklist/export/reset/report/verification helper、`verify:m5.5` 和专门的太阳系观察 gesture 测试。`SolarFreeHover` 现在保持最后稳定 transform，并等待端点重新扶住或反向收起。
+- 文档更新：本条记录取代下面 2026-06-23 的 M5.5 实现、调优和 checklist 记录；那些内容仅保留为项目历史。
+- 验证：`npm run typecheck`、`npm run test:gesture`、`npm test`、`npm run build` 和 `git diff --check` 通过。`npm run lint` 不可用，因为当前仓库没有 `lint` 脚本。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`docs/testing/test-and-replay-harness.md`、`index.html`、`package.json`、`src/main.ts`、`src/interaction/solarOpeningController.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/utils/types.ts`，以及删除的 `src/interaction/solarInspection*.ts` 和 `tests/gesture/solarInspectionController.test.ts`。
+- 剩余不明确项：真实摄像头验证应确认已退役的 free-hover 单手手势都是 no-op；等单颗行星焦点 controller 实现后，还需要人工验证焦点行星单手 no-op 行为。
+
+### 2026-06-24 — 将启动合拢到拉开链路限制为空场
+
+- 需求变更：`HandsClosed` 只能从 `EmptyIdle` 空场摄像头画面进入，`PullArmed` 只能从前置 `HandsClosed` 合拢基线进入。
+- 实现启动 controller 护栏：离开空场启动链路后清空启动手势记忆，包括 `CameraReady`，避免空场前或后续场景中的手势姿态被继承为启动证据。
+- 新增 gesture 测试，覆盖 `CameraReady` 证据隔离，以及非空场状态下忽略合拢到拉开动作。
+- 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md`、`docs/testing/testing-todo.md`、`docs/testing/test-and-replay-harness.md`、`src/interaction/handStartupGesture.ts` 和 `tests/gesture/handStartupGesture.test.ts`。
+- 人工验证：用户已确认，打开/自由悬浮后，远离端点的普通双手合拢拉开不会表现为重新启动。
+- 剩余不明确项：空场启动门禁本身无；更广泛的真实摄像头阈值调优继续由里程碑级人工验证备注跟踪。
+
 ### 2026-06-23 — 手势管线稳定性重构（8 个 Task）
 
 - 在加新手势之前先稳定"手部追踪 → 手势"管线,针对真实摄像头下的抖动 / 过敏感 / 掉控。不加新产品手势;不做臆测性的阈值调参;初始空场和默认关闭的 pose 追踪保持不变。
@@ -1059,8 +1109,8 @@ Done when:
 - 配对在平滑之前(`gestureInputFrame.ts`):`HandTracker` 先建原始手、按轨迹分配视觉左右,再按视觉槽位平滑——双手交叉时 MediaPipe handedness 翻转不再串平滑历史。
 - 屏幕平面手距只用 2D x/y(startup、primitives、solar-opening),把噪声大的 image z 从"手有多近/多远"和拉开轴里去掉。
 - `TrackedHand` 新增 `worldLandmarks`;手型(`handPose` 的张开/握拳、`intentScoring` 的 pinch)在有 world 时优先用米制 world 几何,无则回退 image。
-- `SolarActive` 在双手不再扶住端点时释放到 `SolarFreeHover`,使展开后无需再 re-grip 一次端点即可单手观察。
-- 单手观察锁定主手,而不是要求每帧恰好一只手,弱第二只手 blip 不再 reset 手势。
+- `SolarActive` 在双手不再扶住端点时释放到 `SolarFreeHover`,使释放后的 transform 无需再 re-grip 一次端点即可保持。历史说明：这里原本描述的单手观察行为已在 2026-06-24 随 M5.5 退役而删除。
+- 历史说明：本次重构中的单手观察主手锁定，已在 2026-06-24 随已退役的 M5.5 太阳系观察 controller 一起删除。
 - 测试:85 → 97 通过。新增回归测试:新帧门控、展开→自由悬浮、第二只手 blip、2D 手距 vs z 抖动、视觉身份先于平滑、world 手型。
 - 影响文件:`src/main.ts`、`src/tracking/handTracker.ts`、`src/utils/types.ts`、`src/interaction/{freshFrameGate,gestureInputFrame,handStartupGesture,handPrimitives,handPose,intentScoring,solarOpeningController,solarInspectionController}.ts`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`,以及新增的 `tests/` 文件。
 - 剩余不明确项:仍需真实摄像头验证(handedness 翻转稳定性、手感、阈值);结构性修复有意避开了阈值调参。未改产品行为/验收,因此 `ar_solar_system_prd.md` 不变。
@@ -1085,7 +1135,7 @@ Done when:
 
 - 工作流更新：新增专门测试策略文档，明确先锁叶子纯函数和控制器序列测试，再做 JSON replay 和浏览器 E2E。
 - 计划更新：在 TODO 中新增横切 `Test & Replay Harness` 工作流，而不是把测试专项插回过时的 `Milestone 3.7`。
-- 长期规则更新：AGENTS 现在指向测试策略文档，并提醒未来会话在 M5.5 稳定前不要急着改 `main.ts` 或运行时 replay 接缝。
+- 长期规则更新：AGENTS 当时指向测试策略文档，并提醒未来会话在当时活跃的 M5.5 面稳定前不要急着改 `main.ts` 或运行时 replay 接缝。已取代说明：M5.5 单手观察已在 2026-06-24 删除，当前 replay 门禁以活跃交互面稳定为准。
 - 影响文件：`docs/testing/test-and-replay-harness.md`、`TODO.md`、`TODO.zh-CN.md`、`AGENTS.md`、`scripts/sync-agent-repo.mjs`。
 - 剩余不明确项：具体 Vitest 测试文件和 fixture 格式留到第一轮实现切片再定。
 
@@ -1225,7 +1275,7 @@ Done when:
 
 ### 2026-06-22 — 更新行星焦点手势模型和里程碑计划
 
-- 需求细化：用新的行星交互模型替换旧的天体抓取/冻结/release 闭环：hover、pinch 激活、主手 pinch 锁定 + 副手张开进入 `PlanetFocusView`、始终保持自转、单颗行星缩放/平移/托住、副手 `PinchTap` 放下悬浮，以及 pinch-and-throw 甩回。
+- 需求细化：用新的行星交互模型替换旧的天体抓取/冻结/release 闭环：hover、pinch 激活、主手 pinch 锁定 + 副手张开进入 `PlanetFocusView`、始终保持自转、当时规划的单颗行星缩放/平移/托住、副手 `PinchTap` 放下悬浮，以及 pinch-and-throw 甩回。已取代说明：单颗行星单手缩放/平移/复位已在 2026-06-24 删除，托住/悬浮/甩回保留。
 - 新增 Milestone 5.5，用于太阳系自由悬浮后的单手观察控制；重写 Milestone 6-9，使其围绕可交互天体元数据、pinch 激活、单颗行星画面、PinchTap 放下、焦点悬浮和甩回展开。
 - 更新 PRD 和长期 agent 规则：被激活/聚焦天体停止原轨道公转但保持自转；普通放下不回轨，也不退出单颗行星画面。
 - 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md` 和 `~/CodeXProject/物理宇宙资料/手势操控语义整理.md`。

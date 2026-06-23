@@ -87,6 +87,11 @@ const raycaster = new Raycaster();
 const ndcPoint = new Vector2();
 const intersectionTarget = new Vector3();
 const interactionPlane = new Plane(new Vector3(0, 0, 1), 0);
+const worldProjectPoint = new Vector3();
+const worldRadiusPoint = new Vector3();
+const cameraRight = new Vector3();
+const projectedCenter = new Vector3();
+const projectedRadius = new Vector3();
 
 /**
  * Map a normalized point to a world position on the interaction plane (z = planeZ) so that it
@@ -122,4 +127,63 @@ export function mapNormalizedToWorld(
   }
 
   return { x: hit.x, y: hit.y, z: hit.z };
+}
+
+export interface ProjectedStagePoint {
+  x: number;
+  y: number;
+  visible: boolean;
+}
+
+export function mapWorldToStagePixel(
+  point: Vec3,
+  layout: PreviewLayout,
+  camera: Camera,
+): ProjectedStagePoint | null {
+  if (layout.stageWidth <= 0 || layout.stageHeight <= 0) {
+    return null;
+  }
+
+  worldProjectPoint.set(point.x, point.y, point.z).project(camera);
+
+  return {
+    x: ((worldProjectPoint.x + 1) / 2) * layout.stageWidth,
+    y: ((1 - worldProjectPoint.y) / 2) * layout.stageHeight,
+    visible:
+      worldProjectPoint.x >= -1 &&
+      worldProjectPoint.x <= 1 &&
+      worldProjectPoint.y >= -1 &&
+      worldProjectPoint.y <= 1 &&
+      worldProjectPoint.z >= -1 &&
+      worldProjectPoint.z <= 1,
+  };
+}
+
+export function estimateWorldRadiusInStagePixels(
+  center: Vec3,
+  worldRadius: number,
+  layout: PreviewLayout,
+  camera: Camera,
+): number | null {
+  if (
+    layout.stageWidth <= 0 ||
+    layout.stageHeight <= 0 ||
+    worldRadius <= 0
+  ) {
+    return null;
+  }
+
+  camera.updateMatrixWorld();
+  cameraRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
+  worldProjectPoint.set(center.x, center.y, center.z);
+  worldRadiusPoint.copy(worldProjectPoint).addScaledVector(cameraRight, worldRadius);
+  projectedCenter.copy(worldProjectPoint).project(camera);
+  projectedRadius.copy(worldRadiusPoint).project(camera);
+
+  const centerX = ((projectedCenter.x + 1) / 2) * layout.stageWidth;
+  const centerY = ((1 - projectedCenter.y) / 2) * layout.stageHeight;
+  const radiusX = ((projectedRadius.x + 1) / 2) * layout.stageWidth;
+  const radiusY = ((1 - projectedRadius.y) / 2) * layout.stageHeight;
+
+  return Math.hypot(radiusX - centerX, radiusY - centerY);
 }

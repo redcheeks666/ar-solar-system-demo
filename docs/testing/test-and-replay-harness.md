@@ -8,13 +8,13 @@ Scope: automated regression testing for gesture logic, solar-system control, rep
 
 The AR Solar System demo currently depends on repeated manual webcam gesture testing. That is necessary for final acceptance, but it is too expensive for normal regression work. This harness is designed to reduce "wave hands every time" testing by locking the deterministic parts first, then gradually adding structured gesture replay and browser-level checks.
 
-This is a cross-cutting workflow, not a product milestone inserted before Milestone 4. The current product baseline is Milestone 5.5 and later. Testing work should support the current timeline instead of renumbering earlier milestones.
+This is a cross-cutting workflow, not a product milestone inserted before Milestone 4. The current product baseline has retired the old M5.5 one-hand solar-inspection controls. Testing work should support the active startup, opening, endpoint, and planet-focus timeline instead of renumbering earlier milestones.
 
 ## Core Decision
 
 Do not start by building a full replay framework.
 
-Start with Vitest coverage for leaf pure functions and controller sequences that do not touch `main.ts`, do not open the camera, and do not need MediaPipe. Add JSON replay and Playwright only after the M5.5 surface is stable enough that changing the app bootstrap will not shake two unstable systems at once.
+Start with Vitest coverage for leaf pure functions and controller sequences that do not touch `main.ts`, do not open the camera, and do not need MediaPipe. Add JSON replay and Playwright only after the active interaction surfaces are stable enough that changing the app bootstrap will not shake two unstable systems at once.
 
 ## Determinism Guardrail
 
@@ -56,7 +56,7 @@ Example coverage:
 
 Notes:
 
-- Run these in Vitest with `environment: 'node'`. Do not import `src/rendering/scene.ts` or anything that constructs a `WebGLRenderer` from unit tests; only Three.js math (`PerspectiveCamera`, `Raycaster`, `Vector3`, `Plane`) is needed, and it runs headlessly (the existing `verify-m5_5` script already proves this under Node).
+- Run these in Vitest with `environment: 'node'`. Do not import `src/rendering/scene.ts` or anything that constructs a `WebGLRenderer` from unit tests; only Three.js math (`PerspectiveCamera`, `Raycaster`, `Vector3`, `Plane`) is needed, and the existing Vitest helpers exercise that path headlessly.
 - `palmOrientation.ts` and `handPose.ts` take 21-point hand landmarks. Synthesizing realistic geometry is fiddly, so these may also be tested with a few frozen real single-frame fixtures (see Fixture Policy → single-frame fixtures). A single frame fed to a pure function is not "replay" and needs no replay machinery.
 - For the scoring functions in `intentScoring.ts`, prefer invariant/boundary assertions (monotonicity, range `[0, 1]`, symmetry) over hard-coded golden numbers. Property-based testing (e.g. `fast-check`) is a reasonable later enhancement and is more robust to threshold tuning.
 
@@ -69,14 +69,13 @@ Target controllers:
 - `src/interaction/handStartupGesture.ts`
 - `src/interaction/wholeSystemIntent.ts`
 - `src/interaction/solarOpeningController.ts`
-- `src/interaction/solarInspectionController.ts`
 - later: planet activation, focus, PinchTap release, and throw-return controllers.
 
 High-value first tests:
 
 | Test | What it covers | Needs replay framework |
 |---|---|---|
-| `pull-open-happy` | synthetic close, pull, `PullArmed`, `SolarOpening`, `SolarActive` | no |
+| `pull-open-happy` | synthetic `EmptyIdle` close, `HandsClosed`, pull, `PullArmed`, `SolarOpening`, `SolarActive` | no |
 | `hold-closed-no-solar` | hands close but not pulled apart; no visible solar content/opening progress | no |
 | `pause-mid-opening` | opening progress holds when hand distance holds | no |
 | `reverse-collapse` | re-gripped endpoint control moves inward and returns to `EmptyIdle` | no |
@@ -88,27 +87,21 @@ The key observation is that most painful M4/M5 regressions can be covered by pur
 Notes:
 
 - Inject fixed `GestureThresholds` (not the session-adaptive calibration) so controller logic is tested independently of `gestureCalibration.ts`. Calibration gets its own dedicated test.
-- Reuse in-app verification accumulators as test oracles where they exist. `src/interaction/solarInspectionVerification.ts` already encodes the M5.5 acceptance checklist (free-hover, zoom-in/out, pan, reset-hold, reset, handle-off). A sequence test can drive the controller and assert `verification.completed === true` instead of hand-writing per-frame expectations — less brittle, and it reuses the acceptance definition.
+- Reuse in-app verification accumulators as test oracles where they exist, but do not preserve retired M5.5 solar-inspection accumulators. The deleted `solarInspectionVerification` path must not be restored unless that gesture surface is explicitly reopened.
 - `wholeSystemIntent.update(...)` consumes a `HandStartupGestureSnapshot`, so `tests/helpers/` should provide builders for both `TrackingSnapshot` and `HandStartupGestureSnapshot`.
 
-### Layer 2: Absorb the Existing M5.5 Verification Script
+### Layer 2: Retired M5.5 Verification Script
 
-The project already has a deterministic, headless M5.5 verification:
+The project previously had deterministic, headless M5.5 verification for one-hand solar inspection:
 
 - `scripts/verify-m5_5-solar-inspection.ts`
 - `scripts/run-m5_5-verification.mjs`
 
-This script is, in practice, a hand-written Layer 1 suite: it builds a `PerspectiveCamera`, constructs synthetic `TrackingSnapshot` / `TrackedHand` frames via local `step()` and `point()` helpers, drives `SolarInspectionController`, and checks expected intents. It should be **absorbed into Vitest rather than maintained as a parallel runner**:
-
-- Extract its `step()` / `point()` / camera / layout builders into `tests/helpers/` as the single source of synthetic-driving utilities.
-- Port its cases into `tests/gesture/solarInspectionController.test.ts` with `expect` assertions. Vitest runs TypeScript natively, so the custom `run-m5_5-verification.mjs` loader is no longer needed.
-- Reduce `npm run verify:m5.5` to a thin alias that runs that test file, or retire it once the port lands, so there is one harness instead of two.
-
-Until the port is done, `npm run verify:m5.5` stays the deterministic M5.5 check.
+Those controls are now retired, and the controller, report helper, verification accumulator, dedicated gesture test, and `verify:m5.5` npm script have been removed. Keep the generic synthetic builders under `tests/helpers/`, but do not restore M5.5-specific tests or scripts unless the user explicitly reopens that gesture surface.
 
 ### Layer 3: JSON Gesture Replay
 
-Replay should come after the first Vitest layers and after M5.5 stabilizes.
+Replay should come after the first Vitest layers and after the active gesture surfaces stabilize.
 
 This layer is specifically about **multi-frame sequences** — reproducing how state evolves across time under real tracking noise. Single-frame inputs to pure functions belong in Layer 0, not here.
 
@@ -147,7 +140,7 @@ It would verify:
 - desktop and mobile viewports keep UI from overlapping important content.
 - `?solarPreview=1` remains a dev-only visual preview and does not change normal startup.
 
-Do not implement this layer until the lower layers are useful and the M5.5 product path is stable.
+Do not implement this layer until the lower layers are useful and the active product path is stable.
 
 ## Proposed Code Path Architecture
 
@@ -172,8 +165,7 @@ tests/
     handStartupGesture.test.ts
     solarOpeningController.test.ts
     wholeSystemIntent.test.ts
-    solarInspectionController.test.ts  # ported from scripts/verify-m5_5-solar-inspection.ts
-  helpers/                            # extracted from verify-m5_5; single source, not re-written
+  helpers/                            # shared synthetic builders; single source, not re-written
     syntheticHands.ts
     trackingSnapshots.ts              # builds TrackingSnapshot and HandStartupGestureSnapshot
     testCamera.ts
@@ -204,7 +196,7 @@ src/testing/
   replayClock.ts
 ```
 
-Add those only after M5.5 stabilizes and after controller-level replay has proven useful.
+Add those only after active gesture surfaces stabilize and after controller-level replay has proven useful.
 
 ## Fixture Policy
 
@@ -224,13 +216,13 @@ Later, this can become `docs/testing/fixture-policy.md` once real fixtures are i
 
 1. Add Vitest (`environment: 'node'`) and scripts without touching product runtime code.
 2. Add the determinism guardrail test for `src/interaction/**`.
-3. Extract the synthetic builders from `scripts/verify-m5_5-solar-inspection.ts` into `tests/helpers/`.
+3. Maintain shared synthetic builders in `tests/helpers/`.
 4. Add Layer 0 tests for pure helper modules.
 5. Add Layer 1 controller tests for startup/opening/collapse, reusing in-app verification accumulators as oracles where available.
-6. Port the M5.5 verification cases into a Vitest gesture test; reduce `npm run verify:m5.5` to an alias (or retire it).
+6. Keep the retired M5.5 verification path removed; do not add `verify:m5.5` unless the gesture surface is explicitly reopened.
 7. Add CI (GitHub Actions) running `typecheck` + `test:unit` + `test:gesture` + `build` on push/PR.
-8. Add controller-level multi-frame JSON replay after the above are useful and M5.5 stabilizes.
-9. Add browser replay and Playwright only after M5.5 behavior stabilizes.
+8. Add controller-level multi-frame JSON replay after the above are useful and active gesture surfaces stabilize.
+9. Add browser replay and Playwright only after active gesture behavior stabilizes.
 
 ## Suggested Scripts
 
@@ -239,8 +231,7 @@ Short-term:
 ```json
 {
   "test:unit": "vitest run tests/unit",
-  "test:gesture": "vitest run tests/gesture",
-  "verify:m5.5": "node scripts/run-m5_5-verification.mjs"
+  "test:gesture": "vitest run tests/gesture"
 }
 ```
 
@@ -250,7 +241,6 @@ Commit-time or pre-merge local check:
 npm run typecheck
 npm run test:unit
 npm run test:gesture
-npm run verify:m5.5
 npm run build
 ```
 
@@ -260,7 +250,7 @@ Future:
 {
   "test:replay": "vitest run tests/replay",
   "test:e2e": "playwright test",
-  "test:all": "npm run typecheck && npm run test:unit && npm run test:gesture && npm run verify:m5.5 && npm run build && npm run test:replay && npm run test:e2e"
+  "test:all": "npm run typecheck && npm run test:unit && npm run test:gesture && npm run build && npm run test:replay && npm run test:e2e"
 }
 ```
 
@@ -292,7 +282,7 @@ Keep manual verification for:
 - edge-of-frame partial tracking.
 - different webcam angles and camera quality.
 - whether status copy and debug guidance are understandable while the user is moving.
-- final M5.5 tuning before moving from `NEEDS_MANUAL_VERIFY` to `DONE`.
+- final threshold and ergonomics tuning before moving gesture-heavy milestones from `NEEDS_MANUAL_VERIFY` to `DONE`.
 
 The goal is not zero manual testing. The goal is that manual testing happens at milestone acceptance and threshold-tuning moments, not after every small code change.
 
@@ -301,7 +291,7 @@ The goal is not zero manual testing. The goal is that manual testing happens at 
 The smallest useful next implementation is:
 
 1. Add Vitest (`environment: 'node'`).
-2. Extract `tests/helpers/` builders (synthetic hands, `TrackingSnapshot`, test camera, fixed thresholds) from `scripts/verify-m5_5-solar-inspection.ts` — single source, do not re-write.
+2. Maintain `tests/helpers/` builders (synthetic hands, `TrackingSnapshot`, test camera, fixed thresholds) as the single source for synthetic controller tests.
 3. Add `tests/unit/determinism.test.ts` (the guardrail).
 4. Add `tests/unit/coordinateMapping.test.ts`.
 5. Add `tests/unit/handPose.test.ts` (synthetic, or a frozen single-frame fixture if synthetic geometry is awkward).
@@ -310,4 +300,3 @@ The smallest useful next implementation is:
 8. Wire `test:unit` and `test:gesture` scripts.
 
 This first slice gives immediate regression value with no product-code seam changes.
-

@@ -28,6 +28,7 @@ interface GestureDebugFrame {
     lostHandHoldActive: boolean;
   };
   wholeSystem: DebugSnapshot['wholeSystem'];
+  planetActivation: DebugSnapshot['planetActivation'];
 }
 
 export class GestureDebugRecorder {
@@ -87,6 +88,7 @@ export class GestureDebugRecorder {
         lostHandHoldActive: snapshot.lostHandHoldActive,
       },
       wholeSystem: snapshot.wholeSystem,
+      planetActivation: snapshot.planetActivation,
     };
 
     this.frames.push(frame);
@@ -95,7 +97,7 @@ export class GestureDebugRecorder {
       this.frames.shift();
     }
 
-    this.lastEvent = `${frame.startup.transitionReason} / ${frame.wholeSystem.transitionReason}`;
+    this.lastEvent = `${frame.startup.transitionReason} / ${frame.wholeSystem.transitionReason} / ${frame.planetActivation.transitionReason}`;
   }
 
   exportJson(): void {

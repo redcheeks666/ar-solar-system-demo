@@ -14,10 +14,10 @@ The MVP experience is:
 6. A 3D solar system is pulled open between the hands, with the opening endpoints visually attached to both hands.
 7. After opening, the solar system may initially use a body-relative reference for AR feel, but after release it can free-hover at any user-chosen position instead of being constrained to the chest anchor or screen center.
 8. The user can re-grip the solar-system left/right endpoints to control the whole-system handle lifecycle, including placement, release, and reverse collapse.
-9. After the solar system is released into free hover, the user can use the latest M5.5 one-hand spread/contract, fist-hold reset, and push gestures to zoom, shrink, reset, and pan the solar-system view for inspection.
+9. After the solar system is released into free hover, one-hand spread/contract, fist-hold reset, and push gestures no longer zoom, shrink, reset, or pan the solar-system view; the released solar system waits for endpoint re-grip or reverse collapse.
 10. The user can hover and pinch-activate Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
 11. A pinch-activated body stops its original orbit but keeps natural self-rotation; while the main hand keeps pinch lock, the other hand can open/spread to enter a single-planet focus view.
-12. In the single-planet focus view, the selected body remains self-rotating while it is zoomed, panned, supported, released to floating, and inspected; the background solar system is dimmed and interaction-locked while preserving basic motion.
+12. In the single-planet focus view, the selected body remains self-rotating while it is supported, released to floating, and inspected; one-hand focus zoom, pan, and reset controls are retired. The background solar system is dimmed and interaction-locked while preserving basic motion.
 13. A main-hand support plus off-hand `PinchTap` confirms placing the body down; it remains floating in the planet focus view and does not return to orbit.
 14. A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit, then exits back to the solar-system view.
 
@@ -85,15 +85,15 @@ The first successful demo should prove this loop:
 ```text
 camera on
 → initial empty AR scene
-→ hands together anywhere in the visible camera frame
-→ hands pull apart
+→ in `EmptyIdle`, hands together anywhere in the visible camera frame enter `HandsClosed`
+→ hands pull apart from the `HandsClosed` baseline into `PullArmed`
 → solar system opens between both hands
 → solar system free-hovers at the released position
 → both hands can re-grip endpoints for handle control, release, and reverse collapse
-→ one-hand zoom/shrink/reset/pan the free-hovered solar-system view
+→ one-hand spread/contract/fist/push no longer controls the free-hovered solar-system view
 → hover and pinch-activate a body
 → main-hand pinch lock + off-hand spread enters a single-planet focus view
-→ inspect the self-rotating body with one-hand zoom/pan/support gestures
+→ inspect the self-rotating body with support, release-to-floating, and return gestures
 → main-hand support + off-hand PinchTap leaves it floating in the focus view
 → pinch-and-throw returns it to orbit and exits back to the solar-system view
 ```
@@ -199,10 +199,13 @@ The startup gesture is hand-only and must not depend on chest anchor, shoulders,
 
 It must appear only after a valid two-hand closed-to-pull gesture:
 
+- the current interaction state is `EmptyIdle` and the visible scene is still the empty camera view with no solar-system 3D content;
 - both hands detected;
 - hands initially close to each other anywhere in the visible camera frame;
+- `PullArmed` can only be reached from `HandsClosed`; a generic two-hand pull-apart motion must not directly arm startup;
 - if the hands overlap and one hand is briefly lost, the startup state may hold recent valid two-hand evidence for a short window;
 - a single detected hand must not start the gesture unless both hands were recently detected close together;
+- after leaving the empty startup chain, closed/pull hand motion belongs to the active scene state such as endpoint control, reverse collapse, or planet interaction, and must not re-enter `HandsClosed` or `PullArmed`;
 - while the hands/fists remain closed, no solar-system animation or 3D content should play;
 - hand distance increases over a short time window;
 - the opening progress is driven by current hand distance;
@@ -214,7 +217,7 @@ It must appear only after a valid two-hand closed-to-pull gesture:
 The opened solar system should feel like it exists in front of the user, but it must not be permanently pinned to the chest.
 
 - Left and right shoulders may be used as an optional body-relative reference for initial placement or AR feel.
-- The chest/body reference must not be required for startup, release, re-grip, free-hover behavior, reverse collapse, or M5.5 one-hand inspection controls.
+- The chest/body reference must not be required for startup, release, re-grip, free-hover behavior, or reverse collapse.
 - Because the body reference currently gates nothing, `PoseLandmarker` is disabled by default via `ENABLE_POSE_TRACKING` in `src/tracking/config.ts` to free CPU for hand tracking and gesture stability. Pose data must not be assumed present; the debug panel shows `Pose: missing` while disabled. Re-enable the flag (it then runs throttled at `POSE_DETECTION_INTERVAL_MS`) only when M4+ actually consumes body-relative placement.
 - Do not leave the solar system fixed at the screen center after opening.
 - When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to a chest/body reference or the screen center.
@@ -239,7 +242,7 @@ The opened solar system should behave like a manipulable object suspended in the
 - Complete hand loss, endpoint mismatch, or low whole-control confidence may remain fallback release signals, but they must not replace open-hand release as the primary user-facing gesture.
 - Re-grip should use a forgiving magnetic zone around the frozen visual endpoints. For visible M4 solar content, those endpoints are the solar-system-owned 3D left/right control endpoints and re-grip requires stable endpoint hits before entering `SolarHandleControl`; the older 2D virtual endpoint snap-back behavior is protocol/debug-only until explicitly reconnected.
 - Moving gripped hands inward from the opened state should collapse the solar system in reverse; when fully closed, the scene returns to the initial empty camera view.
-- Current user-facing solar-system zoom, shrink, reset, and pan controls are the M5.5 one-hand controls that run only after `SolarFreeHover`. M5.5 zoom/shrink should be phase-locked: spreading fingers zooms only during the opening phase and natural hand return must not immediately shrink; shrink starts from a briefly stable open hand and consumes only the closing phase. Pan should use a stable-spread clutch plus smoothed palm displacement from an anchor rather than raw per-frame palm delta.
+- M5.5 one-hand solar inspection controls are retired: after `SolarFreeHover`, single-hand spread, contract, fist-hold reset, and push must not zoom, shrink, reset, or pan the solar-system view. Free-hover waits for endpoint re-grip or reverse collapse.
 - Palm-forward side-to-side "sliding glass" scaling and palms-up whole-system 3D rotation are retired M5 semantics. Keep related protocol/debug fields only when useful for diagnostics; do not implement them as active product controls unless the user explicitly reopens that requirement.
 - Whole-system handle gestures must remain separate from pinch-activating individual planets.
 
@@ -276,7 +279,7 @@ Protocol output should include:
 - Virtual visual-left/visual-right endpoints and endpoint match state.
 - Structured transition reasons for startup and whole-system state decisions.
 
-Palm orientation is a legacy/debug intent-confidence signal only. Do not make palm-forward or palms-up a hard gate, because normal webcam hand depth and palm normals can be noisy. The current M5.5 solar inspection controls use one-hand spread/contract, fist-hold reset, and push after `SolarFreeHover`.
+Palm orientation is a legacy/debug intent-confidence signal only. Do not make palm-forward or palms-up a hard gate, because normal webcam hand depth and palm normals can be noisy. Do not reintroduce M5.5-style one-hand spread/contract, fist-hold reset, or push controls after `SolarFreeHover` unless the user explicitly reopens that requirement.
 
 Virtual endpoint left/right labels should mean the user's visual left/right in the mirrored camera preview. They are not the same thing as MediaPipe handedness labels.
 
@@ -312,10 +315,11 @@ Only one body may be activated or focused at a time in the MVP.
 
 - Pinch near a hovered body enters `PlanetActivated`.
 - A `PlanetActivated` body stops its original orbit but keeps natural self-rotation; other bodies continue normal orbit and self-rotation.
+- Only the currently activated body may have its original orbit paused. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting and B becomes the only paused-orbit body if it is activated.
 - While the main hand keeps the pinch lock, the off-hand open/spread gesture enters `PlanetFocusView`.
 - In `PlanetFocusView`, the background solar system is dimmed and interaction-locked but keeps basic motion.
-- The focused body keeps self-rotating during activation, focus, zoom, pan, support-follow, release-to-floating, and inspection.
-- One-hand spread/contract zooms the focused body; one-hand push pans it; contract-to-fist held for about two seconds restores default focus size and position.
+- The focused body keeps self-rotating during activation, focus, support-follow, release-to-floating, and inspection.
+- One-hand spread/contract, one-hand push, and contract-to-fist hold are retired focus controls; they must not zoom, pan, or reset the focused body unless the user explicitly reopens that requirement.
 - A palm/support gesture under the body can move it, constrained to the visible screen.
 - Main-hand support plus off-hand `PinchTap` releases follow-control and leaves the body floating at its current position in `PlanetFocusView`.
 - A floating focused body must not automatically return to orbit.
@@ -366,9 +370,9 @@ Required smoothing:
 - Slerp or equivalent smoothing for 3D rotations.
 - Velocity smoothing for throw detection.
 - Once visible 3D solar-system content is driven by hand endpoints, reject abrupt endpoint-geometry outliers before updating the solar-system transform. Fast hand withdrawal, edge-of-frame partial hand tracking, or one-frame MediaPipe mis-detection must hold the last stable transform instead of shrinking or jumping the model.
-- Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull / zoom / pan velocity. Rendering still runs every requestAnimationFrame.
+- Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release, or throw velocity. Rendering still runs every requestAnimationFrame.
 - Assign visual-left/right hand identity from the previous frame's trajectory before smoothing, then smooth per visual slot (`gestureInputFrame.ts`). Do not smooth per MediaPipe handedness, which swaps history when hands cross.
-- Keep MediaPipe image-landmark z out of screen-plane gesture distances (close / pull / endpoint / pan); use 2D x/y. Prefer world landmarks for hand-shape (open-hand / fist / pinch).
+- Keep MediaPipe image-landmark z out of screen-plane gesture distances (close / pull / endpoint / hover / support); use 2D x/y. Prefer world landmarks for hand-shape (open-hand / fist / pinch).
 
 Avoid single-frame state flips for important actions such as pull open, pinch start, pinch end, and throw return.
 
@@ -478,14 +482,13 @@ npm run typecheck
 npm test            # all Vitest suites (tests/unit + tests/gesture)
 npm run test:unit
 npm run test:gesture
-npm run verify:m5.5 # legacy M5.5 inspection check (being absorbed into Vitest)
 npm run build
 ```
 
 Before marking implementation tasks complete:
 
 1. Run `npm run typecheck`.
-2. Run `npm test`. All Vitest suites must pass. (Run `npm run verify:m5.5` too until it is absorbed.)
+2. Run `npm test`. All Vitest suites must pass.
 3. Run `npm run build`.
 4. Run `npm run lint` if available.
 5. When you add or change gesture / solar-control logic, add or update the matching test under `tests/` and tick the item in `docs/testing/testing-todo.md`. Use `docs/testing/test-and-replay-harness.md` to decide which layer the test belongs to (Layer 0 leaf pure function, Layer 1 controller sequence, etc.).
@@ -497,13 +500,13 @@ Do not pretend to have tested webcam or hand gestures if running in a headless e
 
 Use `docs/testing/test-and-replay-harness.md` as the project testing strategy for automated gesture regression work.
 
-- Treat the testing plan as a cross-cutting workflow, not as a stale product milestone inserted before M4. The current product baseline remains M5.5 and later.
-- First priority is deterministic Vitest coverage for leaf pure functions and controller sequences: `math`, `coordinateMapping`, `handPairing`, `palmOrientation`, `handPose`, `intentScoring`, startup, whole-system intent, solar opening, and solar inspection.
-- Do not modify `main.ts`, add `src/testing/`, or introduce a live `TrackingSource`/replay bootstrap seam in the first testing slice. Add those only after lower-level tests are useful and M5.5 behavior has stabilized.
+- Treat the testing plan as a cross-cutting workflow, not as a stale product milestone inserted before M4. The current product baseline has retired M5.5 one-hand solar inspection controls.
+- First priority is deterministic Vitest coverage for leaf pure functions and controller sequences: `math`, `coordinateMapping`, `handPairing`, `palmOrientation`, `handPose`, `intentScoring`, startup, whole-system intent, and solar opening.
+- Do not modify `main.ts`, add `src/testing/`, or introduce a live `TrackingSource`/replay bootstrap seam in the first testing slice. Add those only after lower-level tests are useful and the current whole-system/free-hover behavior has stabilized.
 - JSON gesture replay should preserve fixture timestamps and use structured recorder output only. Do not commit raw webcam video.
 - Browser-level Playwright replay comes after controller-level replay, because replay time injection through `requestAnimationFrame` is the fragile part.
 - Gesture modules under `src/interaction/**` must contain no `Math.random`, `Date.now`, or `performance.now` (all time is injected via `update(..., timestamp)`); a guardrail test enforces this so controller/leaf tests stay deterministic.
-- Absorb `scripts/verify-m5_5-solar-inspection.ts` into a Vitest gesture test by extracting its synthetic builders into shared `tests/helpers/`; reduce `npm run verify:m5.5` to an alias instead of maintaining two parallel harnesses.
+- The retired M5.5 solar-inspection verification harness is removed; do not add new `verify:m5.5` coverage unless the user explicitly reopens that gesture surface.
 - CI (GitHub Actions) running `typecheck` + unit + gesture + `build` on push/PR is the automation endpoint; browser/replay jobs join later as separate steps.
 
 ## Coding Rules
@@ -534,11 +537,11 @@ These shared modules exist so the same logic is not re-derived in multiple files
 - `src/interaction/wholeSystemIntent.ts` — the orchestration layer ONLY: the `WholeSystemIntentController` state machine plus cross-frame state (endpoints, latches, stable timers, previous hand-axis angle/palm normal). Stateful rotation-velocity scoring stays here because it needs previous-frame data; all stateless computation is delegated to the modules above. Do not move pure scoring back in, and do not relocate the stateful rotation methods out.
 - `src/interaction/coordinateMapping.ts` — the only place that converts normalized MediaPipe coordinates into displayed stage pixels and Three.js world coordinates. It is `object-fit: contain` and mirror aware. `mapNormalizedToWorld` unprojects with three's `Raycaster` against the real `scene.getCamera()` and the `z = INTERACTION_PLANE_Z` plane, so it stays correct for any camera pose; do not reintroduce a fixed-camera `tan(fov/2)` projection. The debug landmark overlay and all future 3D content (M4+) must map through it, passing `scene.getCamera()`, so hands, virtual endpoints, and 3D content stay pixel-aligned. Do not hand-roll `(1 - x) * width` style mapping elsewhere.
 - `src/interaction/gestureInputFrame.ts` — turns raw MediaPipe hands into stabilized hands by assigning visual-left/right identity from the previous frame's trajectory BEFORE smoothing (per visual slot), so a MediaPipe handedness flip during a hand crossing cannot swap smoother history. `HandTracker` builds raw hands (`buildTrackedHand`) and runs them through this; do not move smoothing back ahead of visual pairing.
-- `src/interaction/freshFrameGate.ts` — `isFreshTrackingFrame`: interaction controllers update only when `TrackingSnapshot.lastUpdatedAt` changes, fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull / zoom / pan velocity. The `main.ts` render loop enforces this; do not run the controllers every requestAnimationFrame.
+- `src/interaction/freshFrameGate.ts` — `isFreshTrackingFrame`: interaction controllers update only when `TrackingSnapshot.lastUpdatedAt` changes, fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release, or throw velocity. The `main.ts` render loop enforces this; do not run the controllers every requestAnimationFrame.
 
 Gesture geometry conventions:
 
-- Screen-plane gestures (hand close/pull distance, endpoint hit, pan, hover) use 2D x/y only. Never put MediaPipe image-landmark z into "are the hands close / far" or the pull axis — it is noisy single-camera depth.
+- Screen-plane gestures (hand close/pull distance, endpoint hit, hover, support) use 2D x/y only. Never put MediaPipe image-landmark z into "are the hands close / far" or the pull axis — it is noisy single-camera depth.
 - Hand-shape geometry (open-hand / fist / pinch) prefers MediaPipe world landmarks (`TrackedHand.worldLandmarks`) when present, falling back to image landmarks; the scores are palm-scale ratios, so the same formulas work in either space.
 
 ### Reuse vs. Custom (library built-ins)

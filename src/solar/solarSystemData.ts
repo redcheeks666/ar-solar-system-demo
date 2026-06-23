@@ -1,5 +1,4 @@
-export type CelestialBodyId =
-  | 'sun'
+export type InteractiveCelestialBodyId =
   | 'mercury'
   | 'venus'
   | 'earth'
@@ -9,6 +8,8 @@ export type CelestialBodyId =
   | 'saturn'
   | 'uranus'
   | 'neptune';
+
+export type CelestialBodyId = 'sun' | InteractiveCelestialBodyId;
 
 export type PlaceholderPattern =
   | 'solar'
@@ -37,6 +38,13 @@ export interface CelestialReturnTarget {
   orbitPhase: number;
 }
 
+export interface CelestialOriginalOrbitTransform {
+  parentId: CelestialBodyId | null;
+  orbitRadius: number;
+  orbitPhase: number;
+  localPosition: Vector3Data;
+}
+
 export interface CelestialRingDefinition {
   innerRadius: number;
   outerRadius: number;
@@ -46,6 +54,7 @@ export interface CelestialRingDefinition {
 
 export interface CelestialBodyDefinition {
   id: CelestialBodyId;
+  name: string;
   label: string;
   radius: number;
   orbitRadius: number;
@@ -64,7 +73,7 @@ export interface CelestialBodyDefinition {
   ring?: CelestialRingDefinition;
 }
 
-export const INTERACTIVE_CELESTIAL_BODY_IDS: readonly CelestialBodyId[] = [
+export const INTERACTIVE_CELESTIAL_BODY_IDS: readonly InteractiveCelestialBodyId[] = [
   'mercury',
   'venus',
   'earth',
@@ -79,6 +88,7 @@ export const INTERACTIVE_CELESTIAL_BODY_IDS: readonly CelestialBodyId[] = [
 export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'sun',
+    name: 'Sun',
     label: 'Sun',
     radius: 0.24,
     orbitRadius: 0,
@@ -97,6 +107,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'mercury',
+    name: 'Mercury',
     label: 'Mercury',
     radius: 0.045,
     orbitRadius: 0.5,
@@ -115,6 +126,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'venus',
+    name: 'Venus',
     label: 'Venus',
     radius: 0.07,
     orbitRadius: 0.76,
@@ -133,6 +145,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'earth',
+    name: 'Earth',
     label: 'Earth',
     radius: 0.078,
     orbitRadius: 1.05,
@@ -151,6 +164,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'moon',
+    name: 'Moon',
     label: 'Moon',
     radius: 0.026,
     orbitRadius: 0.18,
@@ -169,6 +183,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'mars',
+    name: 'Mars',
     label: 'Mars',
     radius: 0.06,
     orbitRadius: 1.34,
@@ -187,6 +202,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'jupiter',
+    name: 'Jupiter',
     label: 'Jupiter',
     radius: 0.18,
     orbitRadius: 1.86,
@@ -205,6 +221,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'saturn',
+    name: 'Saturn',
     label: 'Saturn',
     radius: 0.155,
     orbitRadius: 2.36,
@@ -229,6 +246,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'uranus',
+    name: 'Uranus',
     label: 'Uranus',
     radius: 0.11,
     orbitRadius: 2.86,
@@ -247,6 +265,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   },
   {
     id: 'neptune',
+    name: 'Neptune',
     label: 'Neptune',
     radius: 0.105,
     orbitRadius: 3.32,
@@ -279,6 +298,57 @@ export const SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X =
 export const SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN =
   SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X * 2;
 
-export const CELESTIAL_BODY_BY_ID = new Map<CelestialBodyId, CelestialBodyDefinition>(
+export const CELESTIAL_BODY_REGISTRY: ReadonlyMap<
+  CelestialBodyId,
+  CelestialBodyDefinition
+> = new Map<CelestialBodyId, CelestialBodyDefinition>(
   CELESTIAL_BODY_DEFINITIONS.map((body) => [body.id, body]),
 );
+
+export const CELESTIAL_BODY_BY_ID = CELESTIAL_BODY_REGISTRY;
+
+export const INTERACTIVE_CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] =
+  INTERACTIVE_CELESTIAL_BODY_IDS.map((id) => getCelestialBodyDefinition(id));
+
+export function isInteractiveCelestialBodyId(
+  id: CelestialBodyId,
+): id is InteractiveCelestialBodyId {
+  return INTERACTIVE_CELESTIAL_BODY_IDS.includes(id as InteractiveCelestialBodyId);
+}
+
+export function getCelestialBodyDefinition(
+  id: CelestialBodyId,
+): CelestialBodyDefinition {
+  const definition = CELESTIAL_BODY_REGISTRY.get(id);
+
+  if (!definition) {
+    throw new Error(`Unknown celestial body: ${id}`);
+  }
+
+  return definition;
+}
+
+export function getInteractiveCelestialBodyDefinition(
+  id: InteractiveCelestialBodyId,
+): CelestialBodyDefinition {
+  return getCelestialBodyDefinition(id);
+}
+
+export function getOriginalOrbitTransform(
+  id: InteractiveCelestialBodyId,
+): CelestialOriginalOrbitTransform {
+  const definition = getInteractiveCelestialBodyDefinition(id);
+  const orbitPhase = definition.returnTarget.orbitPhase;
+  const orbitRadius = definition.returnTarget.orbitRadius;
+
+  return {
+    parentId: definition.returnTarget.parentId,
+    orbitRadius,
+    orbitPhase,
+    localPosition: {
+      x: Math.cos(orbitPhase) * orbitRadius,
+      y: Math.sin(orbitPhase) * orbitRadius,
+      z: 0,
+    },
+  };
+}

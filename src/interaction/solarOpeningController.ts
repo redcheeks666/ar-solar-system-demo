@@ -102,8 +102,8 @@ const TARGET_FRAME_MS = 33.33;
 const ENDPOINT_ENTER_STABLE_MS = 140;
 const ENDPOINT_EXIT_GRACE_MS = 180;
 // After opening completes (SolarActive), if the hands are not holding the endpoints for this long
-// (released or dropped), fall through to SolarFreeHover so M5.5 one-hand inspection works without
-// forcing an extra endpoint re-grip + release first.
+// (released or dropped), fall through to SolarFreeHover so the solar system can hover while waiting
+// for endpoint re-grip or reverse collapse.
 const ACTIVE_RELEASE_GRACE_MS = 220;
 const ENDPOINT_RADIUS_WORLD_SCALE = 0.72;
 const MIN_ENDPOINT_RADIUS_WORLD = 0.32;
@@ -147,6 +147,19 @@ export class SolarOpeningController {
       return this.updateClosing(input);
     }
 
+    if (isBodyInteractionState(input.interactionState)) {
+      return {
+        snapshot: {
+          ...this.lastSnapshot,
+          active: true,
+          visible: true,
+          progress: Math.max(this.lastSnapshot.progress, 1),
+          reason: 'solar-held-during-body-interaction',
+        },
+        nextState: null,
+      };
+    }
+
     this.reset();
     return { snapshot: EMPTY_SOLAR_OPENING_SNAPSHOT, nextState: null };
   }
@@ -163,21 +176,6 @@ export class SolarOpeningController {
     this.smoothedOpenProgress = 0;
     this.lastRawOpenProgress = 0;
     this.lastSnapshot = EMPTY_SOLAR_OPENING_SNAPSHOT;
-  }
-
-  syncFreeHoverSnapshot(snapshot: SolarOpeningSnapshot): void {
-    if (
-      !snapshot.active ||
-      !snapshot.visible ||
-      snapshot.progress < 1 ||
-      !snapshot.midpointWorld
-    ) {
-      return;
-    }
-
-    this.lastSnapshot = snapshot;
-    this.smoothedOpenProgress = snapshot.progress;
-    this.lastRawOpenProgress = snapshot.progress;
   }
 
   private updatePullArmed(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
@@ -946,6 +944,17 @@ export class SolarOpeningController {
       MAX_ENDPOINT_RADIUS_WORLD,
     );
   }
+}
+
+function isBodyInteractionState(state: InteractionState): boolean {
+  return (
+    state === 'BodyHover' ||
+    state === 'PlanetActivated' ||
+    state === 'PlanetFocusView' ||
+    state === 'PlanetFocusControlled' ||
+    state === 'PlanetFocusFloating' ||
+    state === 'BodyReturning'
+  );
 }
 
 function distance3d(first: Vec3, second: Vec3): number {

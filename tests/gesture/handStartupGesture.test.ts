@@ -69,4 +69,59 @@ describe('HandStartupGestureController', () => {
     expect(state).toBe('HandsClosed');
     expect(state).not.toBe('PullArmed');
   });
+
+  it('does not inherit closed evidence from CameraReady before the empty scene', () => {
+    const controller = new HandStartupGestureController();
+    let timestamp = 0;
+
+    for (let i = 0; i < 30; i += 1) {
+      const update = controller.update(
+        handsAtDistance(0.12),
+        'CameraReady',
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+
+      expect(update.nextState).toBeNull();
+      expect(update.snapshot.transitionReason).toBe('outside-startup-state');
+      timestamp += 16;
+    }
+
+    const firstEmptyFrame = controller.update(
+      handsAtDistance(0.12),
+      'EmptyIdle',
+      timestamp,
+      DEFAULT_GESTURE_THRESHOLDS,
+    );
+
+    expect(firstEmptyFrame.nextState).toBeNull();
+  });
+
+  it('ignores closed-to-pull motion outside the empty startup chain', () => {
+    const controller = new HandStartupGestureController();
+    let timestamp = 0;
+
+    const drive = (distance: number, state: InteractionState): void => {
+      const update = controller.update(
+        handsAtDistance(distance),
+        state,
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+
+      expect(update.nextState).toBeNull();
+      expect(update.snapshot.handsClosed).toBe(false);
+      expect(update.snapshot.pullArmed).toBe(false);
+      expect(update.snapshot.transitionReason).toBe('outside-startup-state');
+      timestamp += 16;
+    };
+
+    for (let i = 0; i < 20; i += 1) {
+      drive(0.12, 'SolarFreeHover');
+    }
+
+    for (let i = 0; i < 20; i += 1) {
+      drive(Math.min(0.12 + i * 0.03, 0.5), 'SolarFreeHover');
+    }
+  });
 });

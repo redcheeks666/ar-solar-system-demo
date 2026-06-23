@@ -61,4 +61,30 @@ describe('SolarActive lifecycle', () => {
     }
     expect(state).toBe('SolarFreeHover');
   });
+
+  it('keeps the visible solar snapshot during body hover and activation states', () => {
+    const controller = new SolarOpeningController();
+    let state: InteractionState = 'PullArmed';
+    let timestamp = 0;
+
+    for (let i = 0; i < 80 && state !== 'SolarActive'; i += 1) {
+      const distance = Math.min(0.25 + i * 0.05, 0.62);
+      const update = step(controller, state, twoHands(distance), timestamp);
+      if (update.nextState) {
+        state = update.nextState;
+      }
+      timestamp += 33;
+    }
+    expect(state).toBe('SolarActive');
+
+    const hoverUpdate = step(controller, 'BodyHover', [], timestamp);
+    expect(hoverUpdate.snapshot.visible).toBe(true);
+    expect(hoverUpdate.snapshot.progress).toBe(1);
+    expect(hoverUpdate.snapshot.reason).toBe('solar-held-during-body-interaction');
+
+    const activatedUpdate = step(controller, 'PlanetActivated', [], timestamp + 33);
+    expect(activatedUpdate.snapshot.visible).toBe(true);
+    expect(activatedUpdate.snapshot.progress).toBe(1);
+    expect(activatedUpdate.nextState).toBeNull();
+  });
 });

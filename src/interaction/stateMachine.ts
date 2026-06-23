@@ -11,14 +11,23 @@ const VALID_TRANSITIONS: Record<InteractionState, ReadonlySet<InteractionState>>
     'SolarHandleControl',
     'SolarClosing',
     'BodyHover',
+    'PlanetActivated',
   ]),
-  SolarFreeHover: new Set(['SolarHandleControl', 'BodyHover']),
+  SolarFreeHover: new Set(['SolarHandleControl', 'BodyHover', 'PlanetActivated']),
   SolarHandleControl: new Set(['SolarActive', 'SolarFreeHover', 'SolarClosing']),
   SolarClosing: new Set(['SolarActive', 'SolarFreeHover', 'SolarHandleControl', 'EmptyIdle']),
-  BodyHover: new Set(['SolarActive', 'SolarFreeHover', 'BodyGrabbed']),
-  BodyGrabbed: new Set(['BodyDetached', 'BodyReturning']),
-  BodyDetached: new Set(['BodyGrabbed', 'BodyReturning']),
-  BodyReturning: new Set(['SolarActive']),
+  BodyHover: new Set(['SolarActive', 'SolarFreeHover', 'PlanetActivated']),
+  PlanetActivated: new Set([
+    'BodyHover',
+    'SolarActive',
+    'SolarFreeHover',
+    'PlanetFocusView',
+    'BodyReturning',
+  ]),
+  PlanetFocusView: new Set(['PlanetFocusControlled', 'PlanetFocusFloating', 'BodyReturning']),
+  PlanetFocusControlled: new Set(['PlanetFocusFloating', 'BodyReturning']),
+  PlanetFocusFloating: new Set(['PlanetFocusControlled', 'BodyReturning']),
+  BodyReturning: new Set(['SolarActive', 'SolarFreeHover']),
 };
 
 export class InteractionStateMachine {

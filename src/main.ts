@@ -5,6 +5,11 @@ import { GestureDebugRecorder } from './interaction/gestureDebugRecorder';
 import { isFreshTrackingFrame } from './interaction/freshFrameGate';
 import { EMPTY_HAND_PRIMITIVES, HandPrimitiveController } from './interaction/handPrimitives';
 import { HandStartupGestureController } from './interaction/handStartupGesture';
+import {
+  EMPTY_PLANET_ACTIVATION_SNAPSHOT,
+  PlanetActivationController,
+  type PlanetActivationSnapshot,
+} from './interaction/planetActivationController';
 import { InteractionStateMachine } from './interaction/stateMachine';
 import {
   EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
@@ -15,15 +20,6 @@ import {
   getSolarOpeningRotation,
   type SolarOpeningSnapshot,
 } from './interaction/solarOpeningController';
-import {
-  EMPTY_SOLAR_INSPECTION_SNAPSHOT,
-  SolarInspectionController,
-} from './interaction/solarInspectionController';
-import { createSolarInspectionVerificationReport } from './interaction/solarInspectionReport';
-import {
-  EMPTY_SOLAR_INSPECTION_VERIFICATION,
-  updateSolarInspectionVerification,
-} from './interaction/solarInspectionVerification';
 import { DebugOverlay } from './rendering/debugOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
@@ -51,8 +47,6 @@ const debugRecorderControls = getElement<HTMLElement>('debug-recorder');
 const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
 const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
 const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
-const debugM55Export = getElement<HTMLButtonElement>('debug-m55-export');
-const debugM55Reset = getElement<HTMLButtonElement>('debug-m55-reset');
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
@@ -69,7 +63,7 @@ const gestureRecorder = new GestureDebugRecorder();
 const startupGesture = new HandStartupGestureController();
 const wholeSystemIntent = new WholeSystemIntentController();
 const solarOpening = new SolarOpeningController();
-const solarInspection = new SolarInspectionController();
+const planetActivation = new PlanetActivationController();
 
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
@@ -134,11 +128,10 @@ const debugSnapshot: DebugSnapshot = {
   solarReason: solarPreviewEnabled ? 'dev-preview' : 'inactive',
   solarStartDistance: null,
   solarTargetDistance: null,
-  solarInspection: EMPTY_SOLAR_INSPECTION_SNAPSHOT,
-  solarInspectionVerification: EMPTY_SOLAR_INSPECTION_VERIFICATION,
   hoveredBody: null,
-  grabbedBody: null,
+  activatedBody: null,
   pinchState: 'idle',
+  planetActivation: EMPTY_PLANET_ACTIVATION_SNAPSHOT,
   throwVelocity: null,
   wholeSystem: EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
   rendererReady: true,
@@ -221,7 +214,7 @@ window.addEventListener('beforeunload', () => {
   gestureCalibration.reset();
   wholeSystemIntent.reset();
   solarOpening.reset();
-  solarInspection.reset();
+  planetActivation.reset();
   renderer.removeObject3D(placeholderSolarSystem.group);
   placeholderSolarSystem.dispose();
   renderer.dispose();
@@ -242,16 +235,6 @@ debugRecordExport.addEventListener('click', () => {
 debugRecordClear.addEventListener('click', () => {
   gestureRecorder.clear();
   debugSnapshot.gestureRecording = gestureRecorder.getStatus();
-  updateRecorderControls();
-});
-
-debugM55Export.addEventListener('click', () => {
-  exportM55VerificationJson();
-});
-
-debugM55Reset.addEventListener('click', () => {
-  debugSnapshot.solarInspectionVerification =
-    EMPTY_SOLAR_INSPECTION_VERIFICATION;
   updateRecorderControls();
 });
 
@@ -342,25 +325,25 @@ function updateGestureControllers(
     updateGuidanceForState(interaction.state);
   }
 
-  const solarInspectionUpdate = solarInspection.update({
+  applySolarOpeningSnapshot(solarOpeningUpdate.snapshot);
+
+  const planetActivationUpdate = planetActivation.update({
     tracking,
     interactionState: interaction.state,
-    solarSnapshot: solarOpeningUpdate.snapshot,
+    targets: placeholderSolarSystem.getInteractiveBodyScreenTargets(
+      camera,
+      previewLayout,
+    ),
     layout: previewLayout,
-    camera,
-    planeZ: INTERACTION_PLANE_Z,
     timestamp,
   });
 
-  solarOpening.syncFreeHoverSnapshot(solarInspectionUpdate.solarSnapshot);
-  debugSnapshot.solarInspection = solarInspectionUpdate.snapshot;
-  debugSnapshot.solarInspectionVerification = updateSolarInspectionVerification(
-    debugSnapshot.solarInspectionVerification,
-    interaction.state,
-    solarInspectionUpdate.snapshot,
-    timestamp,
-  );
-  applySolarOpeningSnapshot(solarInspectionUpdate.solarSnapshot);
+  if (planetActivationUpdate.nextState) {
+    interaction.transition(planetActivationUpdate.nextState);
+    updateGuidanceForState(interaction.state);
+  }
+
+  applyPlanetActivationSnapshot(planetActivationUpdate.snapshot);
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -424,6 +407,19 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
   });
 }
 
+function applyPlanetActivationSnapshot(
+  snapshot: PlanetActivationSnapshot,
+): void {
+  debugSnapshot.hoveredBody = snapshot.hoveredBody;
+  debugSnapshot.activatedBody = snapshot.activatedBody;
+  debugSnapshot.pinchState = snapshot.pinchState;
+  debugSnapshot.planetActivation = snapshot;
+  placeholderSolarSystem.applyBodyInteractionState({
+    hoveredBody: snapshot.hoveredBody,
+    activatedBody: snapshot.activatedBody,
+  });
+}
+
 async function initializeTracking(): Promise<void> {
   try {
     await tracking.initialize();
@@ -478,41 +474,6 @@ function updateRecorderControls(): void {
     : 'Record';
   debugRecordExport.disabled = status.frameCount === 0;
   debugRecordClear.disabled = status.frameCount === 0;
-  debugM55Export.disabled = false;
-  debugM55Reset.disabled =
-    debugSnapshot.solarInspectionVerification.completedCount === 0;
-}
-
-function exportM55VerificationJson(): void {
-  const payload = createSolarInspectionVerificationReport({
-    createdAt: new Date().toISOString(),
-    cameraStatus: debugSnapshot.cameraStatus,
-    trackingStatus: debugSnapshot.trackingStatus,
-    interactionState: debugSnapshot.interactionState,
-    solar: {
-      openProgress: round(debugSnapshot.openProgress),
-      scale: round(debugSnapshot.solarScale),
-      reason: debugSnapshot.solarReason,
-    },
-    inspection: debugSnapshot.solarInspection,
-    verification: debugSnapshot.solarInspectionVerification,
-  });
-  const blob = new Blob([JSON.stringify(payload, null, 2)], {
-    type: 'application/json',
-  });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.download = `ar-solar-m5-5-verification-${new Date()
-    .toISOString()
-    .replace(/[:.]/g, '-')}.json`;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-function round(value: number): number {
-  return Math.round(value * 10000) / 10000;
 }
 
 function updateGuidanceForState(state: string): void {
@@ -542,7 +503,17 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'SolarFreeHover') {
-    guidance.textContent = '太阳系悬浮中，单手张开/收拢可观察缩放，握拳约2秒复位；双手靠近端点可重新控制';
+    guidance.textContent = '太阳系悬浮中，双手靠近左右端点可重新控制或向内合拢收起';
+    return;
+  }
+
+  if (state === 'BodyHover') {
+    guidance.textContent = '手靠近天体时会高亮，捏合拇指和食指可激活目标';
+    return;
+  }
+
+  if (state === 'PlanetActivated') {
+    guidance.textContent = '目标已激活，保持捏合可继续锁定；松开后回到太阳系浏览';
     return;
   }
 

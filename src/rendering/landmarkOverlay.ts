@@ -208,8 +208,10 @@ function shouldDrawLegacyVirtualEndpoints(
     interactionState !== 'SolarHandleControl' &&
     interactionState !== 'SolarClosing' &&
     interactionState !== 'BodyHover' &&
-    interactionState !== 'BodyGrabbed' &&
-    interactionState !== 'BodyDetached' &&
+    interactionState !== 'PlanetActivated' &&
+    interactionState !== 'PlanetFocusView' &&
+    interactionState !== 'PlanetFocusControlled' &&
+    interactionState !== 'PlanetFocusFloating' &&
     interactionState !== 'BodyReturning'
   );
 }

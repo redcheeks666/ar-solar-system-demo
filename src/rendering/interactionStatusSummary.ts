@@ -112,31 +112,13 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   }
 
   if (snapshot.interactionState === 'SolarFreeHover') {
-    if (
-      snapshot.solarInspection.intent !== 'inactive' &&
-      snapshot.solarInspection.intent !== 'idle'
-    ) {
-      return {
-        title: '正在单手观察太阳系',
-        state: solarInspectionState(snapshot.solarInspection.intent),
-        reason: solarInspectionReason(snapshot.solarInspection.intent),
-        params: [
-          `Inspect scale=${snapshot.solarInspection.inspectionScale.toFixed(2)}`,
-          `Offset=${offsetText(snapshot.solarInspection.inspectionOffset)}`,
-          `Reset hold=${Math.round(snapshot.solarInspection.resetHoldMs)}ms`,
-          `Solar reason=${snapshot.solarReason}`,
-        ],
-      };
-    }
-
     return {
       title: '太阳系悬浮中',
-      state: '等待单手观察或重新扶住左右端点',
-      reason: '太阳系保持最后稳定 transform；单手张开/收拢可观察缩放，推动可平移，双手回到端点可重新控制',
+      state: '等待重新扶住左右端点',
+      reason: '太阳系保持最后稳定 transform；单手张开、收拢或推动不再控制太阳系，双手回到端点可重新控制或向内合拢收起',
       params: [
         `openProgress=${snapshot.openProgress.toFixed(2)}`,
         `Solar scale=${snapshot.solarScale.toFixed(2)}`,
-        `Inspect=${snapshot.solarInspection.reason}`,
         `Solar reason=${snapshot.solarReason}`,
       ],
     };
@@ -152,6 +134,34 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Solar scale=${snapshot.solarScale.toFixed(2)}`,
         `Distance=${nullable(snapshot.handDistance)}`,
         `Solar reason=${snapshot.solarReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'BodyHover') {
+    return {
+      title: '已靠近天体',
+      state: `${snapshot.hoveredBody ?? '目标天体'} 可 pinch 激活`,
+      reason: '手部靠近某个可交互天体的屏幕热区，当前只高亮目标，不移动或缩放太阳系',
+      params: [
+        `Hover=${snapshot.hoveredBody ?? 'none'}`,
+        `Distance=${nullable(snapshot.planetActivation.hoverDistancePx)}`,
+        `Radius=${nullable(snapshot.planetActivation.hoverHitRadiusPx)}`,
+        `Reason=${snapshot.planetActivation.transitionReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'PlanetActivated') {
+    return {
+      title: '天体已激活',
+      state: `${snapshot.activatedBody ?? '目标天体'} 已被 pinch 锁定`,
+      reason: '选中天体停止原轨道公转但保持自转；背景太阳系不会被 pinch 拖动、缩放或平移',
+      params: [
+        `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Pinch ratio=${nullable(snapshot.planetActivation.pinchRatio)}`,
+        `Pinch=${snapshot.pinchState}`,
+        `Reason=${snapshot.planetActivation.transitionReason}`,
       ],
     };
   }
@@ -215,58 +225,4 @@ function visibleText(visible: boolean): string {
 
 function nullable(value: number | null): string {
   return value === null ? 'n/a' : value.toFixed(3);
-}
-
-function solarInspectionState(intent: DebugSnapshot['solarInspection']['intent']): string {
-  if (intent === 'zoomIn') {
-    return '单手张开放大';
-  }
-
-  if (intent === 'zoomOut') {
-    return '单手收拢缩小';
-  }
-
-  if (intent === 'pan') {
-    return '单手推动平移';
-  }
-
-  if (intent === 'resetHold') {
-    return '握拳复位保持中';
-  }
-
-  if (intent === 'reset') {
-    return '已恢复默认观察';
-  }
-
-  return '单手观察待机';
-}
-
-function solarInspectionReason(
-  intent: DebugSnapshot['solarInspection']['intent'],
-): string {
-  if (intent === 'zoomIn') {
-    return '检测到单手手指展开速度，正在放大自由悬浮的太阳系视图';
-  }
-
-  if (intent === 'zoomOut') {
-    return '检测到单手手指收拢速度，正在缩小自由悬浮的太阳系视图';
-  }
-
-  if (intent === 'pan') {
-    return '检测到单手掌心中心移动，正在平移自由悬浮的太阳系视图';
-  }
-
-  if (intent === 'resetHold') {
-    return '检测到握拳保持，达到约 2 秒后会恢复默认观察位置和大小';
-  }
-
-  if (intent === 'reset') {
-    return '握拳保持已达到复位时间，太阳系回到释放时的默认观察位置和大小';
-  }
-
-  return '等待明确的 M5.5 单手观察动作';
-}
-
-function offsetText(offset: { x: number; y: number; z: number }): string {
-  return `${offset.x.toFixed(2)}, ${offset.y.toFixed(2)}, ${offset.z.toFixed(2)}`;
 }

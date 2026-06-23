@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeContainRect,
+  estimateWorldRadiusInStagePixels,
   mapNormalizedToStagePixel,
   mapNormalizedToWorld,
+  mapWorldToStagePixel,
 } from '../../src/interaction/coordinateMapping';
 import { TEST_LAYOUT, createTestCamera } from '../helpers/testCamera';
 
@@ -71,5 +73,28 @@ describe('mapNormalizedToWorld', () => {
     expect(
       mapNormalizedToWorld({ x: 0.5, y: 0.5, z: 0 }, { ...TEST_LAYOUT, stageWidth: 0 }, camera, 0),
     ).toBeNull();
+  });
+});
+
+describe('mapWorldToStagePixel', () => {
+  const camera = createTestCamera();
+
+  it('projects the world origin to stage center', () => {
+    const pixel = mapWorldToStagePixel({ x: 0, y: 0, z: 0 }, TEST_LAYOUT, camera);
+    expect(pixel).not.toBeNull();
+    expect(pixel!.x).toBeCloseTo(640, 3);
+    expect(pixel!.y).toBeCloseTo(360, 3);
+    expect(pixel!.visible).toBe(true);
+  });
+
+  it('estimates world radius in screen pixels', () => {
+    const radius = estimateWorldRadiusInStagePixels(
+      { x: 0, y: 0, z: 0 },
+      0.25,
+      TEST_LAYOUT,
+      camera,
+    );
+    expect(radius).not.toBeNull();
+    expect(radius!).toBeGreaterThan(20);
   });
 });
