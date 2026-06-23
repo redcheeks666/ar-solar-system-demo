@@ -466,7 +466,7 @@ Done when:
 
 目标：实现第一个高光交互瞬间：用户从空场中用双手把太阳系拉开。
 
-实现备注（2026-06-23）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、视觉手轴和 `openProgress` 驱动；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定 transform；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定 transform。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。这仍需要真实摄像头验证。
+实现备注（2026-06-23）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、视觉手轴和 `openProgress` 驱动；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定 transform；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定 transform；并且（2026-06-23 稳定性）当双手没有扶住左右端点时，`SolarActive` 自身也会在短暂宽限后落到 `SolarFreeHover`，使展开后无需再 re-grip 端点即可单手观察。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。这仍需要真实摄像头验证。
 
 任务：
 
@@ -482,7 +482,7 @@ Done when:
 - [x] 展开期间，将视觉左右端点绑定到左右手。
 - [x] 将展开控制表现为太阳系边缘两个独立 3D 端点，而不是连接式操纵杆/杆状 overlay。
 - [x] 拒绝突变的双手几何异常帧，使快速撤手或边缘误检时保持最后稳定的太阳系 transform，而不是突然缩小/跳位。
-- [x] 完全展开后，`SolarActive` 保持冻结，除非双手稳定命中左右控制端点。
+- [x] 完全展开后，`SolarActive` 保持最后稳定 transform；双手稳定命中端点会 re-grip 进入 `SolarHandleControl`，不扶住端点则落到 `SolarFreeHover`（2026-06-23），使无需再 re-grip 即可单手观察。
 - [x] 使用 `SolarHandleControl` 作为展开后唯一可以恢复整体端点把手控制、松手或反向收起的状态。
 - [x] 当前暂不要求手型门槛；张开的手从模型附近经过时，除非双手同时命中端点，否则不应获得控制。
 - [x] 让用户可见状态说明与最新 M4 状态机保持一致；旧 `wholeSystemIntent` 松手/重新扶住数值只保留在 Debug 面板。
@@ -518,7 +518,7 @@ M4-A/B/C/D 人工验证清单：
 | 边缘控制端点 | 太阳系出现后继续拉开。 | 预览画面，尤其是占位太阳系的左右边缘。 | 太阳系左右边缘出现两个小控制端点，并随拉开的双手移动。太阳系上不再出现绿色连线/操纵杆。 |
 | 展开跟随手距 | 在 `SolarOpening` 中暂停双手，再继续拉开。 | 预览和 Debug `openProgress`。 | 双手暂停时太阳系大小/进度保持；继续拉开时才继续增加。 |
 | 中点和手轴跟随 | 拉开过程中，让双手整体向左/右/上/下或斜向移动。 | 预览。 | 太阳系中心接近双手中点，轨道平面大致跟随左右手轴方向旋转。 |
-| 完全展开后保持 | 继续拉开到足够远，然后双手从太阳系附近或上方经过，但不要同时停在左右端点上。 | 状态说明、Debug 的 `Startup state` / `openProgress` 和预览画面。 | 交互状态进入 `SolarActive`；`openProgress` 为 `1.00`；太阳系保持最后稳定 transform，不跟随任意双手移动。 |
+| 完全展开后保持 | 继续拉开到足够远，然后双手从太阳系附近或上方经过，但不要同时停在左右端点上。 | 状态说明、Debug 的 `Startup state` / `openProgress` 和预览画面。 | 交互状态进入 `SolarActive`，随后在双手不在左右端点上时落到 `SolarFreeHover`；`openProgress` 为 `1.00`；太阳系保持最后稳定 transform，不跟随任意双手移动。 |
 | 端点重新扶住控制 | 在 `SolarActive` 下，让双手分别靠近左右 3D 控制端点并短暂保持，然后一起移动双手。 | 状态说明和预览画面。 | 状态进入 `SolarHandleControl`；只有这时太阳系才跟随双手中点、距离和视觉手轴。 |
 | 离开端点后进入自由悬浮 | 在 `SolarHandleControl` 中，把一只手或双手离开端点/移出画面。 | 状态说明和预览画面。 | 状态进入 `SolarFreeHover`；太阳系冻结在最后稳定 transform。 |
 | 快速撤手稳定性 | 模型大部分展开或完全展开后，快速把一只手或双手向屏幕边缘/画面外撤出。 | 预览和 Debug 的 `Solar scale`。 | 短暂追踪异常时模型保持最后稳定 transform；不得突然跳到一侧或缩成很小。 |
@@ -1012,7 +1012,7 @@ Done when:
 | 项目 | 用户动作 | 观察位置 | 通过条件 |
 |---|---|---|---|
 | 进入自由悬浮 | 打开摄像头，拉开太阳系，进入端点控制，然后松开端点把手，让太阳系悬浮。 | 摄像头预览、右上角状态说明和 Debug 面板。 | 太阳系内容保持在释放时的 transform。`Startup state` / interaction state 显示 `SolarFreeHover`，状态说明提示等待单手观察或重新扶住端点。 |
-| 单手放大 | 在 `SolarFreeHover` 中，只让一只手进入画面，尽量保持手掌中心不动，同时五指张开，然后自然把手放松收回。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect spread`、`Inspect spread velocity`、`Inspect scale / offset`。 | 太阳系在张开阶段变大。`Solar inspect` 变为 `zoomIn / active`，`Inspect spread velocity` 为正，inspection scale 上升到 `1.00` 以上。自然回手不应立刻产生对应的 `zoomOut` 缩小跳变。 |
+| 单手放大 | 在 `SolarFreeHover` 中，让一只手进入画面，尽量保持手掌中心不动，同时五指张开，然后自然把手放松收回。第二只手在边缘闪一下不应 reset 手势（主手锁定）。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect spread`、`Inspect spread velocity`、`Inspect scale / offset`。 | 太阳系在张开阶段变大。`Solar inspect` 变为 `zoomIn / active`，`Inspect spread velocity` 为正，inspection scale 上升到 `1.00` 以上。自然回手不应立刻产生对应的 `zoomOut` 缩小跳变。 |
 | 单手缩小 | 在 `SolarFreeHover` 中，只让一只开掌进入画面，短暂保持开掌，然后尽量保持手掌中心不动并五指收拢；缩小后自然放松手。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect spread velocity`、`Inspect scale / offset`。 | 太阳系在收拢阶段变小。`Solar inspect` 变为 `zoomOut / active`，`Inspect spread velocity` 为负，inspection scale 相比前一刻下降。自然放松不应立刻产生对应的 `zoomIn` 放大跳变。 |
 | 单手平移 | 放大后，保持单手足够张开，让展开程度稳定一下，然后在手指展开程度变化不大的情况下向左/右/上/下推动。 | 摄像头预览，以及 Debug 的 `Solar inspect`、`Inspect pan score`、`Inspect palm velocity`、`Inspect scale / offset`。 | 太阳系在 pan clutch 生效后顺滑地朝推动方向平移。`Solar inspect` 变为 `pan / active`，`Inspect pan score` 高于 `0.00`，inspection offset 发生变化，且没有明显逐帧跳动。 |
 | 握拳复位保持 | 在 `SolarFreeHover` 中，将同一只手收拢成拳并保持约 2 秒。 | 摄像头预览、右上角状态说明，以及 Debug 的 `Solar inspect`、`Inspect reset hold`、`Inspect scale / offset`。 | 保持期间 `Solar inspect` 显示 `resetHold / active`，reset hold time 接近约 `2000ms`。完成后 `Solar inspect` 显示 `reset / active`，inspection scale 回到接近 `1.00`，offset 接近 `0, 0, 0`，端点可见或可恢复。 |
@@ -1051,6 +1051,19 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-23 — 手势管线稳定性重构（8 个 Task）
+
+- 在加新手势之前先稳定"手部追踪 → 手势"管线,针对真实摄像头下的抖动 / 过敏感 / 掉控。不加新产品手势;不做臆测性的阈值调参;初始空场和默认关闭的 pose 追踪保持不变。
+- 新帧门控(`freshFrameGate.ts`):交互控制器只在 MediaPipe 有新检测(`TrackingSnapshot.lastUpdatedAt` 变化)时更新,并用检测时间戳,使重复渲染的旧帧不再往拉开/缩放/平移速度里掺假的 0 速度样本。录制也一并门控。`main.ts` 门控控制器;渲染仍每帧进行。
+- 配对在平滑之前(`gestureInputFrame.ts`):`HandTracker` 先建原始手、按轨迹分配视觉左右,再按视觉槽位平滑——双手交叉时 MediaPipe handedness 翻转不再串平滑历史。
+- 屏幕平面手距只用 2D x/y(startup、primitives、solar-opening),把噪声大的 image z 从"手有多近/多远"和拉开轴里去掉。
+- `TrackedHand` 新增 `worldLandmarks`;手型(`handPose` 的张开/握拳、`intentScoring` 的 pinch)在有 world 时优先用米制 world 几何,无则回退 image。
+- `SolarActive` 在双手不再扶住端点时释放到 `SolarFreeHover`,使展开后无需再 re-grip 一次端点即可单手观察。
+- 单手观察锁定主手,而不是要求每帧恰好一只手,弱第二只手 blip 不再 reset 手势。
+- 测试:85 → 97 通过。新增回归测试:新帧门控、展开→自由悬浮、第二只手 blip、2D 手距 vs z 抖动、视觉身份先于平滑、world 手型。
+- 影响文件:`src/main.ts`、`src/tracking/handTracker.ts`、`src/utils/types.ts`、`src/interaction/{freshFrameGate,gestureInputFrame,handStartupGesture,handPrimitives,handPose,intentScoring,solarOpeningController,solarInspectionController}.ts`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`,以及新增的 `tests/` 文件。
+- 剩余不明确项:仍需真实摄像头验证(handedness 翻转稳定性、手感、阈值);结构性修复有意避开了阈值调参。未改产品行为/验收,因此 `ar_solar_system_prd.md` 不变。
 
 ### 2026-06-23 — 复核后细化 Test & Replay Harness 方案
 

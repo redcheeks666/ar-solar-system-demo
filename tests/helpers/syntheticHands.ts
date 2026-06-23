@@ -11,7 +11,11 @@ export function point(x: number, y: number, z = 0): NormalizedPoint {
  * Build a 21-landmark TrackedHand around `center`. `spread` controls finger extension:
  * `spread <= 0.2` curls into a fist, larger values open the hand outward.
  */
-export function createHand(input: { center: NormalizedPoint; spread: number }): TrackedHand {
+export function createHand(input: {
+  center: NormalizedPoint;
+  spread: number;
+  worldLandmarks?: NormalizedPoint[] | null;
+}): TrackedHand {
   const { center, spread } = input;
   const palmScale = 0.1;
   const curled = spread <= 0.2;
@@ -52,5 +56,6 @@ export function createHand(input: { center: NormalizedPoint; spread: number }): 
     indexFingerTip: landmarks[8],
     palmScale,
     landmarks,
+    worldLandmarks: input.worldLandmarks ?? null,
   };
 }

@@ -9,22 +9,16 @@ import type {
   TrackedHand,
   TrackedHandSide,
 } from '../utils/types';
-import { averagePoints, distance3d } from '../utils/math';
+import {
+  GestureInputFramePairer,
+  buildTrackedHand,
+} from '../interaction/gestureInputFrame';
 import { HAND_LANDMARKER_MODEL_URL } from './config';
 import type { VisionFileset } from './mediapipe';
-import { LandmarkSmoother } from './smoothing';
 
-const HAND_SMOOTHING_ALPHA = 0.38;
 const MIN_HAND_DETECTION_CONFIDENCE = 0.35;
 const MIN_HAND_PRESENCE_CONFIDENCE = 0.35;
 const MIN_HAND_TRACKING_CONFIDENCE = 0.4;
-const WRIST_INDEX = 0;
-const THUMB_TIP_INDEX = 4;
-const INDEX_FINGER_TIP_INDEX = 8;
-const INDEX_MCP_INDEX = 5;
-const MIDDLE_MCP_INDEX = 9;
-const RING_MCP_INDEX = 13;
-const PINKY_MCP_INDEX = 17;
 
 const EMPTY_HANDS_SNAPSHOT: HandTrackingSnapshot = {
   detectedHands: 0,
@@ -35,10 +29,7 @@ const EMPTY_HANDS_SNAPSHOT: HandTrackingSnapshot = {
 };
 
 export class HandTracker {
-  private readonly smoothers: Record<'left' | 'right', LandmarkSmoother> = {
-    left: new LandmarkSmoother(HAND_SMOOTHING_ALPHA),
-    right: new LandmarkSmoother(HAND_SMOOTHING_ALPHA),
-  };
+  private readonly pairer = new GestureInputFramePairer();
 
   private constructor(private readonly landmarker: HandLandmarker) {}
 
@@ -62,40 +53,37 @@ export class HandTracker {
     const result = this.landmarker.detectForVideo(video, timestamp);
 
     if (result.landmarks.length === 0) {
-      this.resetSmoothers();
+      this.pairer.reset();
       return {
         ...EMPTY_HANDS_SNAPSHOT,
         lastUpdatedAt: timestamp,
       };
     }
 
-    const hands: TrackedHand[] = [];
+    // Build raw (unsmoothed) hands, then assign visual identity and smooth per visual slot, so a
+    // MediaPipe handedness flip during a hand crossing cannot swap smoother history.
+    const rawHands: TrackedHand[] = [];
 
     result.landmarks.forEach((landmarks, index) => {
       const category = result.handedness[index]?.[0];
       const side = normalizeHandSide(category);
-      const points = landmarks.map(toNormalizedPoint);
-      const smoothedPoints =
-        side === 'left' || side === 'right'
-          ? this.smoothers[side].smooth(points)
-          : points;
-      const hand = createTrackedHand(smoothedPoints, side, category?.score ?? 0);
+      const worldLandmarks =
+        result.worldLandmarks[index]?.map(toNormalizedPoint) ?? null;
+      const hand = buildTrackedHand(
+        landmarks.map(toNormalizedPoint),
+        side,
+        category?.score ?? 0,
+        worldLandmarks,
+      );
 
       if (hand) {
-        hands.push(hand);
+        rawHands.push(hand);
       }
     });
 
+    const hands = this.pairer.stabilize(rawHands);
     const left = chooseBestHand(hands, 'left');
     const right = chooseBestHand(hands, 'right');
-
-    if (!left) {
-      this.smoothers.left.reset();
-    }
-
-    if (!right) {
-      this.smoothers.right.reset();
-    }
 
     return {
       detectedHands: hands.length,
@@ -109,54 +97,6 @@ export class HandTracker {
   close(): void {
     this.landmarker.close();
   }
-
-  private resetSmoothers(): void {
-    this.smoothers.left.reset();
-    this.smoothers.right.reset();
-  }
-}
-
-function createTrackedHand(
-  landmarks: NormalizedPoint[],
-  side: TrackedHandSide,
-  handednessScore: number,
-): TrackedHand | null {
-  const wrist = landmarks[WRIST_INDEX];
-  const thumbTip = landmarks[THUMB_TIP_INDEX];
-  const indexFingerTip = landmarks[INDEX_FINGER_TIP_INDEX];
-  const indexMcp = landmarks[INDEX_MCP_INDEX];
-  const middleMcp = landmarks[MIDDLE_MCP_INDEX];
-  const ringMcp = landmarks[RING_MCP_INDEX];
-  const pinkyMcp = landmarks[PINKY_MCP_INDEX];
-
-  if (
-    !wrist ||
-    !thumbTip ||
-    !indexFingerTip ||
-    !indexMcp ||
-    !middleMcp ||
-    !ringMcp ||
-    !pinkyMcp
-  ) {
-    return null;
-  }
-
-  const center = averagePoints([wrist, indexMcp, middleMcp, ringMcp, pinkyMcp]);
-  const palmScale = Math.max(
-    distance3d(wrist, middleMcp),
-    distance3d(indexMcp, pinkyMcp),
-  );
-
-  return {
-    side,
-    handednessScore,
-    center,
-    wrist,
-    thumbTip,
-    indexFingerTip,
-    palmScale,
-    landmarks,
-  };
 }
 
 function normalizeHandSide(category: Category | undefined): TrackedHandSide {

@@ -133,6 +133,9 @@ export class SolarInspectionController {
   private panAnchorPalmWorld: Vec3 | null = null;
   private panAnchorMidpointWorld: Vec3 | null = null;
   private panAnchorSpread: number | null = null;
+  // Center of the dominant hand currently driving inspection, used to keep tracking the same hand
+  // across frames and ignore a weak/blip second hand instead of resetting.
+  private lockedHandCenter: NormalizedPoint | null = null;
 
   update(input: SolarInspectionUpdateInput): SolarInspectionUpdate {
     if (
@@ -149,14 +152,14 @@ export class SolarInspectionController {
 
     this.captureDefaultSnapshot(input.solarSnapshot);
 
-    const hand = getSingleHand(input.tracking);
+    const hand = this.resolveActiveHand(input.tracking);
     if (!hand) {
       this.resetMotion();
       return {
         snapshot: this.createSnapshot({
           active: false,
           intent: 'idle',
-          reason: 'waiting-for-exactly-one-hand',
+          reason: 'waiting-for-a-hand',
           solarSnapshot: input.solarSnapshot,
         }),
         solarSnapshot: input.solarSnapshot,
@@ -309,6 +312,29 @@ export class SolarInspectionController {
     this.defaultMidpointWorld = null;
     this.defaultScale = null;
     this.resetMotion();
+  }
+
+  /**
+   * Dominant single-hand lock. Inspection uses one hand, but real webcams briefly mis-detect a
+   * second hand or flash one at the frame edge. Instead of requiring exactly one detected hand
+   * (which reset the gesture every blip), keep tracking the hand nearest the locked one and ignore
+   * the extra. With no lock yet, pick the dominant hand (largest palm = closest / most reliable).
+   */
+  private resolveActiveHand(tracking: TrackingSnapshot): TrackedHand | null {
+    const hands = tracking.hands.hands;
+
+    if (hands.length === 0) {
+      this.lockedHandCenter = null;
+      return null;
+    }
+
+    const chosen =
+      this.lockedHandCenter !== null
+        ? nearestHand(hands, this.lockedHandCenter)
+        : dominantHand(hands);
+
+    this.lockedHandCenter = { ...chosen.center };
+    return chosen;
   }
 
   private captureDefaultSnapshot(snapshot: SolarOpeningSnapshot): void {
@@ -743,6 +769,7 @@ export class SolarInspectionController {
 
   private resetMotion(): void {
     this.spreadFilter.reset();
+    this.lockedHandCenter = null;
     this.previousSpread = null;
     this.previousPalmCenter = null;
     this.previousPalmWorld = null;
@@ -800,8 +827,31 @@ export class SolarInspectionController {
   }
 }
 
-function getSingleHand(tracking: TrackingSnapshot): TrackedHand | null {
-  return tracking.hands.hands.length === 1 ? tracking.hands.hands[0] : null;
+function nearestHand(hands: TrackedHand[], target: NormalizedPoint): TrackedHand {
+  let best = hands[0];
+  let bestDistance = distance2d(best.center, target);
+
+  for (const hand of hands) {
+    const handDistance = distance2d(hand.center, target);
+    if (handDistance < bestDistance) {
+      best = hand;
+      bestDistance = handDistance;
+    }
+  }
+
+  return best;
+}
+
+function dominantHand(hands: TrackedHand[]): TrackedHand {
+  let best = hands[0];
+
+  for (const hand of hands) {
+    if (hand.palmScale > best.palmScale) {
+      best = hand;
+    }
+  }
+
+  return best;
 }
 
 function computeFingerSpreadScore(hand: TrackedHand): number {

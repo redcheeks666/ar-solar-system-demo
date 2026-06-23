@@ -2,6 +2,7 @@ import './styles.css';
 import { startCamera, stopCamera } from './camera/camera';
 import { GestureCalibrationController, getDefaultGestureCalibrationSnapshot } from './interaction/gestureCalibration';
 import { GestureDebugRecorder } from './interaction/gestureDebugRecorder';
+import { isFreshTrackingFrame } from './interaction/freshFrameGate';
 import { EMPTY_HAND_PRIMITIVES, HandPrimitiveController } from './interaction/handPrimitives';
 import { HandStartupGestureController } from './interaction/handStartupGesture';
 import { InteractionStateMachine } from './interaction/stateMachine';
@@ -73,6 +74,8 @@ const solarInspection = new SolarInspectionController();
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
 let latestTracking = tracking.getSnapshot();
+// Detection timestamp of the last tracking frame fed to the interaction controllers.
+let lastGestureInputAt: number | null = null;
 
 renderer.addObject3D(placeholderSolarSystem.group);
 placeholderSolarSystem.setVisible(solarPreviewEnabled);
@@ -174,80 +177,15 @@ renderer.start(({ fps, canvasSize, deltaSeconds, timestampMs }) => {
 
   if (cameraStatus === 'granted') {
     latestTracking = tracking.update(videoElement, timestamp);
-    const primitiveSnapshot = handPrimitives.update(
-      latestTracking,
-      gestureCalibration.getSnapshot().thresholds,
-      timestamp,
-    );
 
-    debugSnapshot.handPrimitives = primitiveSnapshot;
-    debugSnapshot.gestureCalibration =
-      gestureCalibration.updateFromPrimitives(primitiveSnapshot);
-
-    const startupUpdate = startupGesture.update(
-      latestTracking,
-      interaction.state,
-      timestamp,
-      debugSnapshot.gestureCalibration.thresholds,
-    );
-
-    if (startupUpdate.nextState) {
-      interaction.transition(startupUpdate.nextState);
-      updateGuidanceForState(interaction.state);
-    }
-
-    updateStartupGestureDebugMetrics(startupUpdate.snapshot);
-    debugSnapshot.wholeSystem = wholeSystemIntent.update(
-      latestTracking,
-      startupUpdate.snapshot,
-      interaction.state,
-      timestamp,
-      debugSnapshot.gestureCalibration.thresholds,
-      primitiveSnapshot.trackingConfidence,
-    );
-    debugSnapshot.gestureCalibration = gestureCalibration.updateFromInteraction(
-      startupUpdate.snapshot,
-      debugSnapshot.wholeSystem,
-    );
-
-    if (!solarPreviewEnabled) {
-      const previewLayout = createPreviewLayout(canvasSize);
-      const camera = renderer.getCamera();
-      const solarOpeningUpdate = solarOpening.update({
-        tracking: latestTracking,
-        interactionState: interaction.state,
-        thresholds: debugSnapshot.gestureCalibration.thresholds,
-        layout: previewLayout,
-        camera,
-        planeZ: INTERACTION_PLANE_Z,
-        timestamp,
-      });
-
-      if (solarOpeningUpdate.nextState) {
-        interaction.transition(solarOpeningUpdate.nextState);
-        updateGuidanceForState(interaction.state);
-      }
-
-      const solarInspectionUpdate = solarInspection.update({
-        tracking: latestTracking,
-        interactionState: interaction.state,
-        solarSnapshot: solarOpeningUpdate.snapshot,
-        layout: previewLayout,
-        camera,
-        planeZ: INTERACTION_PLANE_Z,
-        timestamp,
-      });
-
-      solarOpening.syncFreeHoverSnapshot(solarInspectionUpdate.solarSnapshot);
-      debugSnapshot.solarInspection = solarInspectionUpdate.snapshot;
-      debugSnapshot.solarInspectionVerification =
-        updateSolarInspectionVerification(
-          debugSnapshot.solarInspectionVerification,
-          interaction.state,
-          solarInspectionUpdate.snapshot,
-          timestamp,
-        );
-      applySolarOpeningSnapshot(solarInspectionUpdate.solarSnapshot);
+    // P0: only advance the interaction state machines on a genuinely new detection frame, and
+    // feed them the detection timestamp (not the render timestamp), so re-rendered stale frames
+    // do not inject fake zero-velocity samples into the gesture velocity features.
+    if (isFreshTrackingFrame(latestTracking.lastUpdatedAt, lastGestureInputAt)) {
+      const trackingAt = latestTracking.lastUpdatedAt as number;
+      lastGestureInputAt = trackingAt;
+      updateGestureControllers(latestTracking, trackingAt, canvasSize);
+      gestureRecorder.record(trackingAt, latestTracking, debugSnapshot);
     }
   }
 
@@ -266,7 +204,6 @@ renderer.start(({ fps, canvasSize, deltaSeconds, timestampMs }) => {
     debugSnapshot.wholeSystem,
     interaction.state,
   );
-  gestureRecorder.record(timestamp, latestTracking, debugSnapshot);
   debugSnapshot.gestureRecording = gestureRecorder.getStatus();
   updateRecorderControls();
   statusSummary.update(debugSnapshot);
@@ -341,6 +278,89 @@ async function handleCameraStart(): Promise<void> {
   guidance.hidden = false;
   guidance.textContent = '正在加载姿态与手部识别模型...';
   void initializeTracking();
+}
+
+function updateGestureControllers(
+  tracking: TrackingSnapshot,
+  timestamp: number,
+  canvasSize: { width: number; height: number },
+): void {
+  const primitiveSnapshot = handPrimitives.update(
+    tracking,
+    gestureCalibration.getSnapshot().thresholds,
+    timestamp,
+  );
+
+  debugSnapshot.handPrimitives = primitiveSnapshot;
+  debugSnapshot.gestureCalibration =
+    gestureCalibration.updateFromPrimitives(primitiveSnapshot);
+
+  const startupUpdate = startupGesture.update(
+    tracking,
+    interaction.state,
+    timestamp,
+    debugSnapshot.gestureCalibration.thresholds,
+  );
+
+  if (startupUpdate.nextState) {
+    interaction.transition(startupUpdate.nextState);
+    updateGuidanceForState(interaction.state);
+  }
+
+  updateStartupGestureDebugMetrics(startupUpdate.snapshot);
+  debugSnapshot.wholeSystem = wholeSystemIntent.update(
+    tracking,
+    startupUpdate.snapshot,
+    interaction.state,
+    timestamp,
+    debugSnapshot.gestureCalibration.thresholds,
+    primitiveSnapshot.trackingConfidence,
+  );
+  debugSnapshot.gestureCalibration = gestureCalibration.updateFromInteraction(
+    startupUpdate.snapshot,
+    debugSnapshot.wholeSystem,
+  );
+
+  if (solarPreviewEnabled) {
+    return;
+  }
+
+  const previewLayout = createPreviewLayout(canvasSize);
+  const camera = renderer.getCamera();
+  const solarOpeningUpdate = solarOpening.update({
+    tracking,
+    interactionState: interaction.state,
+    thresholds: debugSnapshot.gestureCalibration.thresholds,
+    layout: previewLayout,
+    camera,
+    planeZ: INTERACTION_PLANE_Z,
+    timestamp,
+  });
+
+  if (solarOpeningUpdate.nextState) {
+    interaction.transition(solarOpeningUpdate.nextState);
+    updateGuidanceForState(interaction.state);
+  }
+
+  const solarInspectionUpdate = solarInspection.update({
+    tracking,
+    interactionState: interaction.state,
+    solarSnapshot: solarOpeningUpdate.snapshot,
+    layout: previewLayout,
+    camera,
+    planeZ: INTERACTION_PLANE_Z,
+    timestamp,
+  });
+
+  solarOpening.syncFreeHoverSnapshot(solarInspectionUpdate.solarSnapshot);
+  debugSnapshot.solarInspection = solarInspectionUpdate.snapshot;
+  debugSnapshot.solarInspectionVerification = updateSolarInspectionVerification(
+    debugSnapshot.solarInspectionVerification,
+    interaction.state,
+    solarInspectionUpdate.snapshot,
+    timestamp,
+  );
+  applySolarOpeningSnapshot(solarInspectionUpdate.solarSnapshot);
 }
 
 function getElement<T extends HTMLElement>(id: string): T {

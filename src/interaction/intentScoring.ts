@@ -18,6 +18,14 @@ import type {
 } from '../utils/types';
 import type { TrackedHandPair } from './handPairing';
 import {
+  INDEX_MCP_INDEX,
+  INDEX_TIP_INDEX,
+  MIDDLE_MCP_INDEX,
+  PINKY_MCP_INDEX,
+  THUMB_TIP_INDEX,
+  WRIST_INDEX,
+} from './handLandmarks';
+import {
   COLLAPSE_DISTANCE_WEIGHT,
   COLLAPSE_INWARD_RELAXED_SCORE,
   COLLAPSE_INWARD_WEIGHT,
@@ -406,6 +414,29 @@ export function computePinchPenalty(pair: TrackedHandPair): number {
 }
 
 function isPinching(hand: TrackedHand): boolean {
+  // Prefer metric world landmarks: pinch is depth-sensitive, where image z is noisiest. The ratio
+  // (thumb-index gap / palm size) is scale-invariant, so the same threshold works in either space.
+  const world = hand.worldLandmarks;
+  if (world && world.length >= 21) {
+    const thumbTip = world[THUMB_TIP_INDEX];
+    const indexTip = world[INDEX_TIP_INDEX];
+    const wrist = world[WRIST_INDEX];
+    const middleMcp = world[MIDDLE_MCP_INDEX];
+    const indexMcp = world[INDEX_MCP_INDEX];
+    const pinkyMcp = world[PINKY_MCP_INDEX];
+
+    if (thumbTip && indexTip && wrist && middleMcp && indexMcp && pinkyMcp) {
+      const palmScale = Math.max(
+        distance3d(wrist, middleMcp),
+        distance3d(indexMcp, pinkyMcp),
+      );
+
+      if (palmScale > 0) {
+        return distance3d(thumbTip, indexTip) / palmScale <= PINCH_RATIO_THRESHOLD;
+      }
+    }
+  }
+
   if (hand.palmScale <= 0) {
     return false;
   }

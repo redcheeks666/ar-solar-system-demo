@@ -8,7 +8,7 @@ Status legend: `[ ]` todo · `[x]` done · `[~]` in progress
 
 ## Phase 0 — First Slice (Vitest + first tests, no recordings, no `main.ts` changes)
 
-Status: **done — 34 tests passing (`npm test`), ~160ms, no camera.**
+Status: **done — first slice landed; current total is 85 tests passing (`npm test`), no camera.**
 
 - [x] Add Vitest (`environment: 'node'`) + `vitest.config.ts`; wire `test` / `test:unit` / `test:gesture` scripts.
 - [x] Extract shared builders into `tests/helpers/` (single source for the Vitest suites):
@@ -16,7 +16,7 @@ Status: **done — 34 tests passing (`npm test`), ~160ms, no camera.**
   - [x] `trackingSnapshots.ts` — `createTrackingSnapshot()`.
   - [x] `testCamera.ts` — test `PerspectiveCamera` + `TEST_LAYOUT`.
   - [x] `testThresholds.ts` — fixed `GestureThresholds`.
-  - Note: `scripts/verify-m5_5-solar-inspection.ts` still has its own inline copies of these; it will switch to the shared helpers when it is ported in Phase 1 (the "Absorb `verify:m5.5`" item).
+  - Note: `npm run verify:m5.5` now runs the ported Vitest controller suite; the legacy script file remains only as historical reference until a later cleanup.
 - [x] `tests/unit/determinism.test.ts` — guardrail: no `Math.random` / `Date.now` / `performance.now` in `src/interaction/**`.
 - [x] `tests/unit/coordinateMapping.test.ts` — contain rect (16:9, 4:3 pillarbox, unknown), mirror mapping, world center→origin, mirror in world, null on zero layout.
 - [x] `tests/unit/handPose.test.ts` — open hand vs fist: open-hand/grip scores and `releaseReady`; `computeReleaseGesture` active only for two open hands.
@@ -25,14 +25,14 @@ Status: **done — 34 tests passing (`npm test`), ~160ms, no camera.**
 
 ## Phase 1 — More controller / leaf coverage
 
-- [ ] `tests/unit/math.test.ts` — clamp/clamp01/lerp/inverseLerp/distance/normalize/cosineSimilarity/unwrapAngle edges.
-- [ ] `tests/unit/handPairing.test.ts` — visual-left = larger camera x; previous-pair cost matching (no flip when stable, flip on cross).
-- [ ] `tests/unit/intentScoring.test.ts` — endpoint/control/release/re-grip/scale/rotation/collapse score invariants and boundaries.
-- [ ] `tests/unit/palmOrientation.test.ts` — palm facing-camera vs palms-up scores from synthetic hands.
-- [ ] `tests/gesture/wholeSystemIntent.test.ts` — hold / open-hand release (latched) / re-grip / reverse-collapse sequences.
-- [ ] `tests/gesture/solarInspectionController.test.ts` — port the `verify-m5_5` cases; reuse `solarInspectionVerification` as oracle.
-- [ ] `tests/unit/gestureCalibration.test.ts` — session-adaptive thresholds behave (its own test, separate from fixed-threshold controller tests).
-- [ ] Absorb `npm run verify:m5.5`: reduce it to an alias of the ported Vitest test (or retire it).
+- [x] `tests/unit/math.test.ts` — clamp/clamp01/lerp/inverseLerp/distance/normalize/cosineSimilarity/unwrapAngle edges.
+- [x] `tests/unit/handPairing.test.ts` — visual-left = larger camera x; previous-pair cost matching (no flip when stable, flip on cross).
+- [x] `tests/unit/intentScoring.test.ts` — endpoint/control/release/re-grip/scale/rotation/collapse score invariants and boundaries.
+- [x] `tests/unit/palmOrientation.test.ts` — palm facing-camera vs palms-up scores from synthetic hands.
+- [x] `tests/gesture/wholeSystemIntent.test.ts` — hold / open-hand release (latched) / re-grip / reverse-collapse sequences.
+- [x] `tests/gesture/solarInspectionController.test.ts` — port the `verify-m5_5` cases; reuse `solarInspectionVerification` as oracle.
+- [x] `tests/unit/gestureCalibration.test.ts` — session-adaptive thresholds behave (its own test, separate from fixed-threshold controller tests).
+- [x] Absorb `npm run verify:m5.5`: reduce it to an alias of the ported Vitest test (or retire it).
 
 ## Phase 2 — JSON gesture replay (after Phase 0/1 useful and M5.5 stable)
 

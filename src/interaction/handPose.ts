@@ -57,20 +57,61 @@ import {
   THUMB_STRAIGHT_WEIGHT,
 } from './intentTuning';
 
+interface HandShapeBasis {
+  landmarks: NormalizedPoint[];
+  center: NormalizedPoint;
+  palmScale: number;
+}
+
+/**
+ * Hand-shape geometry source: prefer MediaPipe world landmarks (metric, depth-stable) when present,
+ * else fall back to image landmarks. The finger / thumb scores are ratio-based (normalized by palm
+ * scale), so the same formulas work in either space.
+ */
+function getHandShapeBasis(hand: TrackedHand): HandShapeBasis {
+  const world = hand.worldLandmarks;
+
+  if (world && world.length >= 21) {
+    const wrist = world[WRIST_INDEX];
+    const indexMcp = world[INDEX_MCP_INDEX];
+    const middleMcp = world[MIDDLE_MCP_INDEX];
+    const ringMcp = world[RING_MCP_INDEX];
+    const pinkyMcp = world[PINKY_MCP_INDEX];
+
+    if (wrist && indexMcp && middleMcp && ringMcp && pinkyMcp) {
+      const palmScale = Math.max(
+        distance3d(wrist, middleMcp),
+        distance3d(indexMcp, pinkyMcp),
+      );
+
+      if (palmScale > 0) {
+        return {
+          landmarks: world,
+          center: averagePoints([wrist, indexMcp, middleMcp, ringMcp, pinkyMcp]),
+          palmScale,
+        };
+      }
+    }
+  }
+
+  return { landmarks: hand.landmarks, center: hand.center, palmScale: hand.palmScale };
+}
+
 /**
  * Hand-pose intent (open-hand / grip-pose / release-ready) derived from MediaPipe landmarks.
  * Pure functions with no cross-frame state; the open-hand release gesture is the primary
  * whole-system release signal, so the per-hand scoring lives here in one place.
  */
 export function computeHandPoseIntent(hand: TrackedHand): HandPoseIntentSnapshot {
-  const wrist = hand.landmarks[WRIST_INDEX];
-  const indexMcp = hand.landmarks[INDEX_MCP_INDEX];
-  const middleMcp = hand.landmarks[MIDDLE_MCP_INDEX];
-  const ringMcp = hand.landmarks[RING_MCP_INDEX];
-  const pinkyMcp = hand.landmarks[PINKY_MCP_INDEX];
-  const thumbCmc = hand.landmarks[THUMB_CMC_INDEX];
-  const thumbMcp = hand.landmarks[THUMB_MCP_INDEX];
-  const thumbTip = hand.landmarks[THUMB_TIP_INDEX];
+  const basis = getHandShapeBasis(hand);
+  const wrist = basis.landmarks[WRIST_INDEX];
+  const indexMcp = basis.landmarks[INDEX_MCP_INDEX];
+  const middleMcp = basis.landmarks[MIDDLE_MCP_INDEX];
+  const ringMcp = basis.landmarks[RING_MCP_INDEX];
+  const pinkyMcp = basis.landmarks[PINKY_MCP_INDEX];
+  const thumbCmc = basis.landmarks[THUMB_CMC_INDEX];
+  const thumbMcp = basis.landmarks[THUMB_MCP_INDEX];
+  const thumbTip = basis.landmarks[THUMB_TIP_INDEX];
 
   if (
     !wrist ||
@@ -81,29 +122,29 @@ export function computeHandPoseIntent(hand: TrackedHand): HandPoseIntentSnapshot
     !thumbCmc ||
     !thumbMcp ||
     !thumbTip ||
-    hand.palmScale <= 0
+    basis.palmScale <= 0
   ) {
     return createEmptyHandPose();
   }
 
   const palmCenter = averagePoints([wrist, indexMcp, middleMcp, ringMcp, pinkyMcp]);
   const fingerScores = [
-    computeLongFingerOpenScore(hand, INDEX_MCP_INDEX, INDEX_PIP_INDEX, INDEX_TIP_INDEX),
+    computeLongFingerOpenScore(basis, INDEX_MCP_INDEX, INDEX_PIP_INDEX, INDEX_TIP_INDEX),
     computeLongFingerOpenScore(
-      hand,
+      basis,
       MIDDLE_MCP_INDEX,
       MIDDLE_PIP_INDEX,
       MIDDLE_TIP_INDEX,
     ),
-    computeLongFingerOpenScore(hand, RING_MCP_INDEX, RING_PIP_INDEX, RING_TIP_INDEX),
+    computeLongFingerOpenScore(basis, RING_MCP_INDEX, RING_PIP_INDEX, RING_TIP_INDEX),
     computeLongFingerOpenScore(
-      hand,
+      basis,
       PINKY_MCP_INDEX,
       PINKY_PIP_INDEX,
       PINKY_TIP_INDEX,
     ),
   ];
-  const thumbOpenScore = computeThumbOpenScore(hand, palmCenter);
+  const thumbOpenScore = computeThumbOpenScore(basis, palmCenter);
   const longFingerOpenCount = fingerScores.filter(
     (score) => score >= FINGER_OPEN_THRESHOLD,
   ).length;
@@ -133,16 +174,16 @@ export function computeHandPoseIntent(hand: TrackedHand): HandPoseIntentSnapshot
 }
 
 function computeLongFingerOpenScore(
-  hand: TrackedHand,
+  basis: HandShapeBasis,
   mcpIndex: number,
   pipIndex: number,
   tipIndex: number,
 ): number {
-  const mcp = hand.landmarks[mcpIndex];
-  const pip = hand.landmarks[pipIndex];
-  const tip = hand.landmarks[tipIndex];
+  const mcp = basis.landmarks[mcpIndex];
+  const pip = basis.landmarks[pipIndex];
+  const tip = basis.landmarks[tipIndex];
 
-  if (!mcp || !pip || !tip || hand.palmScale <= 0) {
+  if (!mcp || !pip || !tip || basis.palmScale <= 0) {
     return 0;
   }
 
@@ -155,12 +196,12 @@ function computeLongFingerOpenScore(
   const extensionScore = inverseLerp(
     FINGER_EXTENSION_MIN,
     FINGER_EXTENSION_MAX,
-    distance3d(tip, mcp) / hand.palmScale,
+    distance3d(tip, mcp) / basis.palmScale,
   );
   const awayScore = inverseLerp(
     FINGER_AWAY_MIN,
     FINGER_AWAY_MAX,
-    distance3d(tip, hand.center) / hand.palmScale,
+    distance3d(tip, basis.center) / basis.palmScale,
   );
 
   return clamp01(
@@ -171,14 +212,14 @@ function computeLongFingerOpenScore(
 }
 
 function computeThumbOpenScore(
-  hand: TrackedHand,
+  basis: HandShapeBasis,
   palmCenter: NormalizedPoint,
 ): number {
-  const thumbCmc = hand.landmarks[THUMB_CMC_INDEX];
-  const thumbMcp = hand.landmarks[THUMB_MCP_INDEX];
-  const thumbTip = hand.landmarks[THUMB_TIP_INDEX];
+  const thumbCmc = basis.landmarks[THUMB_CMC_INDEX];
+  const thumbMcp = basis.landmarks[THUMB_MCP_INDEX];
+  const thumbTip = basis.landmarks[THUMB_TIP_INDEX];
 
-  if (!thumbCmc || !thumbMcp || !thumbTip || hand.palmScale <= 0) {
+  if (!thumbCmc || !thumbMcp || !thumbTip || basis.palmScale <= 0) {
     return 0;
   }
 
@@ -194,7 +235,7 @@ function computeThumbOpenScore(
   const awayScore = inverseLerp(
     THUMB_AWAY_MIN,
     THUMB_AWAY_MAX,
-    distance3d(thumbTip, palmCenter) / hand.palmScale,
+    distance3d(thumbTip, palmCenter) / basis.palmScale,
   );
 
   return clamp01(straightScore * THUMB_STRAIGHT_WEIGHT + awayScore * THUMB_AWAY_WEIGHT);

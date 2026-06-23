@@ -143,13 +143,15 @@ function computeGeometry(leftHand: NormalizedPoint, rightHand: NormalizedPoint) 
     y: rightHand.y - leftHand.y,
     z: rightHand.z - leftHand.z,
   };
-  const distance = Math.hypot(delta.x, delta.y, delta.z);
+  // Screen-plane gesture distance: use 2D x/y only. MediaPipe image-landmark z is noisy relative
+  // depth on a single camera and would jitter "are the hands close / far" and the pull axis.
+  const distance = Math.hypot(delta.x, delta.y);
   const direction =
     distance > 0
       ? {
           x: delta.x / distance,
           y: delta.y / distance,
-          z: delta.z / distance,
+          z: 0,
         }
       : { x: 0, y: 0, z: 0 };
 

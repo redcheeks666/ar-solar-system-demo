@@ -48,7 +48,13 @@ export interface TrackedHand {
   thumbTip: NormalizedPoint;
   indexFingerTip: NormalizedPoint;
   palmScale: number;
+  /** Image-space landmarks (normalized 0-1, image-relative z). Used for screen-plane gestures. */
   landmarks: NormalizedPoint[];
+  /**
+   * MediaPipe world landmarks (metric, palm-relative origin) when available, else null. More
+   * stable than image z for hand-shape geometry (open-hand / fist / pinch).
+   */
+  worldLandmarks: NormalizedPoint[] | null;
 }
 
 export interface HandTrackingSnapshot {

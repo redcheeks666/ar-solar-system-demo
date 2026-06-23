@@ -101,6 +101,10 @@ const MIN_PREVIOUS_SCALE_FOR_OUTLIER_CHECK = 0.32;
 const TARGET_FRAME_MS = 33.33;
 const ENDPOINT_ENTER_STABLE_MS = 140;
 const ENDPOINT_EXIT_GRACE_MS = 180;
+// After opening completes (SolarActive), if the hands are not holding the endpoints for this long
+// (released or dropped), fall through to SolarFreeHover so M5.5 one-hand inspection works without
+// forcing an extra endpoint re-grip + release first.
+const ACTIVE_RELEASE_GRACE_MS = 220;
 const ENDPOINT_RADIUS_WORLD_SCALE = 0.72;
 const MIN_ENDPOINT_RADIUS_WORLD = 0.32;
 const MAX_ENDPOINT_RADIUS_WORLD = 1;
@@ -115,6 +119,7 @@ export class SolarOpeningController {
   private lastAcceptedAt: number | null = null;
   private endpointHitSince: number | null = null;
   private endpointMissSince: number | null = null;
+  private activeReleaseSince: number | null = null;
   private smoothedOpenProgress = 0;
   private lastRawOpenProgress = 0;
 
@@ -154,6 +159,7 @@ export class SolarOpeningController {
     this.lastAcceptedAt = null;
     this.endpointHitSince = null;
     this.endpointMissSince = null;
+    this.activeReleaseSince = null;
     this.smoothedOpenProgress = 0;
     this.lastRawOpenProgress = 0;
     this.lastSnapshot = EMPTY_SOLAR_OPENING_SNAPSHOT;
@@ -324,6 +330,13 @@ export class SolarOpeningController {
 
     if (!geometry) {
       this.endpointHitSince = null;
+      const released = this.tryReleaseToFreeHover(
+        input,
+        'solar-active-released-to-free-hover-hand-loss',
+      );
+      if (released) {
+        return released;
+      }
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -341,6 +354,13 @@ export class SolarOpeningController {
 
     if (!endpointHit?.withinEnterRadius) {
       this.endpointHitSince = null;
+      const released = this.tryReleaseToFreeHover(
+        input,
+        'solar-active-released-to-free-hover',
+      );
+      if (released) {
+        return released;
+      }
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -355,6 +375,7 @@ export class SolarOpeningController {
       };
     }
 
+    this.activeReleaseSince = null;
     this.endpointHitSince ??= input.timestamp;
 
     if (input.timestamp - this.endpointHitSince < ENDPOINT_ENTER_STABLE_MS) {
@@ -404,6 +425,39 @@ export class SolarOpeningController {
     return {
       snapshot,
       nextState: 'SolarHandleControl',
+    };
+  }
+
+  /**
+   * In SolarActive, once the hands are no longer holding both endpoints (released or lost) for
+   * ACTIVE_RELEASE_GRACE_MS, drop to SolarFreeHover so one-hand inspection can start immediately.
+   * No-op (and resets the timer) in any other state, so SolarFreeHover does not re-emit itself.
+   */
+  private tryReleaseToFreeHover(
+    input: SolarOpeningUpdateInput,
+    reason: string,
+  ): SolarOpeningUpdate | null {
+    if (input.interactionState !== 'SolarActive') {
+      this.activeReleaseSince = null;
+      return null;
+    }
+
+    this.activeReleaseSince ??= input.timestamp;
+
+    if (input.timestamp - this.activeReleaseSince < ACTIVE_RELEASE_GRACE_MS) {
+      return null;
+    }
+
+    this.activeReleaseSince = null;
+    return {
+      snapshot: {
+        ...this.lastSnapshot,
+        active: true,
+        visible: true,
+        progress: 1,
+        reason,
+      },
+      nextState: 'SolarFreeHover',
     };
   }
 
@@ -635,10 +689,10 @@ export class SolarOpeningController {
     const deltaY = rightWorld.y - leftWorld.y;
     const deltaZ = rightWorld.z - leftWorld.z;
     const worldDistance = Math.hypot(deltaX, deltaY, deltaZ);
+    // 2D screen distance for opening progress / collapse; image-landmark z is noisy depth.
     const normalizedDistance = Math.hypot(
       pair.right.center.x - pair.left.center.x,
       pair.right.center.y - pair.left.center.y,
-      pair.right.center.z - pair.left.center.z,
     );
 
     return {

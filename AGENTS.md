@@ -144,6 +144,8 @@ Prefer this structure for the first Web Demo:
       handPrimitives.ts
       handPairing.ts
       handLandmarks.ts
+      gestureInputFrame.ts
+      freshFrameGate.ts
       gestureCalibration.ts
       gestureDebugRecorder.ts
       wholeSystemIntent.ts
@@ -364,6 +366,9 @@ Required smoothing:
 - Slerp or equivalent smoothing for 3D rotations.
 - Velocity smoothing for throw detection.
 - Once visible 3D solar-system content is driven by hand endpoints, reject abrupt endpoint-geometry outliers before updating the solar-system transform. Fast hand withdrawal, edge-of-frame partial hand tracking, or one-frame MediaPipe mis-detection must hold the last stable transform instead of shrinking or jumping the model.
+- Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull / zoom / pan velocity. Rendering still runs every requestAnimationFrame.
+- Assign visual-left/right hand identity from the previous frame's trajectory before smoothing, then smooth per visual slot (`gestureInputFrame.ts`). Do not smooth per MediaPipe handedness, which swaps history when hands cross.
+- Keep MediaPipe image-landmark z out of screen-plane gesture distances (close / pull / endpoint / pan); use 2D x/y. Prefer world landmarks for hand-shape (open-hand / fist / pinch).
 
 Avoid single-frame state flips for important actions such as pull open, pinch start, pinch end, and throw return.
 
@@ -528,6 +533,13 @@ These shared modules exist so the same logic is not re-derived in multiple files
 - `src/interaction/intentScoring.ts` — pure whole-system scoring: control/release/re-grip confidence, legacy scale/rotation diagnostics, collapse intent, endpoint matching, and pinch separation, plus the shared `HandPointPair` / `VirtualEndpoints` / `EndpointMatch` types. No cross-frame state.
 - `src/interaction/wholeSystemIntent.ts` — the orchestration layer ONLY: the `WholeSystemIntentController` state machine plus cross-frame state (endpoints, latches, stable timers, previous hand-axis angle/palm normal). Stateful rotation-velocity scoring stays here because it needs previous-frame data; all stateless computation is delegated to the modules above. Do not move pure scoring back in, and do not relocate the stateful rotation methods out.
 - `src/interaction/coordinateMapping.ts` — the only place that converts normalized MediaPipe coordinates into displayed stage pixels and Three.js world coordinates. It is `object-fit: contain` and mirror aware. `mapNormalizedToWorld` unprojects with three's `Raycaster` against the real `scene.getCamera()` and the `z = INTERACTION_PLANE_Z` plane, so it stays correct for any camera pose; do not reintroduce a fixed-camera `tan(fov/2)` projection. The debug landmark overlay and all future 3D content (M4+) must map through it, passing `scene.getCamera()`, so hands, virtual endpoints, and 3D content stay pixel-aligned. Do not hand-roll `(1 - x) * width` style mapping elsewhere.
+- `src/interaction/gestureInputFrame.ts` — turns raw MediaPipe hands into stabilized hands by assigning visual-left/right identity from the previous frame's trajectory BEFORE smoothing (per visual slot), so a MediaPipe handedness flip during a hand crossing cannot swap smoother history. `HandTracker` builds raw hands (`buildTrackedHand`) and runs them through this; do not move smoothing back ahead of visual pairing.
+- `src/interaction/freshFrameGate.ts` — `isFreshTrackingFrame`: interaction controllers update only when `TrackingSnapshot.lastUpdatedAt` changes, fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull / zoom / pan velocity. The `main.ts` render loop enforces this; do not run the controllers every requestAnimationFrame.
+
+Gesture geometry conventions:
+
+- Screen-plane gestures (hand close/pull distance, endpoint hit, pan, hover) use 2D x/y only. Never put MediaPipe image-landmark z into "are the hands close / far" or the pull axis — it is noisy single-camera depth.
+- Hand-shape geometry (open-hand / fist / pinch) prefers MediaPipe world landmarks (`TrackedHand.worldLandmarks`) when present, falling back to image landmarks; the scores are palm-scale ratios, so the same formulas work in either space.
 
 ### Reuse vs. Custom (library built-ins)
 
