@@ -155,13 +155,64 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   if (snapshot.interactionState === 'PlanetActivated') {
     return {
       title: '天体已激活',
-      state: `${snapshot.activatedBody ?? '目标天体'} 已被 pinch 锁定`,
-      reason: '选中天体停止原轨道公转但保持自转；背景太阳系不会被 pinch 拖动、缩放或平移',
+      state: `${snapshot.activatedBody ?? '目标天体'} 等待双指双击闭合`,
+      reason: '选中天体停止原轨道公转但保持自转；用选中这只手的拇指和食指连续闭合两次进入单颗星球界面',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Pinch ratio=${nullable(snapshot.planetActivation.pinchRatio)}`,
         `Pinch=${snapshot.pinchState}`,
+        `DoubleClose=${snapshot.planetActivation.doubleCloseCount}`,
         `Reason=${snapshot.planetActivation.transitionReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'PlanetFocusView') {
+    return {
+      title: '单颗星球界面',
+      state: `${snapshot.activatedBody ?? '目标天体'} 等待热区触碰`,
+      reason: focusViewReason(snapshot),
+      params: [
+        `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Focus=${snapshot.planetFocus.controlState}`,
+        `Touch=${snapshot.planetFocus.touchHandCount}`,
+        `Dwell=${Math.round(snapshot.planetFocus.dwellMs)}ms`,
+        `Reason=${snapshot.planetFocus.transitionReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'PlanetFocusControlled') {
+    return {
+      title: '正在控制星球',
+      state:
+        snapshot.planetFocus.controlMode === 'two'
+          ? '双手跟随，手距调整大小'
+          : '单手跟随移动',
+      reason: '触碰热区停留已成立；捏合拇指和任一手指后张开会放下当前星球并转为悬浮',
+      params: [
+        `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Mode=${snapshot.planetFocus.controlMode}`,
+        `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
+        `Pinch=${snapshot.planetFocus.pinchState}`,
+        `Reason=${snapshot.planetFocus.transitionReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'PlanetFocusFloating') {
+    return {
+      title: '星球已放下',
+      state: `${snapshot.activatedBody ?? '目标天体'} 悬浮在当前位置`,
+      reason:
+        snapshot.planetFocus.controlState === 'DeselectedWaitForClear'
+          ? '跟手选中已取消；需要所有手离开当前星球热区后，才会重新进入待选中状态'
+          : '跟手控制已解除；当前星球仍留在单颗星球界面并持续自转，不自动回轨',
+      params: [
+        `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
+        `Focus=${snapshot.planetFocus.controlState}`,
+        `Reason=${snapshot.planetFocus.transitionReason}`,
       ],
     };
   }
@@ -205,6 +256,18 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
       `Reason=${snapshot.startupTransitionReason}`,
     ],
   };
+}
+
+function focusViewReason(snapshot: DebugSnapshot): string {
+  if (snapshot.planetFocus.controlState === 'IntroCooldown') {
+    return '焦点星球还在进入居中动画中；到达屏幕中心并且热区清空前，不会开始停留计时';
+  }
+
+  if (snapshot.planetFocus.controlState === 'WaitingForHeatZoneClear') {
+    return '进入焦点后检测到手仍在热区内；需要先离开热区，再重新触碰并停留 1 秒';
+  }
+
+  return '当前行星保持自转；单手或双手重新碰触当前星球热区并停留 1 秒后才进入跟手控制';
 }
 
 function cameraStateText(status: DebugSnapshot['cameraStatus']): string {

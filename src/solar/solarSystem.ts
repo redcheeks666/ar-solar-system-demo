@@ -16,6 +16,7 @@ import {
 import { clamp01 } from '../utils/math';
 import {
   CelestialBody,
+  type CelestialBodyRenderState,
   type CelestialBodyInteractionVisualState,
 } from './celestialBody';
 import {
@@ -34,6 +35,7 @@ import {
   type CelestialOriginalOrbitTransform,
   type InteractiveCelestialBodyId,
 } from './solarSystemData';
+import { FocusedCelestialBody } from './focusedCelestialBody';
 
 export interface CelestialBodyScreenTarget {
   id: InteractiveCelestialBodyId;
@@ -45,6 +47,18 @@ export interface CelestialBodyScreenTarget {
   visible: boolean;
   hitRadiusPx: number;
   originalOrbit: CelestialOriginalOrbitTransform;
+}
+
+export interface FocusedCelestialBodyScreenTarget {
+  id: InteractiveCelestialBodyId;
+  screenPosition: {
+    x: number;
+    y: number;
+  };
+  visible: boolean;
+  bodyRadiusPx: number;
+  hitRadiusPx: number;
+  layout: PreviewLayout;
 }
 
 export interface SolarSystemTransform {
@@ -81,11 +95,14 @@ export class CodePlaceholderSolarSystem {
   readonly group = new Group();
 
   private readonly bodies = new Map<CelestialBodyId, CelestialBody>();
+  private readonly focusedBodies = new Map<InteractiveCelestialBodyId, FocusedCelestialBody>();
+  private readonly controlEndpoints: Group[] = [];
   private readonly endpointGeometries: BufferGeometry[] = [];
   private readonly endpointMaterials: Material[] = [];
   private readonly baseScale = new Vector3(DEFAULT_SCALE, DEFAULT_SCALE, DEFAULT_SCALE);
   private visibleRequested = false;
   private openingProgress = 0;
+  private focusedBody: InteractiveCelestialBodyId | null = null;
 
   constructor() {
     this.group.name = 'code-placeholder-solar-system';
@@ -94,6 +111,7 @@ export class CodePlaceholderSolarSystem {
     this.addLights();
     this.createBodies();
     this.addControlEndpoints();
+    this.addFocusViewBodies();
     this.applyVisibility();
   }
 
@@ -103,6 +121,9 @@ export class CodePlaceholderSolarSystem {
     }
 
     this.bodies.forEach((body) => body.update(deltaSeconds));
+    if (this.focusedBody) {
+      this.focusedBodies.get(this.focusedBody)?.update(deltaSeconds, this.group);
+    }
   }
 
   setVisible(visible: boolean): void {
@@ -138,6 +159,8 @@ export class CodePlaceholderSolarSystem {
       this.baseScale.setScalar(transform.scale);
       this.applyVisibility();
     }
+
+    this.updateFocusedBodyLayout();
   }
 
   getInteractiveBodyDefinitions(): readonly CelestialBodyDefinition[] {
@@ -163,6 +186,14 @@ export class CodePlaceholderSolarSystem {
     target: Vector3,
   ): Vector3 {
     return this.getBodyById(id).getWorldPosition(target);
+  }
+
+  getBodyRenderOpacity(id: CelestialBodyId): number | null {
+    return this.getBodyById(id).getBodyOpacity();
+  }
+
+  getBodyRenderState(id: CelestialBodyId): CelestialBodyRenderState | null {
+    return this.getBodyById(id).getBodyRenderState();
   }
 
   getInteractiveBodyScreenTargets(
@@ -211,10 +242,90 @@ export class CodePlaceholderSolarSystem {
     });
   }
 
+  getFocusedBodyScreenTarget(
+    id: InteractiveCelestialBodyId,
+    camera: Camera,
+    layout: PreviewLayout,
+  ): FocusedCelestialBodyScreenTarget | null {
+    const focusedBody = this.focusedBodies.get(id);
+
+    if (!focusedBody || !focusedBody.root.visible) {
+      return null;
+    }
+
+    const definition = getCelestialBodyDefinition(id);
+    const worldPosition = focusedBody.getWorldPosition(TEMP_FOCUS_WORLD_POSITION);
+    const projected = mapWorldToStagePixel(worldPosition, layout, camera);
+
+    if (!projected) {
+      return null;
+    }
+
+    const worldScale = focusedBody.getMaxWorldScale(TEMP_FOCUS_WORLD_SCALE);
+    const bodyRadiusPx =
+      estimateWorldRadiusInStagePixels(
+        worldPosition,
+        definition.radius * worldScale,
+        layout,
+        camera,
+      ) ?? MIN_BODY_HIT_RADIUS_PX;
+
+    return {
+      id,
+      screenPosition: {
+        x: projected.x,
+        y: projected.y,
+      },
+      visible: projected.visible,
+      bodyRadiusPx,
+      hitRadiusPx: Math.max(bodyRadiusPx + 36, MIN_BODY_HIT_RADIUS_PX * 1.4),
+      layout,
+    };
+  }
+
+  setFocusedBodyPlacement(input: {
+    focusedBody: InteractiveCelestialBodyId;
+    worldPosition: {
+      x: number;
+      y: number;
+      z: number;
+    };
+    scaleMultiplier: number;
+  }): void {
+    this.focusedBodies.get(input.focusedBody)?.setWorldPlacement(
+      this.group,
+      TEMP_FOCUS_CONTROL_POSITION.set(
+        input.worldPosition.x,
+        input.worldPosition.y,
+        input.worldPosition.z,
+      ),
+      input.scaleMultiplier,
+    );
+  }
+
   applyBodyInteractionState(input: {
     hoveredBody: InteractiveCelestialBodyId | null;
     activatedBody: InteractiveCelestialBodyId | null;
+    focusedBody?: InteractiveCelestialBodyId | null;
   }): void {
+    const nextFocusedBody = input.focusedBody ?? null;
+    const focusEntered =
+      nextFocusedBody !== null && nextFocusedBody !== this.focusedBody;
+    this.focusedBody = nextFocusedBody;
+    const focusActive = Boolean(this.focusedBody);
+    this.controlEndpoints.forEach((endpoint) => {
+      endpoint.visible = !focusActive;
+    });
+    this.focusedBodies.forEach((body, id) => {
+      body.setVisible(this.focusedBody === id);
+    });
+    if (focusEntered && this.focusedBody) {
+      this.startFocusedBodyIntro(this.focusedBody);
+    } else {
+      this.updateFocusedBodyLayout();
+    }
+    this.bodies.forEach((body) => body.setFocusBackgroundDimmed(focusActive));
+
     INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
       const body = this.getBodyById(definition.id as InteractiveCelestialBodyId);
       const state = getBodyVisualState(definition.id as InteractiveCelestialBodyId, input);
@@ -231,6 +342,8 @@ export class CodePlaceholderSolarSystem {
   dispose(): void {
     this.bodies.forEach((body) => body.dispose());
     this.bodies.clear();
+    this.focusedBodies.forEach((body) => body.dispose());
+    this.focusedBodies.clear();
     this.endpointGeometries.forEach((geometry) => geometry.dispose());
     this.endpointMaterials.forEach((material) => material.dispose());
     this.endpointGeometries.length = 0;
@@ -323,10 +436,19 @@ export class CodePlaceholderSolarSystem {
     dot.renderOrder = CONTROL_ENDPOINT_RENDER_ORDER + 1;
 
     endpoint.add(ring, dot);
+    this.controlEndpoints.push(endpoint);
     this.endpointGeometries.push(ringGeometry, dotGeometry);
     this.endpointMaterials.push(ringMaterial, dotMaterial);
 
     return endpoint;
+  }
+
+  private addFocusViewBodies(): void {
+    INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
+      const body = new FocusedCelestialBody(definition);
+      this.focusedBodies.set(definition.id as InteractiveCelestialBodyId, body);
+      this.group.add(body.root);
+    });
   }
 
   private getBodyById(id: CelestialBodyId): CelestialBody {
@@ -344,11 +466,35 @@ export class CodePlaceholderSolarSystem {
     const openScale = MIN_OPEN_SCALE + (1 - MIN_OPEN_SCALE) * easedProgress;
     this.group.scale.copy(this.baseScale).multiplyScalar(openScale);
     this.group.visible = this.visibleRequested && this.openingProgress > 0.001;
+    this.updateFocusedBodyLayout();
+  }
+
+  private updateFocusedBodyLayout(): void {
+    if (!this.focusedBody) {
+      return;
+    }
+
+    this.focusedBodies.get(this.focusedBody)?.applyScreenCenteredLayout(this.group);
+  }
+
+  private startFocusedBodyIntro(id: InteractiveCelestialBodyId): void {
+    const sourceBody = this.getBodyById(id);
+    const sourceWorldPosition = sourceBody.getWorldPosition(TEMP_FOCUS_SOURCE_POSITION);
+    const sourceWorldScale = sourceBody.getMaxWorldScale(TEMP_FOCUS_SOURCE_SCALE);
+
+    this.focusedBodies
+      .get(id)
+      ?.startIntroTransition(this.group, sourceWorldPosition, sourceWorldScale);
   }
 }
 
 const TEMP_WORLD_POSITION = new Vector3();
 const TEMP_WORLD_SCALE = new Vector3();
+const TEMP_FOCUS_SOURCE_POSITION = new Vector3();
+const TEMP_FOCUS_SOURCE_SCALE = new Vector3();
+const TEMP_FOCUS_WORLD_POSITION = new Vector3();
+const TEMP_FOCUS_WORLD_SCALE = new Vector3();
+const TEMP_FOCUS_CONTROL_POSITION = new Vector3();
 
 function getBodyVisualState(
   id: InteractiveCelestialBodyId,

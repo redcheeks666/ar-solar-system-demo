@@ -126,6 +126,7 @@ export class DebugOverlay {
         'Pinch thresholds',
         `${snapshot.planetActivation.pinchStartThreshold.toFixed(2)} / ${snapshot.planetActivation.pinchEndThreshold.toFixed(2)}`,
       ],
+      ['DoubleClose count', String(snapshot.planetActivation.doubleCloseCount)],
       [
         'Hover dist/radius px',
         `${formatNullable(snapshot.planetActivation.hoverDistancePx)} / ${formatNullable(
@@ -147,6 +148,32 @@ export class DebugOverlay {
         formatOrbit(snapshot.planetActivation.activatedOriginalOrbit),
       ],
       ['Activation reason', snapshot.planetActivation.transitionReason],
+      ['Focus control', snapshot.planetFocus.controlState],
+      ['Focus mode', snapshot.planetFocus.controlMode],
+      ['Focus body', snapshot.planetFocus.focusedBody ?? 'none'],
+      ['Focus hands', snapshot.planetFocus.activeHandKeys.join(', ') || 'none'],
+      [
+        'Focus touch',
+        `${snapshot.planetFocus.touchHandCount} hand(s), ${formatNullable(
+          snapshot.planetFocus.touchDistancePx,
+        )} / ${formatNullable(snapshot.planetFocus.touchHitRadiusPx)}px`,
+      ],
+      [
+        'Focus dwell',
+        `${Math.round(snapshot.planetFocus.dwellMs)}ms / ${Math.round(
+          snapshot.planetFocus.dwellRequiredMs,
+        )}ms`,
+      ],
+      ['Focus screen', formatPoint2(snapshot.planetFocus.screenPosition)],
+      ['Focus scale', snapshot.planetFocus.scaleMultiplier.toFixed(2)],
+      [
+        'Focus pinch',
+        `${snapshot.planetFocus.pinchState} ${formatNullable(
+          snapshot.planetFocus.pinchRatio,
+        )} / ${formatNullable(snapshot.planetFocus.pinchDistancePx)}px`,
+      ],
+      ['Focus pinch hand', snapshot.planetFocus.pinchTapHandKey ?? 'none'],
+      ['Focus reason', snapshot.planetFocus.transitionReason],
       ['Throw velocity', formatNullable(snapshot.throwVelocity)],
       ['Whole control', snapshot.wholeSystem.controlState],
       [

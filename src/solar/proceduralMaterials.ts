@@ -18,6 +18,15 @@ export interface PlaceholderMaterialBundle {
   textures: Texture[];
 }
 
+export interface UnlitPlaceholderMaterialBundle {
+  material: MeshBasicMaterial;
+  textures: Texture[];
+}
+
+interface BodyTextureOptions {
+  includeRotationMarker?: boolean;
+}
+
 export function createPlaceholderBodyMaterial(
   body: CelestialBodyDefinition,
 ): PlaceholderMaterialBundle {
@@ -29,6 +38,22 @@ export function createPlaceholderBodyMaterial(
     metalness: 0,
     emissive: new Color(body.id === 'sun' ? body.baseColor : '#000000'),
     emissiveIntensity: body.id === 'sun' ? 1.05 : 0,
+  });
+
+  return {
+    material,
+    textures: [texture],
+  };
+}
+
+export function createUnlitPlaceholderBodyMaterial(
+  body: CelestialBodyDefinition,
+  options: BodyTextureOptions = {},
+): UnlitPlaceholderMaterialBundle {
+  const texture = createBodyTexture(body, options);
+  const material = new MeshBasicMaterial({
+    map: texture,
+    color: new Color('#ffffff'),
   });
 
   return {
@@ -50,7 +75,10 @@ export function createSaturnRingMaterial(
   });
 }
 
-function createBodyTexture(body: CelestialBodyDefinition): CanvasTexture {
+function createBodyTexture(
+  body: CelestialBodyDefinition,
+  options: BodyTextureOptions = {},
+): CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = TEXTURE_WIDTH;
   canvas.height = TEXTURE_HEIGHT;
@@ -64,7 +92,9 @@ function createBodyTexture(body: CelestialBodyDefinition): CanvasTexture {
   context.fillRect(0, 0, canvas.width, canvas.height);
 
   drawBasePattern(context, body);
-  drawRotationMarker(context, body);
+  if (options.includeRotationMarker ?? true) {
+    drawRotationMarker(context, body);
+  }
   drawLongitudeGuide(context, body);
 
   const texture = new CanvasTexture(canvas);

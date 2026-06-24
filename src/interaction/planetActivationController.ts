@@ -17,6 +17,8 @@ import type {
 export type PlanetActivationPinchState =
   | 'idle'
   | 'open'
+  | 'close-ready'
+  | 'closed'
   | 'pinching'
   | 'held-during-loss';
 
@@ -36,6 +38,7 @@ export interface PlanetActivationSnapshot {
   hoverPointKind: HandInteractionPointKind | null;
   activatedOriginalOrbit: CelestialOriginalOrbitTransform | null;
   trackingLossMs: number;
+  doubleCloseCount: number;
   transitionReason: string;
 }
 
@@ -78,7 +81,21 @@ const PINCH_START_RATIO = 0.48;
 const PINCH_END_RATIO = 0.62;
 const PINCH_START_MAX_DISTANCE_PX = 96;
 const PINCH_END_MAX_DISTANCE_PX = 128;
+const DOUBLE_CLOSE_STABLE_MS = 40;
+const DOUBLE_CLOSE_MIN_OPEN_GAP_MS = 70;
+const DOUBLE_CLOSE_MAX_INTERVAL_MS = 1600;
+const DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS = 180;
+const DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS = 900;
+const DOUBLE_CLOSE_OPEN_RATIO = 0.34;
+const DOUBLE_CLOSE_CLOSE_RATIO = 0.28;
+const DOUBLE_CLOSE_OPEN_DISTANCE_PX = 66;
+const DOUBLE_CLOSE_CLOSE_DISTANCE_PX = 56;
+const DOUBLE_CLOSE_REOPEN_DELTA_RATIO = 0.035;
+const DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX = 7;
+const DOUBLE_CLOSE_RECLOSE_DELTA_RATIO = 0.03;
+const DOUBLE_CLOSE_RECLOSE_DELTA_DISTANCE_PX = 7;
 const HOVER_EXIT_RADIUS_MULTIPLIER = 1.32;
+const ACTIVATION_EXIT_HOLD_MS = 1000;
 const HOVER_SWITCH_MARGIN = 0.24;
 const ACTIVATION_TRACKING_LOSS_HOLD_MS = 360;
 
@@ -98,6 +115,7 @@ export const EMPTY_PLANET_ACTIVATION_SNAPSHOT: PlanetActivationSnapshot = {
   hoverPointKind: null,
   activatedOriginalOrbit: null,
   trackingLossMs: 0,
+  doubleCloseCount: 0,
   transitionReason: 'inactive',
 };
 
@@ -105,11 +123,22 @@ export class PlanetActivationController {
   private hoveredBody: InteractiveCelestialBodyId | null = null;
   private activatedBody: InteractiveCelestialBodyId | null = null;
   private activeHandKey: string | null = null;
+  private activatedAtMs: number | null = null;
   private fallbackSolarState: Extract<
     InteractionState,
     'SolarActive' | 'SolarFreeHover'
   > = 'SolarFreeHover';
   private trackingLostSince: number | null = null;
+  private activationExitStartedAt: number | null = null;
+  private doubleCloseCount = 0;
+  private firstCloseAt: number | null = null;
+  private closeStableSince: number | null = null;
+  private closedLatched = false;
+  private reopenStableSince: number | null = null;
+  private openReady = false;
+  private latchedCloseMetrics: PinchMetrics | null = null;
+  private reopenPeakMetrics: PinchMetrics | null = null;
+  private focusCooldownUntil = 0;
   private snapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
 
   update(input: PlanetActivationUpdateInput): PlanetActivationUpdate {
@@ -117,6 +146,17 @@ export class PlanetActivationController {
       this.fallbackSolarState = 'SolarActive';
     } else if (input.interactionState === 'SolarFreeHover') {
       this.fallbackSolarState = 'SolarFreeHover';
+    }
+
+    if (isPlanetFocusState(input.interactionState)) {
+      const snapshot = this.createSnapshot({
+        hoverCandidate: null,
+        pinchMetrics: null,
+        pinchState: this.activatedBody ? 'pinching' : 'idle',
+        reason: this.activatedBody ? 'focus-view-active' : 'focus-view-missing-activation',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
     }
 
     if (!canRunPlanetActivation(input.interactionState)) {
@@ -157,8 +197,7 @@ export class PlanetActivationController {
 
     const pinchMetrics = computePinchMetrics(hoverCandidate.hand, input.layout);
     if (isPinchStart(pinchMetrics)) {
-      this.activatedBody = hoverCandidate.target.id;
-      this.activeHandKey = hoverCandidate.handKey;
+      this.activateBody(hoverCandidate, input.timestamp);
       const snapshot = this.createSnapshot({
         hoverCandidate,
         pinchMetrics,
@@ -194,7 +233,10 @@ export class PlanetActivationController {
     this.hoveredBody = null;
     this.activatedBody = null;
     this.activeHandKey = null;
+    this.activatedAtMs = null;
     this.trackingLostSince = null;
+    this.activationExitStartedAt = null;
+    this.resetDoubleClose();
     this.snapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   }
 
@@ -225,9 +267,8 @@ export class PlanetActivationController {
     if (hoverCandidate && hoverCandidate.target.id !== activeBody) {
       const nextMetrics = computePinchMetrics(hoverCandidate.hand, input.layout);
 
-      if (isPinchHeld(nextMetrics)) {
-        this.activatedBody = hoverCandidate.target.id;
-        this.activeHandKey = hoverCandidate.handKey;
+      if (isPinchStart(nextMetrics) || isDoubleCloseClosed(nextMetrics)) {
+        this.activateBody(hoverCandidate, input.timestamp);
         this.trackingLostSince = null;
         const snapshot = this.createSnapshot({
           hoverCandidate,
@@ -238,17 +279,6 @@ export class PlanetActivationController {
         this.snapshot = snapshot;
         return { snapshot, nextState: null };
       }
-
-      this.clearActivation();
-      this.hoveredBody = hoverCandidate.target.id;
-      const snapshot = this.createSnapshot({
-        hoverCandidate,
-        pinchMetrics: nextMetrics,
-        pinchState: 'open',
-        reason: 'activation-cleared-by-other-body-hover',
-      });
-      this.snapshot = snapshot;
-      return { snapshot, nextState: 'BodyHover' };
     }
 
     if (!activeCandidate) {
@@ -283,34 +313,78 @@ export class PlanetActivationController {
 
     this.trackingLostSince = null;
     const pinchMetrics = computePinchMetrics(activeCandidate.hand, input.layout);
+    const activeHandNearBody =
+      activeCandidate.normalizedDistance <= HOVER_EXIT_RADIUS_MULTIPLIER;
+    const pinchHeld = isPinchHeld(pinchMetrics);
 
-    if (!isPinchHeld(pinchMetrics)) {
-      this.clearActivation();
-      const nextHover =
-        hoverCandidate?.target.id === activeBody ? hoverCandidate : null;
-      this.hoveredBody = nextHover?.target.id ?? null;
-      const snapshot = this.createSnapshot({
-        hoverCandidate: nextHover,
-        pinchMetrics,
-        pinchState: nextHover ? 'open' : 'idle',
-        reason: 'pinch-ended',
-      });
-      this.snapshot = snapshot;
-      return {
-        snapshot,
-        nextState: nextHover ? 'BodyHover' : this.fallbackSolarState,
-      };
+    if (pinchHeld || activeHandNearBody) {
+      this.activationExitStartedAt = null;
     }
+
+    if (!pinchHeld && !activeHandNearBody) {
+      this.activationExitStartedAt ??= input.timestamp;
+      const exitMs = input.timestamp - this.activationExitStartedAt;
+
+      if (exitMs >= ACTIVATION_EXIT_HOLD_MS) {
+        this.clearActivation();
+        const nextHover =
+          hoverCandidate?.target.id === activeBody ? hoverCandidate : null;
+        this.hoveredBody = nextHover?.target.id ?? null;
+        const snapshot = this.createSnapshot({
+          hoverCandidate: nextHover,
+          pinchMetrics,
+          pinchState: nextHover ? 'open' : 'idle',
+          reason: 'pinch-ended',
+        });
+        this.snapshot = snapshot;
+        return {
+          snapshot,
+          nextState: nextHover ? 'BodyHover' : this.fallbackSolarState,
+        };
+      }
+    }
+
+    const doubleClose = this.updateDoubleClose(
+      pinchMetrics,
+      input.timestamp,
+      this.activatedAtMs ?? input.timestamp,
+    );
 
     const lockedHover =
       hoverCandidate?.target.id === activeBody
         ? hoverCandidate
         : this.findCandidateByBody(candidates, activeBody) ?? hoverCandidate;
+
+    if (doubleClose === 'focus-entry') {
+      const snapshot = this.createSnapshot({
+        hoverCandidate: lockedHover,
+        pinchMetrics,
+        pinchState: 'closed',
+        reason: 'double-close-enter-focus',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: 'PlanetFocusView' };
+    }
+
     const snapshot = this.createSnapshot({
       hoverCandidate: lockedHover,
       pinchMetrics,
-      pinchState: 'pinching',
-      reason: 'activation-held',
+      pinchState:
+        doubleClose === 'first-close'
+          ? 'closed'
+          : this.openReady
+            ? 'close-ready'
+            : isPinchHeld(pinchMetrics)
+              ? 'pinching'
+              : 'open',
+      reason:
+        doubleClose === 'first-close'
+          ? 'double-close-first-close'
+          : this.openReady
+            ? 'double-close-open-ready'
+            : isPinchHeld(pinchMetrics)
+              ? 'activation-held'
+              : 'activation-held-open',
     });
     this.snapshot = snapshot;
     return { snapshot, nextState: null };
@@ -432,14 +506,173 @@ export class PlanetActivationController {
       hoverPointKind: input.hoverCandidate?.handPointKind ?? null,
       activatedOriginalOrbit,
       trackingLossMs: input.trackingLossMs ?? 0,
+      doubleCloseCount: this.doubleCloseCount,
       transitionReason: input.reason,
     };
+  }
+
+  private activateBody(candidate: Candidate, timestamp: number): void {
+    this.activatedBody = candidate.target.id;
+    this.activeHandKey = candidate.handKey;
+    this.activatedAtMs = timestamp;
+    this.trackingLostSince = null;
+    this.activationExitStartedAt = null;
+    this.resetDoubleClose();
   }
 
   private clearActivation(): void {
     this.activatedBody = null;
     this.activeHandKey = null;
+    this.activatedAtMs = null;
     this.trackingLostSince = null;
+    this.activationExitStartedAt = null;
+    this.resetDoubleClose();
+  }
+
+  private updateDoubleClose(
+    metrics: PinchMetrics,
+    timestamp: number,
+    activatedAtMs: number,
+  ): 'first-close' | 'focus-entry' | null {
+    if (
+      timestamp < this.focusCooldownUntil ||
+      timestamp - activatedAtMs < DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS
+    ) {
+      return null;
+    }
+
+    if (
+      this.doubleCloseCount === 1 &&
+      this.firstCloseAt !== null &&
+      timestamp - this.firstCloseAt > DOUBLE_CLOSE_MAX_INTERVAL_MS
+    ) {
+      this.resetDoubleClose();
+    }
+
+    const openForDoubleClose = this.isOpenForDoubleClose(metrics);
+    const closedForDoubleClose = isDoubleCloseClosed(metrics);
+
+    if (this.closedLatched) {
+      if (openForDoubleClose) {
+        this.reopenStableSince ??= timestamp;
+        this.reopenPeakMetrics = maxPinchMetrics(
+          this.reopenPeakMetrics,
+          metrics,
+        );
+
+        if (timestamp - this.reopenStableSince >= DOUBLE_CLOSE_MIN_OPEN_GAP_MS) {
+          this.closedLatched = false;
+          this.closeStableSince = null;
+          this.openReady = true;
+        }
+      } else {
+        this.reopenStableSince = null;
+        this.reopenPeakMetrics = null;
+      }
+
+      return null;
+    }
+
+    if (openForDoubleClose) {
+      this.openReady = true;
+      this.reopenPeakMetrics = maxPinchMetrics(
+        this.reopenPeakMetrics,
+        metrics,
+      );
+      this.closeStableSince = null;
+      return null;
+    }
+
+    if (!closedForDoubleClose) {
+      this.closeStableSince = null;
+      return null;
+    }
+
+    if (!this.openReady) {
+      return null;
+    }
+
+    if (!this.isClosedAfterReopen(metrics)) {
+      this.closeStableSince = null;
+      return null;
+    }
+
+    this.closeStableSince ??= timestamp;
+
+    if (timestamp - this.closeStableSince < DOUBLE_CLOSE_STABLE_MS) {
+      return null;
+    }
+
+    if (this.doubleCloseCount === 0) {
+      this.doubleCloseCount = 1;
+      this.firstCloseAt = timestamp;
+      this.closedLatched = true;
+      this.openReady = false;
+      this.latchedCloseMetrics = metrics;
+      this.reopenPeakMetrics = null;
+      this.reopenStableSince = null;
+      return 'first-close';
+    }
+
+    if (
+      this.doubleCloseCount === 1 &&
+      this.firstCloseAt !== null &&
+      timestamp - this.firstCloseAt <= DOUBLE_CLOSE_MAX_INTERVAL_MS
+    ) {
+      this.doubleCloseCount = 2;
+      this.closedLatched = true;
+      this.focusCooldownUntil =
+        timestamp + DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS;
+      return 'focus-entry';
+    }
+
+    this.resetDoubleClose();
+    return null;
+  }
+
+  private resetDoubleClose(): void {
+    this.doubleCloseCount = 0;
+    this.firstCloseAt = null;
+    this.closeStableSince = null;
+    this.closedLatched = false;
+    this.reopenStableSince = null;
+    this.openReady = false;
+    this.latchedCloseMetrics = null;
+    this.reopenPeakMetrics = null;
+  }
+
+  private isOpenForDoubleClose(metrics: PinchMetrics): boolean {
+    if (isDoubleCloseOpen(metrics)) {
+      return true;
+    }
+
+    if (!this.latchedCloseMetrics) {
+      return false;
+    }
+
+    return (
+      metrics.ratio - this.latchedCloseMetrics.ratio >=
+        DOUBLE_CLOSE_REOPEN_DELTA_RATIO &&
+      metrics.distancePx - this.latchedCloseMetrics.distancePx >=
+        DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX
+    );
+  }
+
+  private isClosedAfterReopen(metrics: PinchMetrics): boolean {
+    if (this.doubleCloseCount === 0) {
+      return true;
+    }
+
+    if (!this.reopenPeakMetrics) {
+      return false;
+    }
+
+    return (
+      this.reopenPeakMetrics.ratio - metrics.ratio >=
+        DOUBLE_CLOSE_RECLOSE_DELTA_RATIO ||
+      this.reopenPeakMetrics.distancePx - metrics.distancePx >=
+        DOUBLE_CLOSE_RECLOSE_DELTA_DISTANCE_PX
+    );
   }
 }
 
@@ -449,6 +682,14 @@ function canRunPlanetActivation(state: InteractionState): boolean {
     state === 'SolarFreeHover' ||
     state === 'BodyHover' ||
     state === 'PlanetActivated'
+  );
+}
+
+function isPlanetFocusState(state: InteractionState): boolean {
+  return (
+    state === 'PlanetFocusView' ||
+    state === 'PlanetFocusControlled' ||
+    state === 'PlanetFocusFloating'
   );
 }
 
@@ -526,6 +767,36 @@ function isPinchHeld(metrics: PinchMetrics): boolean {
     metrics.ratio < PINCH_END_RATIO &&
     metrics.distancePx < PINCH_END_MAX_DISTANCE_PX
   );
+}
+
+function isDoubleCloseOpen(metrics: PinchMetrics): boolean {
+  return (
+    metrics.ratio >= DOUBLE_CLOSE_OPEN_RATIO ||
+    metrics.distancePx >= DOUBLE_CLOSE_OPEN_DISTANCE_PX ||
+    !isPinchHeld(metrics)
+  );
+}
+
+function isDoubleCloseClosed(metrics: PinchMetrics): boolean {
+  return (
+    metrics.ratio <= DOUBLE_CLOSE_CLOSE_RATIO ||
+    metrics.distancePx <= DOUBLE_CLOSE_CLOSE_DISTANCE_PX
+  );
+}
+
+function maxPinchMetrics(
+  current: PinchMetrics | null,
+  next: PinchMetrics,
+): PinchMetrics {
+  if (!current) {
+    return next;
+  }
+
+  return {
+    distance: Math.max(current.distance, next.distance),
+    distancePx: Math.max(current.distancePx, next.distancePx),
+    ratio: Math.max(current.ratio, next.ratio),
+  };
 }
 
 function averagePoints(

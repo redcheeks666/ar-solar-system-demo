@@ -10,6 +10,11 @@ import {
   PlanetActivationController,
   type PlanetActivationSnapshot,
 } from './interaction/planetActivationController';
+import {
+  EMPTY_PLANET_FOCUS_SNAPSHOT,
+  PlanetFocusController,
+  type PlanetFocusSnapshot,
+} from './interaction/planetFocusController';
 import { InteractionStateMachine } from './interaction/stateMachine';
 import {
   EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
@@ -24,8 +29,10 @@ import { DebugOverlay } from './rendering/debugOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { INTERACTION_PLANE_Z, TransparentSceneRenderer } from './rendering/scene';
+import { FOCUS_BODY_WORLD_Z } from './solar/focusedCelestialBody';
 import { CodePlaceholderSolarSystem } from './solar/solarSystem';
 import { MediaPipeTrackingController } from './tracking/mediapipe';
+import { mapStagePixelToWorld } from './interaction/coordinateMapping';
 import type {
   CameraPermissionStatus,
   DebugSnapshot,
@@ -64,6 +71,7 @@ const startupGesture = new HandStartupGestureController();
 const wholeSystemIntent = new WholeSystemIntentController();
 const solarOpening = new SolarOpeningController();
 const planetActivation = new PlanetActivationController();
+const planetFocus = new PlanetFocusController();
 
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
@@ -132,6 +140,7 @@ const debugSnapshot: DebugSnapshot = {
   activatedBody: null,
   pinchState: 'idle',
   planetActivation: EMPTY_PLANET_ACTIVATION_SNAPSHOT,
+  planetFocus: EMPTY_PLANET_FOCUS_SNAPSHOT,
   throwVelocity: null,
   wholeSystem: EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
   rendererReady: true,
@@ -215,6 +224,7 @@ window.addEventListener('beforeunload', () => {
   wholeSystemIntent.reset();
   solarOpening.reset();
   planetActivation.reset();
+  planetFocus.reset();
   renderer.removeObject3D(placeholderSolarSystem.group);
   placeholderSolarSystem.dispose();
   renderer.dispose();
@@ -344,6 +354,33 @@ function updateGestureControllers(
   }
 
   applyPlanetActivationSnapshot(planetActivationUpdate.snapshot);
+
+  const focusedBody = planetActivationUpdate.snapshot.activatedBody;
+  if (isPlanetFocusState(interaction.state) && focusedBody) {
+    const planetFocusUpdate = planetFocus.update({
+      tracking,
+      interactionState: interaction.state,
+      focusedBody,
+      target: placeholderSolarSystem.getFocusedBodyScreenTarget(
+        focusedBody,
+        camera,
+        previewLayout,
+      ),
+      layout: previewLayout,
+      timestamp,
+    });
+
+    if (planetFocusUpdate.nextState) {
+      interaction.transition(planetFocusUpdate.nextState);
+      updateGuidanceForState(interaction.state);
+    }
+
+    applyPlanetFocusSnapshot(planetFocusUpdate.snapshot, camera, previewLayout);
+    return;
+  }
+
+  planetFocus.reset();
+  debugSnapshot.planetFocus = EMPTY_PLANET_FOCUS_SNAPSHOT;
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -417,6 +454,38 @@ function applyPlanetActivationSnapshot(
   placeholderSolarSystem.applyBodyInteractionState({
     hoveredBody: snapshot.hoveredBody,
     activatedBody: snapshot.activatedBody,
+    focusedBody: isPlanetFocusState(interaction.state)
+      ? snapshot.activatedBody
+      : null,
+  });
+}
+
+function applyPlanetFocusSnapshot(
+  snapshot: PlanetFocusSnapshot,
+  camera: ReturnType<TransparentSceneRenderer['getCamera']>,
+  previewLayout: ReturnType<typeof createPreviewLayout>,
+): void {
+  debugSnapshot.planetFocus = snapshot;
+
+  if (!snapshot.focusedBody || !snapshot.screenPosition) {
+    return;
+  }
+
+  const worldPosition = mapStagePixelToWorld(
+    snapshot.screenPosition,
+    previewLayout,
+    camera,
+    FOCUS_BODY_WORLD_Z,
+  );
+
+  if (!worldPosition) {
+    return;
+  }
+
+  placeholderSolarSystem.setFocusedBodyPlacement({
+    focusedBody: snapshot.focusedBody,
+    worldPosition,
+    scaleMultiplier: snapshot.scaleMultiplier,
   });
 }
 
@@ -513,7 +582,22 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'PlanetActivated') {
-    guidance.textContent = '目标已激活，保持捏合可继续锁定；松开后回到太阳系浏览';
+    guidance.textContent = '目标已激活，用选中这只手的拇指和食指连续闭合两次进入单个星球界面';
+    return;
+  }
+
+  if (state === 'PlanetFocusView') {
+    guidance.textContent = '已进入单个星球界面，等居中后离开热区，再重新碰触星球停留 1 秒可跟手';
+    return;
+  }
+
+  if (state === 'PlanetFocusControlled') {
+    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小';
+    return;
+  }
+
+  if (state === 'PlanetFocusFloating') {
+    guidance.textContent = '星球已放下悬浮；手先离开热区，再重新碰触停留 1 秒可跟手';
     return;
   }
 
@@ -523,4 +607,12 @@ function updateGuidanceForState(state: string): void {
   }
 
   guidance.textContent = '双手在画面任意位置合拢，再向两侧拉开';
+}
+
+function isPlanetFocusState(state: string): boolean {
+  return (
+    state === 'PlanetFocusView' ||
+    state === 'PlanetFocusControlled' ||
+    state === 'PlanetFocusFloating'
+  );
 }

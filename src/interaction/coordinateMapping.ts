@@ -113,6 +113,19 @@ export function mapNormalizedToWorld(
   }
 
   const pixel = mapNormalizedToStagePixel(point, layout);
+  return mapStagePixelToWorld(pixel, layout, camera, planeZ);
+}
+
+export function mapStagePixelToWorld(
+  pixel: { x: number; y: number },
+  layout: PreviewLayout,
+  camera: Camera,
+  planeZ: number,
+): Vec3 | null {
+  if (layout.stageWidth <= 0 || layout.stageHeight <= 0) {
+    return null;
+  }
+
   ndcPoint.set(
     (pixel.x / layout.stageWidth) * 2 - 1,
     1 - (pixel.y / layout.stageHeight) * 2,

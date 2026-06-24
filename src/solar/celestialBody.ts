@@ -6,6 +6,7 @@ import {
   Material,
   Mesh,
   MeshBasicMaterial,
+  MeshStandardMaterial,
   RingGeometry,
   SphereGeometry,
   Sprite,
@@ -32,6 +33,15 @@ const HOVER_RING_RENDER_ORDER = 62;
 const ORBIT_IDLE_OPACITY = 0.18;
 const ORBIT_HOVER_OPACITY = 0.36;
 const ORBIT_ACTIVATED_OPACITY = 0.56;
+const FOCUS_BACKGROUND_BODY_OPACITY = 0.18;
+const FOCUS_BACKGROUND_RING_OPACITY_SCALE = 0.32;
+const FOCUS_BACKGROUND_LABEL_OPACITY = 0.28;
+
+export interface CelestialBodyRenderState {
+  opacity: number;
+  transparent: boolean;
+  depthWrite: boolean;
+}
 
 export type CelestialBodyInteractionVisualState =
   | 'idle'
@@ -49,9 +59,14 @@ export class CelestialBody {
   private readonly materials: Material[] = [];
   private readonly textures: Texture[] = [];
   private labelSprite: Sprite | null = null;
+  private labelMaterial: SpriteMaterial | null = null;
+  private bodyMaterial: MeshStandardMaterial | null = null;
+  private planetRingMaterial: MeshBasicMaterial | null = null;
   private hoverRing: Mesh | null = null;
   private hoverRingMaterial: MeshBasicMaterial | null = null;
   private orbitMaterial: MeshBasicMaterial | null = null;
+  private interactionVisualState: CelestialBodyInteractionVisualState = 'idle';
+  private focusBackgroundDimmed = false;
   private orbitAngle: number;
   private orbitPaused = false;
 
@@ -110,22 +125,73 @@ export class CelestialBody {
   setInteractionVisualState(
     state: CelestialBodyInteractionVisualState,
   ): void {
+    this.interactionVisualState = state;
     const active = state !== 'idle';
     this.setLabelVisible(active);
 
+    this.applyInteractionOpacity();
+  }
+
+  setFocusBackgroundDimmed(dimmed: boolean): void {
+    this.focusBackgroundDimmed = dimmed;
+    this.applyInteractionOpacity();
+  }
+
+  getBodyOpacity(): number | null {
+    return this.bodyMaterial?.opacity ?? null;
+  }
+
+  getBodyRenderState(): CelestialBodyRenderState | null {
+    if (!this.bodyMaterial) {
+      return null;
+    }
+
+    return {
+      opacity: this.bodyMaterial.opacity,
+      transparent: this.bodyMaterial.transparent,
+      depthWrite: this.bodyMaterial.depthWrite,
+    };
+  }
+
+  private applyInteractionOpacity(): void {
+    const state = this.interactionVisualState;
+    const dimmed = this.focusBackgroundDimmed;
+
+    if (this.bodyMaterial) {
+      applyBodyMaterialTransparency(this.bodyMaterial, dimmed);
+    }
+
+    if (this.planetRingMaterial) {
+      this.planetRingMaterial.opacity = dimmed
+        ? this.definition.ring?.opacity ?? 0
+        : this.definition.ring?.opacity ?? this.planetRingMaterial.opacity;
+      if (dimmed) {
+        this.planetRingMaterial.opacity *= FOCUS_BACKGROUND_RING_OPACITY_SCALE;
+      }
+    }
+
     if (this.hoverRing && this.hoverRingMaterial) {
+      const active = state !== 'idle';
       this.hoverRing.visible = active;
       this.hoverRing.scale.setScalar(state === 'activated' ? 1.16 : 1);
-      this.hoverRingMaterial.opacity = state === 'activated' ? 0.82 : 0.52;
+      this.hoverRingMaterial.opacity =
+        (state === 'activated' ? 0.82 : 0.52) *
+        (dimmed ? FOCUS_BACKGROUND_RING_OPACITY_SCALE : 1);
     }
 
     if (this.orbitMaterial) {
-      this.orbitMaterial.opacity =
+      const baseOpacity =
         state === 'activated'
           ? ORBIT_ACTIVATED_OPACITY
           : state === 'hovered'
             ? ORBIT_HOVER_OPACITY
             : ORBIT_IDLE_OPACITY;
+      this.orbitMaterial.opacity =
+        baseOpacity * (dimmed ? FOCUS_BACKGROUND_RING_OPACITY_SCALE : 1);
+    }
+
+    if (this.labelMaterial) {
+      this.labelMaterial.opacity = dimmed ? FOCUS_BACKGROUND_LABEL_OPACITY : 1;
     }
   }
 
@@ -145,6 +211,7 @@ export class CelestialBody {
     const mesh = new Mesh(geometry, materialBundle.material);
     mesh.name = `${this.definition.id}-placeholder-sphere`;
     this.spinGroup.add(mesh);
+    this.bodyMaterial = materialBundle.material;
     this.geometries.push(geometry);
     this.materials.push(materialBundle.material);
     this.textures.push(...materialBundle.textures);
@@ -189,6 +256,7 @@ export class CelestialBody {
     ring.name = `${this.definition.id}-saturn-ring`;
     ring.rotation.x = Math.PI * 0.38;
     this.bodyAnchor.add(ring);
+    this.planetRingMaterial = material;
     this.geometries.push(geometry);
     this.materials.push(material);
   }
@@ -262,8 +330,28 @@ export class CelestialBody {
 
     this.bodyAnchor.add(label);
     this.labelSprite = label;
+    this.labelMaterial = material;
     this.materials.push(material);
     this.textures.push(texture);
+  }
+}
+
+function applyBodyMaterialTransparency(
+  material: MeshStandardMaterial,
+  dimmed: boolean,
+): void {
+  const transparent = dimmed;
+  const depthWrite = !dimmed;
+  const opacity = dimmed ? FOCUS_BACKGROUND_BODY_OPACITY : 1;
+  const renderModeChanged =
+    material.transparent !== transparent || material.depthWrite !== depthWrite;
+
+  material.transparent = transparent;
+  material.depthWrite = depthWrite;
+  material.opacity = opacity;
+
+  if (renderModeChanged) {
+    material.needsUpdate = true;
   }
 }
 

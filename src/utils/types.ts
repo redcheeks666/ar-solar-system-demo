@@ -246,6 +246,7 @@ export interface DebugSnapshot {
   activatedBody: string | null;
   pinchState: string;
   planetActivation: PlanetActivationDebugSnapshot;
+  planetFocus: PlanetFocusDebugSnapshot;
   throwVelocity: number | null;
   wholeSystem: WholeSystemIntentSnapshot;
   rendererReady: boolean;
@@ -302,6 +303,50 @@ export interface PlanetActivationDebugSnapshot {
     };
   } | null;
   trackingLossMs: number;
+  doubleCloseCount: number;
+  transitionReason: string;
+}
+
+export type PlanetFocusControlState =
+  | 'Inactive'
+  | 'IntroCooldown'
+  | 'WaitingForHeatZoneClear'
+  | 'FocusIdle'
+  | 'SingleTouchDwell'
+  | 'SingleHandFollow'
+  | 'TwoHandTouchDwell'
+  | 'TwoHandFollow'
+  | 'DeselectedWaitForClear'
+  | 'Floating';
+
+export type PlanetFocusControlMode = 'none' | 'single' | 'two';
+
+export type PlanetFocusPinchState =
+  | 'idle'
+  | 'open'
+  | 'closed'
+  | 'released';
+
+export interface PlanetFocusDebugSnapshot {
+  focusedBody: string | null;
+  controlState: PlanetFocusControlState;
+  controlMode: PlanetFocusControlMode;
+  activeHandKeys: string[];
+  touchHandCount: number;
+  touchDistancePx: number | null;
+  touchHitRadiusPx: number | null;
+  dwellMs: number;
+  dwellRequiredMs: number;
+  dwellMaxMs: number;
+  screenPosition: {
+    x: number;
+    y: number;
+  } | null;
+  scaleMultiplier: number;
+  pinchState: PlanetFocusPinchState;
+  pinchDistancePx: number | null;
+  pinchRatio: number | null;
+  pinchTapHandKey: string | null;
   transitionReason: string;
 }
 

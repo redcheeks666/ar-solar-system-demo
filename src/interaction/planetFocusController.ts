@@ -1,0 +1,1031 @@
+import {
+  INDEX_TIP_INDEX,
+  MIDDLE_TIP_INDEX,
+  PINKY_TIP_INDEX,
+  RING_TIP_INDEX,
+  THUMB_TIP_INDEX,
+} from './handLandmarks';
+import {
+  mapNormalizedToStagePixel,
+  type PreviewLayout,
+} from './coordinateMapping';
+import { clamp, distance2d } from '../utils/math';
+import type {
+  InteractionState,
+  NormalizedPoint,
+  PlanetFocusDebugSnapshot,
+  PlanetFocusPinchState,
+  TrackingSnapshot,
+  TrackedHand,
+} from '../utils/types';
+import type {
+  FocusedCelestialBodyScreenTarget,
+} from '../solar/solarSystem';
+import type { InteractiveCelestialBodyId } from '../solar/solarSystemData';
+
+export interface PlanetFocusSnapshot extends PlanetFocusDebugSnapshot {
+  focusedBody: InteractiveCelestialBodyId | null;
+}
+
+export interface PlanetFocusUpdate {
+  snapshot: PlanetFocusSnapshot;
+  nextState: InteractionState | null;
+}
+
+export interface PlanetFocusUpdateInput {
+  tracking: TrackingSnapshot;
+  interactionState: InteractionState;
+  focusedBody: InteractiveCelestialBodyId | null;
+  target: FocusedCelestialBodyScreenTarget | null;
+  layout: PreviewLayout;
+  timestamp: number;
+}
+
+type FocusHandPointKind =
+  | 'pinchMidpoint'
+  | 'thumbTip'
+  | 'indexTip'
+  | 'middleTip'
+  | 'ringTip'
+  | 'pinkyTip'
+  | 'palmCenter';
+
+interface FocusHandPoint {
+  kind: FocusHandPointKind;
+  pixel: { x: number; y: number };
+}
+
+interface PinchMetrics {
+  distance: number;
+  distancePx: number;
+  ratio: number;
+}
+
+interface FocusHandSample {
+  hand: TrackedHand;
+  handKey: string;
+  points: FocusHandPoint[];
+  nearestPoint: FocusHandPoint;
+  distancePx: number;
+  normalizedDistance: number;
+  pinchMetrics: PinchMetrics;
+}
+
+interface SingleDwellCandidate {
+  mode: 'single';
+  handKey: string;
+  anchorKind: FocusHandPointKind;
+  startedAt: number;
+  offsetPx: { x: number; y: number };
+}
+
+interface TwoHandDwellCandidate {
+  mode: 'two';
+  handKeys: [string, string];
+  anchorKinds: [FocusHandPointKind, FocusHandPointKind];
+  startedAt: number;
+  offsetPx: { x: number; y: number };
+  baseDistancePx: number;
+  baseScaleMultiplier: number;
+}
+
+type DwellCandidate = SingleDwellCandidate | TwoHandDwellCandidate;
+
+type PinchPhase = 'open' | 'closed';
+
+const TOUCH_DWELL_REQUIRED_MS = 1000;
+const TRACKING_LOSS_HOLD_MS = 260;
+const PINCH_TAP_CLOSE_RATIO = 0.4;
+const PINCH_TAP_CLOSE_DISTANCE_PX = 72;
+const PINCH_TAP_OPEN_RATIO = 0.58;
+const PINCH_TAP_OPEN_DISTANCE_PX = 94;
+const MIN_FOCUS_SCALE_MULTIPLIER = 0.65;
+const MAX_FOCUS_SCALE_MULTIPLIER = 1.25;
+const MIN_SCREEN_EDGE_MARGIN_PX = 28;
+const FOCUS_CENTERED_THRESHOLD_PX = 36;
+
+export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
+  focusedBody: null,
+  controlState: 'Inactive',
+  controlMode: 'none',
+  activeHandKeys: [],
+  touchHandCount: 0,
+  touchDistancePx: null,
+  touchHitRadiusPx: null,
+  dwellMs: 0,
+  dwellRequiredMs: TOUCH_DWELL_REQUIRED_MS,
+  dwellMaxMs: TOUCH_DWELL_REQUIRED_MS,
+  screenPosition: null,
+  scaleMultiplier: 1,
+  pinchState: 'idle',
+  pinchDistancePx: null,
+  pinchRatio: null,
+  pinchTapHandKey: null,
+  transitionReason: 'inactive',
+};
+
+export class PlanetFocusController {
+  private focusedBody: InteractiveCelestialBodyId | null = null;
+  private dwellCandidate: DwellCandidate | null = null;
+  private controlState: PlanetFocusSnapshot['controlState'] = 'Inactive';
+  private activeHandKeys: string[] = [];
+  private activeAnchorKinds: FocusHandPointKind[] = [];
+  private singleOffsetPx = { x: 0, y: 0 };
+  private twoOffsetPx = { x: 0, y: 0 };
+  private twoBaseDistancePx = 1;
+  private twoBaseScaleMultiplier = 1;
+  private screenPosition: { x: number; y: number } | null = null;
+  private scaleMultiplier = 1;
+  private trackingLostSince: number | null = null;
+  private heatZoneClearRequired: 'intro' | 'release' | null = null;
+  private pinchPhases = new Map<string, PinchPhase>();
+  private snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
+
+  update(input: PlanetFocusUpdateInput): PlanetFocusUpdate {
+    if (!canRunPlanetFocus(input.interactionState) || !input.focusedBody) {
+      this.reset();
+      return {
+        snapshot: {
+          ...EMPTY_PLANET_FOCUS_SNAPSHOT,
+          transitionReason: 'inactive-state',
+        },
+        nextState: null,
+      };
+    }
+
+    if (input.focusedBody !== this.focusedBody) {
+      this.resetForFocusedBody(input.focusedBody, input.target);
+    }
+
+    if (!input.target || !input.target.visible) {
+      const snapshot = this.createSnapshot({
+        reason: 'focus-target-missing',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    this.screenPosition ??= input.target.screenPosition;
+
+    const samples = createHandSamples(input);
+    const touchCandidates = samples.filter(
+      (sample) => sample.normalizedDistance <= 1,
+    );
+
+    if (this.heatZoneClearRequired) {
+      return this.updateHeatZoneClearGate(input, touchCandidates);
+    }
+
+    if (this.controlState === 'SingleHandFollow') {
+      return this.updateSingleFollow(input, samples, touchCandidates);
+    }
+
+    if (this.controlState === 'TwoHandFollow') {
+      return this.updateTwoHandFollow(input, samples, touchCandidates);
+    }
+
+    return this.updateTouchDwell(input, samples, touchCandidates);
+  }
+
+  getSnapshot(): PlanetFocusSnapshot {
+    return this.snapshot;
+  }
+
+  reset(): void {
+    this.focusedBody = null;
+    this.dwellCandidate = null;
+    this.controlState = 'Inactive';
+    this.activeHandKeys = [];
+    this.activeAnchorKinds = [];
+    this.singleOffsetPx = { x: 0, y: 0 };
+    this.twoOffsetPx = { x: 0, y: 0 };
+    this.twoBaseDistancePx = 1;
+    this.twoBaseScaleMultiplier = 1;
+    this.screenPosition = null;
+    this.scaleMultiplier = 1;
+    this.trackingLostSince = null;
+    this.heatZoneClearRequired = null;
+    this.pinchPhases.clear();
+    this.snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
+  }
+
+  private resetForFocusedBody(
+    focusedBody: InteractiveCelestialBodyId,
+    target: FocusedCelestialBodyScreenTarget | null,
+  ): void {
+    this.focusedBody = focusedBody;
+    this.dwellCandidate = null;
+    this.controlState = 'IntroCooldown';
+    this.activeHandKeys = [];
+    this.activeAnchorKinds = [];
+    this.screenPosition = target?.screenPosition ?? null;
+    this.scaleMultiplier = 1;
+    this.trackingLostSince = null;
+    this.heatZoneClearRequired = 'intro';
+    this.pinchPhases.clear();
+  }
+
+  private updateHeatZoneClearGate(
+    input: PlanetFocusUpdateInput,
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    this.dwellCandidate = null;
+    this.activeHandKeys = [];
+    this.activeAnchorKinds = [];
+    this.trackingLostSince = null;
+    this.pinchPhases.clear();
+
+    if (
+      this.heatZoneClearRequired === 'intro' &&
+      !isFocusTargetCentered(input.target as FocusedCelestialBodyScreenTarget)
+    ) {
+      this.controlState = 'IntroCooldown';
+      const snapshot = this.createSnapshot({
+        touchCandidates,
+        reason: 'waiting-for-focused-body-centered',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    if (touchCandidates.length > 0) {
+      this.controlState =
+        this.heatZoneClearRequired === 'release'
+          ? 'DeselectedWaitForClear'
+          : 'WaitingForHeatZoneClear';
+      const snapshot = this.createSnapshot({
+        touchCandidates,
+        reason:
+          this.heatZoneClearRequired === 'release'
+            ? 'waiting-for-heat-zone-clear-after-release'
+            : 'waiting-for-heat-zone-clear-after-focus-entry',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    const clearedReason =
+      this.heatZoneClearRequired === 'release'
+        ? 'heat-zone-cleared-after-release'
+        : 'heat-zone-cleared-after-focus-entry';
+    this.heatZoneClearRequired = null;
+    this.controlState =
+      input.interactionState === 'PlanetFocusFloating'
+        ? 'Floating'
+        : 'FocusIdle';
+    const snapshot = this.createSnapshot({
+      touchCandidates,
+      reason: clearedReason,
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private updateTouchDwell(
+    input: PlanetFocusUpdateInput,
+    samples: FocusHandSample[],
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    this.trackingLostSince = null;
+    this.activeHandKeys = [];
+    this.activeAnchorKinds = [];
+
+    if (touchCandidates.length >= 2) {
+      return this.updateTwoHandDwell(input, touchCandidates);
+    }
+
+    if (touchCandidates.length === 1) {
+      return this.updateSingleHandDwell(input, samples, touchCandidates[0]);
+    }
+
+    this.dwellCandidate = null;
+    this.controlState =
+      input.interactionState === 'PlanetFocusFloating'
+        ? 'Floating'
+        : 'FocusIdle';
+    const snapshot = this.createSnapshot({
+      touchCandidates,
+      reason: 'waiting-for-focused-body-touch',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private updateSingleHandDwell(
+    input: PlanetFocusUpdateInput,
+    samples: FocusHandSample[],
+    touchCandidate: FocusHandSample,
+  ): PlanetFocusUpdate {
+    if (
+      this.dwellCandidate?.mode !== 'single' ||
+      this.dwellCandidate.handKey !== touchCandidate.handKey
+    ) {
+      this.dwellCandidate = createSingleDwellCandidate(
+        touchCandidate,
+        input.target as FocusedCelestialBodyScreenTarget,
+        input.timestamp,
+      );
+    }
+
+    this.controlState = 'SingleTouchDwell';
+    const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
+
+    if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
+      this.enterSingleFollow(this.dwellCandidate, samples);
+      const placement = this.computeSingleFollowPlacement(
+        samples,
+        input.target as FocusedCelestialBodyScreenTarget,
+      );
+
+      if (placement) {
+        this.screenPosition = placement.screenPosition;
+      }
+
+      const snapshot = this.createSnapshot({
+        touchCandidates: [touchCandidate],
+        dwellMs,
+        pinchMetrics: touchCandidate.pinchMetrics,
+        reason: 'single-touch-dwell-complete',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: 'PlanetFocusControlled' };
+    }
+
+    const snapshot = this.createSnapshot({
+      touchCandidates: [touchCandidate],
+      dwellMs,
+      pinchMetrics: touchCandidate.pinchMetrics,
+      reason: 'single-touch-dwell',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private updateTwoHandDwell(
+    input: PlanetFocusUpdateInput,
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    const pair = getBestTwoHandPair(touchCandidates);
+
+    if (!pair) {
+      return this.updateTouchDwell(input, [], touchCandidates.slice(0, 1));
+    }
+
+    if (!isSameTwoHandDwell(this.dwellCandidate, pair)) {
+      this.dwellCandidate = createTwoHandDwellCandidate(
+        pair,
+        input.target as FocusedCelestialBodyScreenTarget,
+        input.timestamp,
+        this.scaleMultiplier,
+      );
+    }
+
+    this.controlState = 'TwoHandTouchDwell';
+    const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
+
+    if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
+      this.enterTwoHandFollow(this.dwellCandidate, pair);
+      const placement = this.computeTwoHandFollowPlacement(
+        pair,
+        input.target as FocusedCelestialBodyScreenTarget,
+      );
+      this.screenPosition = placement.screenPosition;
+      this.scaleMultiplier = placement.scaleMultiplier;
+      const snapshot = this.createSnapshot({
+        touchCandidates: pair,
+        dwellMs,
+        pinchMetrics: pair[0].pinchMetrics,
+        reason: 'two-hand-touch-dwell-complete',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: 'PlanetFocusControlled' };
+    }
+
+    const snapshot = this.createSnapshot({
+      touchCandidates: pair,
+      dwellMs,
+      pinchMetrics: pair[0].pinchMetrics,
+      reason: 'two-hand-touch-dwell',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private updateSingleFollow(
+    input: PlanetFocusUpdateInput,
+    samples: FocusHandSample[],
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    const placement = this.computeSingleFollowPlacement(
+      samples,
+      input.target as FocusedCelestialBodyScreenTarget,
+    );
+
+    if (!placement) {
+      return this.handleFollowTrackingLoss(input, touchCandidates);
+    }
+
+    this.trackingLostSince = null;
+    this.screenPosition = placement.screenPosition;
+
+    const activeSample = placement.sample;
+    const pinchTapAccepted = this.updatePinchTap(
+      activeSample.handKey,
+      activeSample.pinchMetrics,
+    );
+
+    if (pinchTapAccepted) {
+      return this.releaseToFloating({
+        touchCandidates,
+        pinchMetrics: activeSample.pinchMetrics,
+        pinchTapHandKey: activeSample.handKey,
+        reason: 'single-hand-pinch-tap-release',
+      });
+    }
+
+    const pair = getBestTwoHandPair(touchCandidates);
+    if (pair && pair.some((sample) => sample.handKey === this.activeHandKeys[0])) {
+      if (!isSameTwoHandDwell(this.dwellCandidate, pair)) {
+        this.dwellCandidate = createTwoHandDwellCandidate(
+          pair,
+          input.target as FocusedCelestialBodyScreenTarget,
+          input.timestamp,
+          this.scaleMultiplier,
+        );
+      }
+
+      const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
+      if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
+        this.enterTwoHandFollow(this.dwellCandidate, pair);
+        const twoHandPlacement = this.computeTwoHandFollowPlacement(
+          pair,
+          input.target as FocusedCelestialBodyScreenTarget,
+        );
+        this.screenPosition = twoHandPlacement.screenPosition;
+        this.scaleMultiplier = twoHandPlacement.scaleMultiplier;
+        const snapshot = this.createSnapshot({
+          touchCandidates: pair,
+          dwellMs,
+          pinchMetrics: activeSample.pinchMetrics,
+          reason: 'single-follow-upgraded-to-two-hand-follow',
+        });
+        this.snapshot = snapshot;
+        return { snapshot, nextState: null };
+      }
+    } else {
+      this.dwellCandidate = null;
+    }
+
+    const snapshot = this.createSnapshot({
+      touchCandidates,
+      pinchMetrics: activeSample.pinchMetrics,
+      reason: 'single-hand-following',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private updateTwoHandFollow(
+    input: PlanetFocusUpdateInput,
+    samples: FocusHandSample[],
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    const pair = this.activeHandKeys
+      .map((handKey) => samples.find((sample) => sample.handKey === handKey))
+      .filter((sample): sample is FocusHandSample => Boolean(sample));
+
+    if (pair.length < 2) {
+      return this.handleFollowTrackingLoss(input, touchCandidates);
+    }
+
+    this.trackingLostSince = null;
+    const placement = this.computeTwoHandFollowPlacement(
+      [pair[0], pair[1]],
+      input.target as FocusedCelestialBodyScreenTarget,
+    );
+    this.screenPosition = placement.screenPosition;
+    this.scaleMultiplier = placement.scaleMultiplier;
+
+    const pinchTapHand = pair.find((sample) =>
+      this.updatePinchTap(sample.handKey, sample.pinchMetrics),
+    );
+
+    if (pinchTapHand) {
+      return this.releaseToFloating({
+        touchCandidates,
+        pinchMetrics: pinchTapHand.pinchMetrics,
+        pinchTapHandKey: pinchTapHand.handKey,
+        reason: 'two-hand-pinch-tap-release',
+      });
+    }
+
+    const snapshot = this.createSnapshot({
+      touchCandidates,
+      pinchMetrics: pair[0].pinchMetrics,
+      reason: 'two-hand-following',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private handleFollowTrackingLoss(
+    input: PlanetFocusUpdateInput,
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    this.trackingLostSince ??= input.timestamp;
+    const lostMs = input.timestamp - this.trackingLostSince;
+
+    if (lostMs < TRACKING_LOSS_HOLD_MS) {
+      const snapshot = this.createSnapshot({
+        touchCandidates,
+        reason: 'holding-follow-during-brief-hand-loss',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    return this.releaseToFloating({
+      touchCandidates,
+      pinchMetrics: null,
+      pinchTapHandKey: null,
+      reason: 'follow-ended-after-hand-loss',
+    });
+  }
+
+  private enterSingleFollow(
+    dwell: SingleDwellCandidate,
+    samples: FocusHandSample[],
+  ): void {
+    this.controlState = 'SingleHandFollow';
+    this.activeHandKeys = [dwell.handKey];
+    this.activeAnchorKinds = [dwell.anchorKind];
+    this.singleOffsetPx = dwell.offsetPx;
+    this.dwellCandidate = null;
+    this.initializePinchPhases(samples, this.activeHandKeys);
+  }
+
+  private enterTwoHandFollow(
+    dwell: TwoHandDwellCandidate,
+    pair: [FocusHandSample, FocusHandSample],
+  ): void {
+    this.controlState = 'TwoHandFollow';
+    this.activeHandKeys = [...dwell.handKeys];
+    this.activeAnchorKinds = [...dwell.anchorKinds];
+    this.twoOffsetPx = dwell.offsetPx;
+    this.twoBaseDistancePx = dwell.baseDistancePx;
+    this.twoBaseScaleMultiplier = dwell.baseScaleMultiplier;
+    this.dwellCandidate = null;
+    this.initializePinchPhases(pair, this.activeHandKeys);
+  }
+
+  private initializePinchPhases(
+    samples: FocusHandSample[],
+    handKeys: string[],
+  ): void {
+    this.pinchPhases.clear();
+    handKeys.forEach((handKey) => {
+      const metrics = samples.find((sample) => sample.handKey === handKey)
+        ?.pinchMetrics;
+      this.pinchPhases.set(
+        handKey,
+        metrics && isPinchTapClosed(metrics) ? 'closed' : 'open',
+      );
+    });
+  }
+
+  private computeSingleFollowPlacement(
+    samples: FocusHandSample[],
+    target: FocusedCelestialBodyScreenTarget,
+  ): { sample: FocusHandSample; screenPosition: { x: number; y: number } } | null {
+    const handKey = this.activeHandKeys[0];
+    const sample = samples.find((candidate) => candidate.handKey === handKey);
+
+    if (!sample) {
+      return null;
+    }
+
+    const anchor = getPointByKind(sample, this.activeAnchorKinds[0]);
+    const rawPosition = {
+      x: anchor.pixel.x + this.singleOffsetPx.x,
+      y: anchor.pixel.y + this.singleOffsetPx.y,
+    };
+
+    return {
+      sample,
+      screenPosition: clampFocusedBodyPosition(
+        rawPosition,
+        target,
+        this.scaleMultiplier,
+        this.scaleMultiplier,
+      ),
+    };
+  }
+
+  private computeTwoHandFollowPlacement(
+    pair: [FocusHandSample, FocusHandSample],
+    target: FocusedCelestialBodyScreenTarget,
+  ): {
+    screenPosition: { x: number; y: number };
+    scaleMultiplier: number;
+  } {
+    const firstAnchor = getPointByKind(pair[0], this.activeAnchorKinds[0]);
+    const secondAnchor = getPointByKind(pair[1], this.activeAnchorKinds[1]);
+    const midpoint = averagePixel(firstAnchor.pixel, secondAnchor.pixel);
+    const currentDistance = Math.max(
+      distancePixels(firstAnchor.pixel, secondAnchor.pixel),
+      1,
+    );
+    const scaleMultiplier = clamp(
+      this.twoBaseScaleMultiplier *
+        (currentDistance / Math.max(this.twoBaseDistancePx, 1)),
+      MIN_FOCUS_SCALE_MULTIPLIER,
+      MAX_FOCUS_SCALE_MULTIPLIER,
+    );
+    const rawPosition = {
+      x: midpoint.x + this.twoOffsetPx.x,
+      y: midpoint.y + this.twoOffsetPx.y,
+    };
+
+    return {
+      screenPosition: clampFocusedBodyPosition(
+        rawPosition,
+        target,
+        scaleMultiplier,
+        this.scaleMultiplier,
+      ),
+      scaleMultiplier,
+    };
+  }
+
+  private updatePinchTap(handKey: string, metrics: PinchMetrics): boolean {
+    const previousPhase = this.pinchPhases.get(handKey) ?? 'open';
+
+    if (previousPhase === 'open' && isPinchTapClosed(metrics)) {
+      this.pinchPhases.set(handKey, 'closed');
+      return false;
+    }
+
+    if (previousPhase === 'closed' && isPinchTapOpen(metrics)) {
+      this.pinchPhases.set(handKey, 'open');
+      return true;
+    }
+
+    return false;
+  }
+
+  private releaseToFloating(input: {
+    touchCandidates: FocusHandSample[];
+    pinchMetrics: PinchMetrics | null;
+    pinchTapHandKey: string | null;
+    reason: string;
+  }): PlanetFocusUpdate {
+    this.controlState = 'DeselectedWaitForClear';
+    this.activeHandKeys = [];
+    this.activeAnchorKinds = [];
+    this.dwellCandidate = null;
+    this.trackingLostSince = null;
+    this.heatZoneClearRequired = 'release';
+    this.pinchPhases.clear();
+    const snapshot = this.createSnapshot({
+      touchCandidates: input.touchCandidates,
+      pinchMetrics: input.pinchMetrics,
+      pinchTapHandKey: input.pinchTapHandKey,
+      pinchState: 'released',
+      reason: input.reason,
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: 'PlanetFocusFloating' };
+  }
+
+  private createSnapshot(input: {
+    touchCandidates?: FocusHandSample[];
+    dwellMs?: number;
+    pinchMetrics?: PinchMetrics | null;
+    pinchTapHandKey?: string | null;
+    pinchState?: PlanetFocusPinchState;
+    reason: string;
+  }): PlanetFocusSnapshot {
+    const touchCandidates = input.touchCandidates ?? [];
+    const bestTouch = touchCandidates[0] ?? null;
+    const pinchMetrics = input.pinchMetrics ?? null;
+
+    return {
+      focusedBody: this.focusedBody,
+      controlState: this.controlState,
+      controlMode:
+        this.controlState === 'SingleHandFollow' ||
+        this.controlState === 'SingleTouchDwell'
+          ? 'single'
+          : this.controlState === 'TwoHandFollow' ||
+              this.controlState === 'TwoHandTouchDwell'
+            ? 'two'
+            : 'none',
+      activeHandKeys: [...this.activeHandKeys],
+      touchHandCount: touchCandidates.length,
+      touchDistancePx: bestTouch?.distancePx ?? null,
+      touchHitRadiusPx: bestTouch
+        ? (bestTouch.distancePx / Math.max(bestTouch.normalizedDistance, 0.0001))
+        : null,
+      dwellMs: input.dwellMs ?? 0,
+      dwellRequiredMs: TOUCH_DWELL_REQUIRED_MS,
+      dwellMaxMs: TOUCH_DWELL_REQUIRED_MS,
+      screenPosition: this.screenPosition
+        ? { ...this.screenPosition }
+        : null,
+      scaleMultiplier: this.scaleMultiplier,
+      pinchState:
+        input.pinchState ??
+        (pinchMetrics
+          ? isPinchTapClosed(pinchMetrics)
+            ? 'closed'
+            : 'open'
+          : 'idle'),
+      pinchDistancePx: pinchMetrics?.distancePx ?? null,
+      pinchRatio: pinchMetrics?.ratio ?? null,
+      pinchTapHandKey: input.pinchTapHandKey ?? null,
+      transitionReason: input.reason,
+    };
+  }
+}
+
+function canRunPlanetFocus(state: InteractionState): boolean {
+  return (
+    state === 'PlanetFocusView' ||
+    state === 'PlanetFocusControlled' ||
+    state === 'PlanetFocusFloating'
+  );
+}
+
+function createHandSamples(input: {
+  tracking: TrackingSnapshot;
+  layout: PreviewLayout;
+  target: FocusedCelestialBodyScreenTarget | null;
+}): FocusHandSample[] {
+  if (!input.target) {
+    return [];
+  }
+
+  return input.tracking.hands.hands
+    .map((hand, index) => {
+      const handKey = createHandKey(hand, index);
+      const points = createFocusHandPoints(hand, input.layout);
+      const nearestPoint = getNearestFocusHandPoint(
+        points,
+        input.target?.screenPosition ?? { x: 0, y: 0 },
+      );
+      const distancePx = distancePixels(
+        nearestPoint.pixel,
+        input.target?.screenPosition ?? { x: 0, y: 0 },
+      );
+
+      return {
+        hand,
+        handKey,
+        points,
+        nearestPoint,
+        distancePx,
+        normalizedDistance:
+          distancePx / Math.max(input.target?.hitRadiusPx ?? 1, 1),
+        pinchMetrics: computeMultiFingerPinchMetrics(hand, input.layout),
+      };
+    })
+    .sort((a, b) => a.normalizedDistance - b.normalizedDistance);
+}
+
+function createSingleDwellCandidate(
+  candidate: FocusHandSample,
+  target: FocusedCelestialBodyScreenTarget,
+  timestamp: number,
+): SingleDwellCandidate {
+  return {
+    mode: 'single',
+    handKey: candidate.handKey,
+    anchorKind: candidate.nearestPoint.kind,
+    startedAt: timestamp,
+    offsetPx: {
+      x: target.screenPosition.x - candidate.nearestPoint.pixel.x,
+      y: target.screenPosition.y - candidate.nearestPoint.pixel.y,
+    },
+  };
+}
+
+function createTwoHandDwellCandidate(
+  pair: [FocusHandSample, FocusHandSample],
+  target: FocusedCelestialBodyScreenTarget,
+  timestamp: number,
+  scaleMultiplier: number,
+): TwoHandDwellCandidate {
+  const midpoint = averagePixel(pair[0].nearestPoint.pixel, pair[1].nearestPoint.pixel);
+
+  return {
+    mode: 'two',
+    handKeys: [pair[0].handKey, pair[1].handKey],
+    anchorKinds: [pair[0].nearestPoint.kind, pair[1].nearestPoint.kind],
+    startedAt: timestamp,
+    offsetPx: {
+      x: target.screenPosition.x - midpoint.x,
+      y: target.screenPosition.y - midpoint.y,
+    },
+    baseDistancePx: Math.max(
+      distancePixels(pair[0].nearestPoint.pixel, pair[1].nearestPoint.pixel),
+      1,
+    ),
+    baseScaleMultiplier: scaleMultiplier,
+  };
+}
+
+function isSameTwoHandDwell(
+  dwell: DwellCandidate | null,
+  pair: [FocusHandSample, FocusHandSample],
+): dwell is TwoHandDwellCandidate {
+  if (dwell?.mode !== 'two') {
+    return false;
+  }
+
+  return (
+    dwell.handKeys.includes(pair[0].handKey) &&
+    dwell.handKeys.includes(pair[1].handKey)
+  );
+}
+
+function getBestTwoHandPair(
+  touchCandidates: FocusHandSample[],
+): [FocusHandSample, FocusHandSample] | null {
+  const first = touchCandidates[0];
+
+  if (!first) {
+    return null;
+  }
+
+  const second = touchCandidates.find(
+    (candidate) => candidate.handKey !== first.handKey,
+  );
+
+  return second ? [first, second] : null;
+}
+
+function createFocusHandPoints(
+  hand: TrackedHand,
+  layout: PreviewLayout,
+): FocusHandPoint[] {
+  const thumb = getLandmark(hand, THUMB_TIP_INDEX, hand.thumbTip);
+  const index = getLandmark(hand, INDEX_TIP_INDEX, hand.indexFingerTip);
+  const middle = getLandmark(hand, MIDDLE_TIP_INDEX, index);
+  const ring = getLandmark(hand, RING_TIP_INDEX, middle);
+  const pinky = getLandmark(hand, PINKY_TIP_INDEX, ring);
+  const pinchMidpoint = averagePoints(thumb, index);
+
+  return [
+    { kind: 'pinchMidpoint', pixel: mapNormalizedToStagePixel(pinchMidpoint, layout) },
+    { kind: 'thumbTip', pixel: mapNormalizedToStagePixel(thumb, layout) },
+    { kind: 'indexTip', pixel: mapNormalizedToStagePixel(index, layout) },
+    { kind: 'middleTip', pixel: mapNormalizedToStagePixel(middle, layout) },
+    { kind: 'ringTip', pixel: mapNormalizedToStagePixel(ring, layout) },
+    { kind: 'pinkyTip', pixel: mapNormalizedToStagePixel(pinky, layout) },
+    { kind: 'palmCenter', pixel: mapNormalizedToStagePixel(hand.center, layout) },
+  ];
+}
+
+function getPointByKind(
+  sample: FocusHandSample,
+  kind: FocusHandPointKind | undefined,
+): FocusHandPoint {
+  return (
+    sample.points.find((point) => point.kind === kind) ?? sample.nearestPoint
+  );
+}
+
+function getNearestFocusHandPoint(
+  points: FocusHandPoint[],
+  target: { x: number; y: number },
+): FocusHandPoint {
+  return points
+    .map((point) => ({
+      ...point,
+      distancePx: distancePixels(point.pixel, target),
+    }))
+    .sort((a, b) => a.distancePx - b.distancePx)[0];
+}
+
+function computeMultiFingerPinchMetrics(
+  hand: TrackedHand,
+  layout: PreviewLayout,
+): PinchMetrics {
+  const thumb = getLandmark(hand, THUMB_TIP_INDEX, hand.thumbTip);
+  const thumbPixel = mapNormalizedToStagePixel(thumb, layout);
+  const fingerTips = [
+    getLandmark(hand, INDEX_TIP_INDEX, hand.indexFingerTip),
+    getLandmark(hand, MIDDLE_TIP_INDEX, hand.indexFingerTip),
+    getLandmark(hand, RING_TIP_INDEX, hand.indexFingerTip),
+    getLandmark(hand, PINKY_TIP_INDEX, hand.indexFingerTip),
+  ];
+
+  return fingerTips
+    .map((fingerTip) => {
+      const fingerPixel = mapNormalizedToStagePixel(fingerTip, layout);
+      const distance = distance2d(thumb, fingerTip);
+      const distancePx = distancePixels(thumbPixel, fingerPixel);
+
+      return {
+        distance,
+        distancePx,
+        ratio: distance / Math.max(hand.palmScale, 0.001),
+      };
+    })
+    .sort((a, b) => a.ratio - b.ratio)[0];
+}
+
+function isPinchTapClosed(metrics: PinchMetrics): boolean {
+  return (
+    metrics.ratio <= PINCH_TAP_CLOSE_RATIO ||
+    metrics.distancePx <= PINCH_TAP_CLOSE_DISTANCE_PX
+  );
+}
+
+function isPinchTapOpen(metrics: PinchMetrics): boolean {
+  return (
+    metrics.ratio >= PINCH_TAP_OPEN_RATIO ||
+    metrics.distancePx >= PINCH_TAP_OPEN_DISTANCE_PX
+  );
+}
+
+function clampFocusedBodyPosition(
+  position: { x: number; y: number },
+  target: FocusedCelestialBodyScreenTarget,
+  nextScaleMultiplier: number,
+  currentScaleMultiplier: number,
+): { x: number; y: number } {
+  const radiusScale =
+    nextScaleMultiplier / Math.max(currentScaleMultiplier, 0.001);
+  const margin = Math.max(
+    MIN_SCREEN_EDGE_MARGIN_PX,
+    target.bodyRadiusPx * radiusScale,
+  );
+
+  return {
+    x: clampAxis(position.x, margin, target.layout.stageWidth - margin, target.layout.stageWidth / 2),
+    y: clampAxis(position.y, margin, target.layout.stageHeight - margin, target.layout.stageHeight / 2),
+  };
+}
+
+function isFocusTargetCentered(target: FocusedCelestialBodyScreenTarget): boolean {
+  const center = {
+    x: target.layout.stageWidth / 2,
+    y: target.layout.stageHeight / 2,
+  };
+
+  return distancePixels(target.screenPosition, center) <= FOCUS_CENTERED_THRESHOLD_PX;
+}
+
+function clampAxis(
+  value: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (max < min) {
+    return fallback;
+  }
+
+  return clamp(value, min, max);
+}
+
+function createHandKey(hand: TrackedHand, index: number): string {
+  return `${hand.side}:${index}`;
+}
+
+function getLandmark(
+  hand: TrackedHand,
+  index: number,
+  fallback: NormalizedPoint,
+): NormalizedPoint {
+  return hand.landmarks[index] ?? fallback;
+}
+
+function averagePoints(
+  first: NormalizedPoint,
+  second: NormalizedPoint,
+): NormalizedPoint {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+    z: (first.z + second.z) / 2,
+  };
+}
+
+function averagePixel(
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+): { x: number; y: number } {
+  return {
+    x: (first.x + second.x) / 2,
+    y: (first.y + second.y) / 2,
+  };
+}
+
+function distancePixels(
+  first: { x: number; y: number },
+  second: { x: number; y: number },
+): number {
+  return Math.hypot(first.x - second.x, first.y - second.y);
+}

@@ -56,10 +56,10 @@
 - [ ] MVP 中水星、金星、地球、火星、木星、土星、天王星、海王星和月球均可 hover 并 pinch 激活。
 - [ ] 被 pinch 激活的天体停止原轨道公转但保持自然自转；当激活从 A 切换到 B 时，A 立即恢复原轨道公转，且只有当前激活天体可以暂停公转，地月绑定组除外。
 - [ ] 地月激活特殊绑定：激活地球时，地球绕太阳公转暂停，月球仍可继续绕地球公转；激活月球时，地球绕太阳公转和月球绕地球公转都暂停；两者都保持自转。
-- [ ] 主手 pinch 锁定目标，副手张开/扩张手势进入单颗行星画面。
-- [ ] 单颗行星画面中，背景太阳系弱化并锁定交互，但保留基础动效。
-- [ ] 当前行星在激活、焦点、托住跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
-- [ ] 主手托住 + 副手 `PinchTap` 会解除跟手控制，并让行星悬浮在单颗行星画面中。
+- [ ] Pinch 激活后，同一只激活手的拇指/食指 DoubleClose 进入单颗行星画面。
+- [x] 第一阶段单颗行星画面中，当前行星以统一 overlay 明确显示，背景太阳系弱化并锁定交互，但保留基础动效。
+- [ ] 当前行星在激活、焦点、热区跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
+- [ ] 单手热区停留可让当前星球跟手，双手热区停留可跟手并按手距缩放，跟随手 `PinchTap` 会解除跟手控制并让行星悬浮在单颗行星画面中。
 - [ ] 明确朝原轨道目标 pinch-and-throw 的手势会让当前行星回轨，并退出回太阳系画面。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
 - [ ] 每当主代码仓库提交，或 agent 工作流上下文变化时，私有 `agent-companion-repo` 伴生仓库也必须更新。
@@ -713,43 +713,55 @@ Done when:
 - TODO.md is updated.
 ```
 
-## Milestone 8 — 单颗行星画面和托住控制
+## Milestone 8 — 单颗行星画面和热区跟随控制
 
-状态：`TODO`
+状态：`NEEDS_MANUAL_VERIFY`
 
-目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、托住移动、放下悬浮和后续甩回。已退役的单手焦点缩放、平移和复位控制不得实现。
+目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、热区跟随、放下悬浮和后续甩回。已退役的单手焦点缩放、平移和复位控制不得实现。
 
 任务：
 
-- [ ] 添加 `PlanetFocusView`、`PlanetFocusControlled` 和 `PlanetFocusFloating` 生命周期状态或等价子状态。
-- [ ] 检测进入手势：主手 pinch 锁定激活天体 + 副手五指张开/扩张。
-- [ ] 背景太阳系弱化并锁定交互，但保留基础动效。
-- [ ] 当前行星在激活、焦点、托住跟手、悬浮和观赏期间都保持自转。
-- [ ] 不将单手五指张开/收拢映射为当前行星缩放。
-- [ ] 不将收拢成拳保持映射为当前行星复位。
-- [ ] 不将单手推动映射为当前行星平移。
-- [ ] 使用稳定条件检测托住跟手：手掌打开、手掌中心位于行星下方、靠近行星下缘、低速、停留 300-500ms。
-- [ ] 托住跟手期间，当前行星限制在可见屏幕内。
-- [ ] 确保当前行星控制不影响整个太阳系 transform。
-- [ ] 为激活、焦点、受控、悬浮状态显示清楚反馈。
+- [x] 添加第一阶段 `PlanetFocusView` 生命周期渲染：所有可交互天体共用一个统一焦点 overlay。
+- [x] 检测进入手势：pinch 激活后，同一只激活手的拇指/食指 DoubleClose。
+- [x] 第一阶段焦点画面中，背景太阳系弱化并锁定交互，但保留基础动效。
+- [x] 添加约 0.3 秒的进入过渡动画：从天体在太阳系中的原位置和原尺寸移动/放大到居中焦点 overlay。
+- [x] 第一阶段焦点星球 overlay 垂直居中，星球球体高度约占屏幕 1/2 到 2/3，并移除焦点星球上的聚光灯式光照。
+- [x] 当前行星在激活、焦点、热区跟手、悬浮和观赏期间都保持自转；已有自动化覆盖，仍需真实摄像头验证。
+- [x] 不将单手五指张开/收拢映射为当前行星缩放。
+- [x] 不将收拢成拳保持映射为当前行星复位。
+- [x] 不将单手推动映射为当前行星平移。
+- [x] 添加焦点视觉居中冷却和热区清空门闸，避免焦点星球居中过渡时因手还在热区内直接跟手。
+- [x] 单手触碰当前星球热区停留 1 秒后开始跟手；仍需真实摄像头调优。
+- [x] 双手触碰当前星球热区停留 1 秒后进入双手跟随，并用两手距离调整星球大小；仍需真实摄像头调优。
+- [x] 单手跟随中的跟随手、或双手跟随中的任意跟随手，完成拇指到任一手指的 close-open `PinchTap` 后放下星球。
+- [x] 放下后等待所有可见手离开当前星球热区，再允许重新进入待选中/跟手停留。
+- [x] 热区跟手期间，当前行星在 controller 逻辑中限制在可见屏幕内；仍需真实摄像头验证。
+- [x] 确保当前行星控制不影响整个太阳系 transform；已有单元测试覆盖。
+- [x] 为激活、焦点、受控、悬浮状态在引导文案、状态摘要和 Debug 行中显示清楚反馈。
 
 验收标准：
 
-- [ ] 主手 pinch 锁定 + 副手张开/扩张进入 `PlanetFocusView`。
-- [ ] 背景太阳系弱化、锁定交互，并保留基础动效。
-- [ ] 当前行星在所有焦点交互中持续自转。
-- [ ] 单手张开/收拢不会缩放当前行星。
-- [ ] 握拳保持不会复位当前行星大小或位置。
-- [ ] 单手推动不会平移当前行星。
-- [ ] 托住跟手可以移动当前行星，并保持在屏幕内。
-- [ ] `npm run build` 通过。
-- [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
+- [x] 同一只激活手的拇指/食指 DoubleClose 可在 controller 测试中进入 `PlanetFocusView`；仍需真实摄像头验证。
+- [x] 单元测试中确认背景太阳系弱化、锁定交互，并保留基础动效；仍需真实摄像头验证。
+- [x] 单元测试中确认焦点星球从原位置/原尺寸开始，并在约 0.3 秒内过渡到居中的焦点 overlay；仍需真实摄像头验证。
+- [x] 单元测试中确认焦点星球 overlay 垂直居中、尺寸落在 1/2 到 2/3 屏幕高度范围，并使用无光照材质；仍需真实摄像头验证。
+- [x] 当前行星在所有焦点交互中持续自转；已有自动化覆盖，仍需真实摄像头验证。
+- [x] 单手张开/收拢不会缩放当前行星。
+- [x] 握拳保持不会复位当前行星大小或位置。
+- [x] 单手推动不会平移当前行星。
+- [x] 焦点视觉居中冷却和热区清空门闸可在 controller 测试中阻止居中动画期间/之后立即跟手；仍需真实摄像头验证。
+- [x] 单手热区停留 1 秒可以移动当前行星，并保持在屏幕内；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 双手热区停留 1 秒可以按手距缩放当前行星；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 跟随手 `PinchTap` 会将当前行星释放到 `PlanetFocusFloating`；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 放下后 controller 会保持取消选中，直到当前星球热区清空；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] `npm run build` 通过。
+- [x] 行为已标记为 `NEEDS_MANUAL_VERIFY`，等待真实摄像头测试。
 
 建议 Codex 提示词：
 
 ```text
 Goal:
-Implement Milestone 8: planet focus view and support controls.
+Implement Milestone 8: planet focus view and heat-zone follow controls.
 
 Context:
 Read @ar_solar_system_prd.md sections 5.5, 7.10, and 7.11.
@@ -759,11 +771,11 @@ Constraints:
 - Background solar-system interaction is locked during PlanetFocusView.
 - Retired one-hand focus zoom/pan/reset gestures must remain no-ops.
 - Single-body manipulation must not affect solar-system scale, pan, or rotation.
-- Keep the focused body inside the visible screen during support-follow.
+- Keep the focused body inside the visible screen during heat-zone follow.
 - Update docs if any interaction mapping changes.
 
 Done when:
-- Activation -> focus view -> support/floating works, and retired one-hand focus zoom/pan/reset gestures remain inactive.
+- Activation -> focus view -> heat-zone follow/floating works, and retired one-hand focus zoom/pan/reset gestures remain inactive.
 - npm run build passes.
 - TODO.md is updated.
 ```
@@ -776,10 +788,9 @@ Done when:
 
 任务：
 
-- [ ] 主手托住当前行星时，检测副手在屏幕内完成的 `PinchTap`。
-- [ ] 接受 `PinchTap` 放下前，要求主手托住速度较低。
-- [ ] 接受 `PinchTap` 后，解除跟手控制，让当前行星悬浮在 `PlanetFocusView` 的当前位置。
-- [ ] 悬浮的当前行星保持自转，并且不自动回轨。
+- [x] 单手或双手热区跟随期间，检测跟随手完成的 `PinchTap` 并释放到焦点悬浮；仍需真实摄像头验证。
+- [x] 接受 `PinchTap` 后，解除热区跟手控制，让当前行星悬浮在 `PlanetFocusView` 的当前位置；仍需真实摄像头验证。
+- [x] 悬浮的当前行星保持自转，并且不自动回轨；已有自动化覆盖，仍需真实摄像头验证。
 - [ ] 在背景中显示原轨道目标或方向提示。
 - [ ] 允许悬浮的当前行星再次被 pinch 选中。
 - [ ] pinch 持有当前行星时追踪近期手部速度。
@@ -793,12 +804,13 @@ Done when:
 - [ ] 回轨后恢复原始公转，并保持自转。
 - [ ] 回轨完成后退出 `PlanetFocusView`，回到太阳系画面并解锁太阳系交互。
 - [ ] 确保低速释放仍保持在 `PlanetFocusView` 中悬浮。
-- [ ] 添加 PinchTap、悬浮状态、甩出速度、甩出方向分数和甩出置信度调试值。
+- [x] 添加焦点 PinchTap、悬浮状态、当前跟随手、停留时间、触碰热区半径和焦点缩放调试值。
+- [ ] 添加甩出速度、甩出方向分数和甩出置信度调试值。
 
 验收标准：
 
-- [ ] 主手托住 + 副手 `PinchTap` 可以放下当前行星。
-- [ ] 放下后的当前行星仍在 `PlanetFocusView` 中悬浮，并保持自转。
+- [x] 跟随手 `PinchTap` 可在 controller 测试中放下当前行星；仍需真实摄像头验证。
+- [x] 放下后的当前行星仍在 `PlanetFocusView` 中悬浮，并保持自转；已有自动化覆盖，仍需真实摄像头验证。
 - [ ] 低速 pinch 释放不会让当前行星回轨。
 - [ ] 明确朝原轨道目标 pinch-and-throw 会让当前行星回轨。
 - [ ] 返回动画可见且平滑。
@@ -956,9 +968,11 @@ Done when:
 11. 将双手重新靠近左右端点，确认尝试过这些单手 no-op 动作后端点重握仍然有效。
 12. 依次 hover 每个可交互天体，确认标签/光晕。
 13. Pinch 激活天体，确认它停止公转但保持自转。
-14. 主手保持 pinch 锁定，副手张开/扩张进入单颗行星画面。
+14. Pinch 激活天体后，用同一只激活手的拇指/食指闭合、张开、再闭合，确认进入单颗行星画面。
 15. 在单颗行星画面中，确认单手张开/收拢/握拳/推动不会缩放、平移或复位当前行星。
-16. 托住当前行星后，用副手 PinchTap 放下；确认它仍在单颗行星画面中悬浮并自转。
+16. 进入单颗星球界面后，先保持手在热区内观察，再撤出热区并重新触碰；确认居中过渡期间不会直接跟手，重新触碰停留 1 秒后才开始跟手。
+17. 单手触碰当前星球热区 1 秒后移动它，再用同一只手完成 close-open PinchTap 放下；确认它进入取消选中/等待撤出热区状态，手离开热区后才可再次触碰选中。
+18. 双手触碰当前星球热区 1 秒后移动双手并改变手距，再用任意一只跟随手完成 close-open PinchTap 放下；确认星球跟随两手中点、会按手距缩放，然后仍在单颗行星画面中悬浮，并等两只手都离开热区后才可再次选中。
 17. 再次 pinch 悬浮行星并朝原轨道目标甩回；确认它回轨并退出到太阳系画面。
 18. 用月球和土星重复测试。
 19. 运行录制模式，确认 debug UI 已隐藏。
@@ -1050,6 +1064,84 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-24 — M8 焦点跟随改为视觉居中冷却和热区重入门闸
+
+- 需求变更：同手 DoubleClose 进入 `PlanetFocusView` 后，焦点居中动画期间不能开始跟手。上一版固定 400ms 冷却仍然太敏感，因此控制器现在会一直保持进场冷却，直到焦点星球实际接近屏幕居中位置。
+- 需求变更：进入焦点后必须发生真正的热区重入才允许跟随激活。已经在热区内的手必须先离开热区，再重新进入并停留，才开始跟随计时。
+- 需求变更：单手和双手触碰焦点星球热区后，必须停留 1 秒才进入跟随，取代上一版 300-600ms 停留。
+- 需求变更：跟随手 `PinchTap` 放下焦点星球后，控制器先进入取消选中/等待热区清空状态；必须等所有可见手都离开当前星球热区后，才重新进入待选中/待跟手状态。
+- 实现更新：`PlanetFocusController` 新增 `IntroCooldown`、`WaitingForHeatZoneClear` 和 `DeselectedWaitForClear` debug 状态；状态摘要和引导文案会解释当前是在等视觉居中、等热区清空，还是等 1 秒停留。
+- 验证更新：扩展 `tests/gesture/planetFocusController.test.ts`，覆盖视觉居中阻止、初始热区清空后才开始 dwell、1 秒 dwell、放下后进入取消选中状态，以及放下后热区清空才可重新选中。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetFocusController.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/utils/types.ts` 和 `tests/gesture/planetFocusController.test.ts`。
+- 剩余不确定性：仍需真实摄像头确认居中位置阈值和 1 秒停留在焦点动画后是否足够自然。
+
+### 2026-06-24 — M8 焦点热区跟随与跟随手 PinchTap 放下
+
+- 需求变更：用当前焦点星球热区停留替换旧的“手掌打开、掌心在行星下方、低速、停留 300-500ms”托住判断。单手触碰焦点星球热区约 300-600ms 后进入单手跟随；双手触碰热区约 300-600ms 后进入双手跟随，并用两手距离调整焦点星球大小。
+- 需求变更：放下焦点星球现在使用跟随手 close-open `PinchTap`。单手跟随中由该跟随手完成；双手跟随中任意一只跟随手完成即可放下。在这个语境里，“取消选中”表示解除跟随控制并进入 `PlanetFocusFloating`，不表示退出焦点画面或回轨。
+- 实现更新：新增 `PlanetFocusController`、焦点 debug 快照行、焦点状态摘要/引导文案、焦点星球位置/缩放接口、屏幕像素到世界坐标映射和焦点星球热区目标。焦点跟随只更新 focus overlay，不改变整个太阳系 transform。
+- 验证更新：新增 `tests/gesture/planetFocusController.test.ts`，覆盖单手停留/跟手/放下、双手停留/跟手/缩放/放下，以及热区外不触发；扩展 `tests/unit/solarSystemInteraction.test.ts`，断言焦点位置/缩放不会改变太阳系 group。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/coordinateMapping.ts`、`src/interaction/planetFocusController.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts`、`tests/gesture/planetFocusController.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头调优 300-600ms 停留手感、焦点星球热区半径、close-open PinchTap 阈值和双手缩放范围。
+
+### 2026-06-24 — M8 焦点行星进入过渡动画
+
+- 需求变更：进入单颗行星焦点画面时不应再瞬间跳变；焦点天体应从其在太阳系中的原始位置和当前尺寸出发，在约 0.3 秒内动画过渡到居中的焦点 overlay。
+- 实现更新：`FocusedCelestialBody` 现在会记录进入动画的源世界位置/缩放，使用 smoothstep 过渡到居中目标，并在过渡期间继续补偿太阳系父级 transform。
+- 验证更新：扩展 `tests/unit/solarSystemInteraction.test.ts`，断言焦点天体从原世界位置开始、0.3 秒动画中点仍在路上、动画完成后到达居中焦点布局。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头验证 0.3 秒是否足够顺滑且不显慢，尤其是从当前太阳系视图边缘激活小天体时。
+
+### 2026-06-24 — M8 焦点行星居中、放大并移除光照
+
+- 需求变更：`PlanetFocusView` 中，单个焦点行星球体应垂直居中；焦点球体高度大约占屏幕高度 1/2 到 2/3；不应出现聚光灯式强光斑。
+- 实现更新：焦点星球现在会补偿太阳系父级 transform，保持屏幕中心位置；根据天体半径和摄像机高度占比计算世界缩放；焦点球体使用无光照材质，并移除旋转标记造成的聚光灯式亮斑。
+- 验证更新：收紧 `tests/unit/solarSystemInteraction.test.ts`，断言焦点世界位置居中、月球接近 1/2 屏幕高度、木星接近 2/3 屏幕高度，以及焦点球体使用 `MeshBasicMaterial`。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/focusedCelestialBody.ts`、`src/solar/proceduralMaterials.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头验证更大且居中的星球是否观感合适，以及是否遮挡用户脸/身体过多。
+
+### 2026-06-24 — M8 焦点背景球体透明度改为真正视觉生效
+
+- 根据用户截图修复 bug：`/var/folders/cw/d9jps_sj2gd8j6tvg92z2c3m0000gn/T/codex-clipboard-5b1d2c6b-1f93-4552-a79a-d40253944987.png` 显示 `PlanetFocusView` 中背景原始球体仍然看起来过实，不像预期的 `0.18` 透明度。
+- 实现更新：焦点背景球体材质现在会明确切换到透明渲染，设置 `opacity=0.18` 且 `depthWrite=false`；离开焦点后恢复为不透明 `opacity=1` / `depthWrite=true`。
+- 验证更新：收紧 `tests/unit/solarSystemInteraction.test.ts`，改为断言精确的背景球体渲染状态，而不是只检查 opacity 小于 `1`。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/celestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头验证原始背景球体在焦点 overlay 后方是否已经明显变淡。
+
+### 2026-06-24 — M8 DoubleClose 真实摄像头小幅张开调优
+
+- 根据用户证据修复 bug：`~/ChromeDownload/ar-solar-gesture-log-2026-06-24T04-40-45-494Z.json` 和 `~/Documents/录屏2026-06-24 12.39.35.mov` 显示 `doubleCloseCount` 多次到 `1` 但从未到 `2`；第一次闭合后的真实拇指/食指重新张开只有约 8-10px，低于之前的绝对 reopen 阈值。
+- 实现更新：`PlanetActivationController` 现在记录第一次闭合指标，允许相对该闭合基线稳定张开一小段，并要求从观测到的张开峰值再次回落闭合后才进入 `PlanetFocusView`；长按闭合仍不会被重复计为两次。
+- 验证更新：在 `tests/gesture/planetActivationController.test.ts` 中新增回归，覆盖本次日志里的真实模式（`52px` 闭合 → `61px` 小幅张开 → `52px` 闭合）。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts` 和 `tests/gesture/planetActivationController.test.ts`。
+- 剩余不确定性：M8 焦点入口仍需再次真实摄像头测试，确认小幅张开调优在不同星球和手型下都自然。
+
+### 2026-06-24 — M8 焦点背景弱化改为透明度，不使用蒙版
+
+- 需求澄清：`PlanetFocusView` 的背景弱化必须直接降低背景太阳系对象透明度，不能添加覆盖摄像头画面的蒙版或暗幕。
+- 实现更新：移除 `planet-focus-backdrop` mesh，改为降低背景天体、光环、hover 标记和标签透明度，同时保持焦点 overlay 完全不透明。
+- 验证更新：更新 `tests/unit/solarSystemInteraction.test.ts`，断言不存在 backdrop 对象、focus 中背景天体透明度降低、离开 focus 后透明度恢复。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/celestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头验证当前透明度是否既保留背景太阳系参照，又不会压暗摄像头画面。
+
+### 2026-06-24 — M8 第一阶段 PlanetFocusView 可见 overlay
+
+- 需求澄清：`PlanetFocusView` 必须在视觉上明显区别于 `PlanetActivated`；第一阶段为所有可交互天体使用一套由天体元数据驱动的焦点 overlay，而不是每颗星球单独写页面。
+- 交互调优：选中天体后，同一只激活手短暂离开热区仍保持激活，以便完成 close-open-close；张开状态下离开热区约 1 秒才取消选中。
+- 根据手势日志 `ar-solar-gesture-log-2026-06-23T20-51-22-909Z.json` 继续调优：DoubleClose 的张开改为识别拇指/食指小幅重新张开，不再要求达到完整 pinch 结束阈值；双击间隔放宽到 1.6 秒；张开经过其它天体时不切换 active body。
+- 实现更新：新增焦点星球渲染，背景太阳系通过直接降低对象透明度弱化，不添加蒙版/暗幕；焦点状态下隐藏整体端点，并从 `main.ts` 把焦点状态传给太阳系渲染层；背景太阳系保持基础运动，焦点 overlay 保持自转。
+- 验证更新：扩展 `tests/unit/solarSystemInteraction.test.ts` 覆盖焦点 overlay、背景透明度和背景运动；扩展 `tests/gesture/planetActivationController.test.ts` 覆盖离开热区容错、小幅张开的 DoubleClose 和张开经过其它天体时保持选中。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts`、`src/main.ts`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts`、`tests/gesture/planetActivationController.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：仍需真实摄像头测试 DoubleClose 时机是否自然，以及焦点 overlay 在摄像头预览中是否足够明确；确认后再继续托住跟手和 PinchTap 放下。
+
+### 2026-06-24 — M8 焦点入口改为激活手 DoubleClose
+
+- 需求变更：进入单颗行星画面不再使用副手张开/扩张。天体被 pinch 激活后，同一只激活手的拇指/食指完成两次 closeDown，进入 `PlanetFocusView`。
+- 实现更新：`PlanetActivationController` 现在会在同一只手靠近激活天体张开时保持激活，忽略初始激活 pinch，识别 closeDown → reopen → closeDown，拒绝长按闭合重复计数，并在进入 `PlanetFocusView` 后保留 active body。
+- 验证更新：扩展 `tests/gesture/planetActivationController.test.ts`，覆盖 DoubleClose 进入、长按闭合不误触发和焦点视图快照保持。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/utils/types.ts` 和 `tests/gesture/planetActivationController.test.ts`。
+- 剩余不明确项：M8 入口仍需真实摄像头验证时序和手感。
 
 ### 2026-06-24 — 地月激活绑定
 

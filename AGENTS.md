@@ -16,10 +16,12 @@ The MVP experience is:
 8. The user can re-grip the solar-system left/right endpoints to control the whole-system handle lifecycle, including placement, release, and reverse collapse.
 9. After the solar system is released into free hover, one-hand spread/contract, fist-hold reset, and push gestures no longer zoom, shrink, reset, or pan the solar-system view; the released solar system waits for endpoint re-grip or reverse collapse.
 10. The user can hover and pinch-activate Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
-11. A pinch-activated body stops its original orbit but keeps natural self-rotation; while the main hand keeps pinch lock, the other hand can open/spread to enter a single-planet focus view.
-12. In the single-planet focus view, the selected body remains self-rotating while it is supported, released to floating, and inspected; one-hand focus zoom, pan, and reset controls are retired. The background solar system is dimmed and interaction-locked while preserving basic motion.
-13. A main-hand support plus off-hand `PinchTap` confirms placing the body down; it remains floating in the planet focus view and does not return to orbit.
-14. A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit, then exits back to the solar-system view.
+11. A pinch-activated body stops its original orbit but keeps natural self-rotation; after activation, two closeDown events from the same activating hand's thumb/index pair enter a single-planet focus view.
+12. In the single-planet focus view, the selected body remains self-rotating while it is heat-zone-followed, released to floating, and inspected; one-hand focus zoom, pan, and reset controls are retired. The background solar system is dimmed and interaction-locked while preserving basic motion.
+13. In focus view, heat-zone follow is gated by an intro cooldown and heat-zone-clear rule: after DoubleClose enters the focus view, wait for the focused body to finish its centered intro, then require the hands to leave the focused body's heat zone before any follow dwell can begin.
+14. One hand touching the focused body's heat zone for 1 second enters single-hand follow, while two hands touching the heat zone for 1 second enter two-hand follow; two-hand distance scales the focused body.
+15. During single-hand follow, that hand's thumb-to-any-finger close-open `PinchTap` places the body down; during two-hand follow, either following hand can perform the same `PinchTap` to place it down and clear follow selection. After place-down, the controller must wait until all hands leave the focused body's heat zone before returning to the selectable idle/floating state. It remains floating in the planet focus view and does not return to orbit.
+16. A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit, then exits back to the solar-system view.
 
 This is not a normal 3D solar system page. It is a **webcam AR interaction demo** where the 3D content appears to exist in the camera-visible space controlled by the user's hands.
 
@@ -92,9 +94,10 @@ camera on
 → both hands can re-grip endpoints for handle control, release, and reverse collapse
 → one-hand spread/contract/fist/push no longer controls the free-hovered solar-system view
 → hover and pinch-activate a body
-→ main-hand pinch lock + off-hand spread enters a single-planet focus view
-→ inspect the self-rotating body with support, release-to-floating, and return gestures
-→ main-hand support + off-hand PinchTap leaves it floating in the focus view
+→ same activating hand thumb/index DoubleClose enters a single-planet focus view
+→ inspect the self-rotating body with heat-zone dwell follow, release-to-floating, and return gestures
+→ after the intro and heat-zone clear, one-hand 1s heat-zone dwell moves the body; two-hand 1s heat-zone dwell moves and scales it by hand distance
+→ a following hand PinchTap leaves it floating in the focus view, then all hands must leave the heat zone before it becomes selectable again
 → pinch-and-throw returns it to orbit and exits back to the solar-system view
 ```
 
@@ -316,12 +319,21 @@ Only one body may be activated or focused at a time in the MVP.
 - Pinch near a hovered body enters `PlanetActivated`.
 - A `PlanetActivated` body stops its original orbit but keeps natural self-rotation; other bodies continue normal orbit and self-rotation.
 - Only the currently activated body may have its original orbit paused, except for the Earth-Moon bound pair. Activating Earth pauses Earth's solar orbit while Moon may keep orbiting Earth. Activating Moon pauses both Earth's solar orbit and Moon's local orbit around Earth. Earth and Moon keep self-rotating in both cases. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting unless it is paused by this Earth-Moon binding.
-- While the main hand keeps the pinch lock, the off-hand open/spread gesture enters `PlanetFocusView`.
-- In `PlanetFocusView`, the background solar system is dimmed and interaction-locked but keeps basic motion.
-- The focused body keeps self-rotating during activation, focus, support-follow, release-to-floating, and inspection.
+- After activation, two closeDown events from the same activating hand's thumb/index pair enter `PlanetFocusView`; the initial activation pinch does not count, and a long closed hold must not count as two closeDown events. The reopen between the two closeDown events is a small thumb/index click reopen, not a full pinch release beyond the activation pinch-end threshold.
+- A `PlanetActivated` body remains selected through brief same-hand heat-zone exits so the user can complete close-open-close timing; leaving the heat zone for about 1 second while open cancels selection.
+- Passing over another body while the activating thumb/index pair is open must not switch selection or reset DoubleClose progress; switching to another body requires a closed touch/pinch on that new body.
+- In `PlanetFocusView`, the background solar system is dimmed by directly lowering the opacity of background solar-system objects, not by adding a camera-covering mask/backdrop; it remains interaction-locked but keeps basic motion.
+- The first visible `PlanetFocusView` implementation uses one unified focused-body overlay driven by body metadata for every interactive body, not separate per-planet pages.
+- Entering `PlanetFocusView` should feel continuous: the focused body starts from its original solar-system world position and current scale, then moves and scales into the centered focus position over about 0.3 seconds rather than jumping.
+- The focused-body overlay should be vertically centered in the visible frame; focused body sphere height should map to roughly 1/2 to 2/3 of the screen height, and the focused overlay should avoid spotlight-style lighting or bright glare.
+- The focused body keeps self-rotating during activation, focus, heat-zone follow, release-to-floating, and inspection.
 - One-hand spread/contract, one-hand push, and contract-to-fist hold are retired focus controls; they must not zoom, pan, or reset the focused body unless the user explicitly reopens that requirement.
-- A palm/support gesture under the body can move it, constrained to the visible screen.
-- Main-hand support plus off-hand `PinchTap` releases follow-control and leaves the body floating at its current position in `PlanetFocusView`.
+- After entering `PlanetFocusView`, focus follow enters an intro cooldown state until the focused body is actually near the screen-centered focus position. This is not a fixed-time unlock: hands that are already touching the focused body's heat zone during or after the intro must leave the heat zone, then re-enter it, before a new dwell can begin.
+- One hand touching the current focused body's heat zone for 1 second enters single-hand follow; the focused body follows that hand and stays constrained to the visible screen.
+- Two hands touching the current focused body's heat zone for 1 second enter two-hand follow; the focused body follows the two-hand midpoint, and the distance between the two hands adjusts focused-body size.
+- During single-hand follow, the following hand can perform a thumb-to-any-finger close-open `PinchTap` to place the body down.
+- During two-hand follow, either following hand can perform the same `PinchTap` to place the body down and clear follow selection. In the current product semantics, clearing follow selection means entering `PlanetFocusFloating`; it does not exit focus view or return the body to orbit.
+- After any follow `PinchTap` places the focused body down, the controller must enter a deselected/wait-for-clear state: no new follow dwell may begin until every visible hand is outside the focused body's heat zone.
 - A floating focused body must not automatically return to orbit.
 - A clear pinch-and-throw gesture toward the original orbit target enters `BodyReturning`.
 - A returning body animates back to its original orbit, restores its original layer/relationship, resumes orbiting, and exits back to the solar-system view.
