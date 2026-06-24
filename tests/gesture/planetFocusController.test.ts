@@ -147,13 +147,23 @@ describe('PlanetFocusController', () => {
     expect(follow.nextState).toBe('PlanetFocusControlled');
     expect(follow.snapshot.controlState).toBe('SingleHandFollow');
 
-    const moved = step({
+    // Follow position is low-pass smoothed, so it converges over a few frames instead of snapping.
+    let moved = step({
       controller,
       state: 'PlanetFocusControlled',
       hands: [handAtPixel({ x: 720, y: 420 })],
       target: target(650, 360),
       timestamp: 2760,
     });
+    for (let i = 1; i <= 6; i += 1) {
+      moved = step({
+        controller,
+        state: 'PlanetFocusControlled',
+        hands: [handAtPixel({ x: 720, y: 420 })],
+        target: target(650, 360),
+        timestamp: 2760 + i * 60,
+      });
+    }
     expect(moved.snapshot.screenPosition?.x).toBeGreaterThan(700);
     expect(moved.snapshot.screenPosition?.y).toBeGreaterThan(400);
 
@@ -162,7 +172,7 @@ describe('PlanetFocusController', () => {
       state: 'PlanetFocusControlled',
       hands: [handAtPixel({ x: 720, y: 420, pinchRatio: 0.12 })],
       target: target(720, 420),
-      timestamp: 2830,
+      timestamp: 3200,
     });
     expect(closed.nextState).toBeNull();
     expect(closed.snapshot.pinchState).toBe('closed');
@@ -172,7 +182,7 @@ describe('PlanetFocusController', () => {
       state: 'PlanetFocusControlled',
       hands: [handAtPixel({ x: 720, y: 420, pinchRatio: 0.82 })],
       target: target(720, 420),
-      timestamp: 2920,
+      timestamp: 3300,
     });
     expect(released.nextState).toBe('PlanetFocusFloating');
     expect(released.snapshot.controlState).toBe('DeselectedWaitForClear');
@@ -260,7 +270,8 @@ describe('PlanetFocusController', () => {
     expect(follow.snapshot.controlState).toBe('TwoHandFollow');
     expect(follow.snapshot.controlMode).toBe('two');
 
-    const scaled = step({
+    // Scale is low-pass smoothed; converge over a few frames at the widened hand distance.
+    let scaled = step({
       controller,
       state: 'PlanetFocusControlled',
       hands: [
@@ -270,6 +281,18 @@ describe('PlanetFocusController', () => {
       target: target(640, 360),
       timestamp: 1560,
     });
+    for (let i = 1; i <= 6; i += 1) {
+      scaled = step({
+        controller,
+        state: 'PlanetFocusControlled',
+        hands: [
+          handAtPixel({ x: 520, y: 360, side: 'left' }),
+          handAtPixel({ x: 760, y: 360, side: 'right' }),
+        ],
+        target: target(640, 360),
+        timestamp: 1560 + i * 60,
+      });
+    }
     expect(scaled.snapshot.scaleMultiplier).toBeGreaterThan(1.1);
     expect(scaled.snapshot.screenPosition?.x).toBeCloseTo(640, 0);
 
@@ -281,7 +304,7 @@ describe('PlanetFocusController', () => {
         handAtPixel({ x: 760, y: 360, side: 'right' }),
       ],
       target: target(640, 360),
-      timestamp: 1630,
+      timestamp: 1980,
     });
 
     const released = step({
@@ -292,12 +315,135 @@ describe('PlanetFocusController', () => {
         handAtPixel({ x: 760, y: 360, side: 'right' }),
       ],
       target: target(640, 360),
-      timestamp: 1720,
+      timestamp: 2040,
     });
     expect(released.nextState).toBe('PlanetFocusFloating');
     expect(released.snapshot.controlState).toBe('DeselectedWaitForClear');
     expect(released.snapshot.scaleMultiplier).toBeGreaterThan(1.1);
     expect(released.snapshot.transitionReason).toBe('two-hand-pinch-tap-release');
+  });
+
+  it('keeps an in-progress dwell alive through a brief tracking gap', () => {
+    const controller = new PlanetFocusController();
+
+    // Intro centers, then clear the heat zone (no hands) before the dwell can begin.
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(520, 300),
+      timestamp: 0,
+    });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 450,
+    });
+
+    const dwellStart = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    expect(dwellStart.snapshot.controlState).toBe('SingleTouchDwell');
+
+    // One frame with no hands (tracking blip) within the grace window must not reset the timer.
+    const gap = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 950,
+    });
+    expect(gap.snapshot.controlState).toBe('SingleTouchDwell');
+    expect(gap.snapshot.transitionReason).toBe('holding-dwell-through-brief-gap');
+
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 1050,
+    });
+
+    // The dwell completes 1s after the ORIGINAL start (500), proving the gap did not restart it.
+    const follow = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(follow.nextState).toBe('PlanetFocusControlled');
+    expect(follow.snapshot.controlState).toBe('SingleHandFollow');
+  });
+
+  it('resets the dwell when the hand is gone past the grace window', () => {
+    const controller = new PlanetFocusController();
+
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(520, 300),
+      timestamp: 0,
+    });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 450,
+    });
+
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 850,
+    });
+
+    // Gap exceeds the grace window -> the dwell is abandoned.
+    const reset = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 1100,
+    });
+    expect(reset.snapshot.controlState).toBe('FocusIdle');
+    expect(reset.snapshot.transitionReason).toBe('waiting-for-focused-body-touch');
+
+    // Re-touch starts a fresh 1s timer; the old elapsed time is not credited.
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 1150,
+    });
+    const stillDwelling = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360 })],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(stillDwelling.nextState).toBeNull();
+    expect(stillDwelling.snapshot.controlState).toBe('SingleTouchDwell');
   });
 
   it('ignores hands outside the focused-body heat zone', () => {

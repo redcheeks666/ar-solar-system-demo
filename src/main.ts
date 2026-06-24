@@ -467,7 +467,15 @@ function applyPlanetFocusSnapshot(
 ): void {
   debugSnapshot.planetFocus = snapshot;
 
-  if (!snapshot.focusedBody || !snapshot.screenPosition) {
+  // Only the follow states drive the body transform from hand input. During intro / centering /
+  // dwell / floating the FocusedCelestialBody owns its own transform (the intro animation, then a
+  // hold at the last placement), so overriding it here would cancel the intro animation and pin
+  // the body at the stale source screen position — which also deadlocks the "centered" gate.
+  const isFollowing =
+    snapshot.controlState === 'SingleHandFollow' ||
+    snapshot.controlState === 'TwoHandFollow';
+
+  if (!isFollowing || !snapshot.focusedBody || !snapshot.screenPosition) {
     return;
   }
 

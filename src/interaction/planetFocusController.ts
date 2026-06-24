@@ -10,6 +10,7 @@ import {
   type PreviewLayout,
 } from './coordinateMapping';
 import { clamp, distance2d } from '../utils/math';
+import { LowPassNumberFilter, LowPassPointFilter } from '../tracking/smoothing';
 import type {
   InteractionState,
   NormalizedPoint,
@@ -95,6 +96,11 @@ type PinchPhase = 'open' | 'closed';
 
 const TOUCH_DWELL_REQUIRED_MS = 1000;
 const TRACKING_LOSS_HOLD_MS = 260;
+// Dwell stability: keep an in-progress dwell timer alive through brief tracking gaps / boundary
+// flicker (DWELL_GAP_HOLD_MS), and keep a hand that is already dwelling counted as "touching" until
+// it clearly leaves the heat zone (DWELL_HOLD_NORMALIZED_DISTANCE > strict 1.0 entry threshold).
+const DWELL_GAP_HOLD_MS = 220;
+const DWELL_HOLD_NORMALIZED_DISTANCE = 1.12;
 const PINCH_TAP_CLOSE_RATIO = 0.4;
 const PINCH_TAP_CLOSE_DISTANCE_PX = 72;
 const PINCH_TAP_OPEN_RATIO = 0.58;
@@ -103,6 +109,12 @@ const MIN_FOCUS_SCALE_MULTIPLIER = 0.65;
 const MAX_FOCUS_SCALE_MULTIPLIER = 1.25;
 const MIN_SCREEN_EDGE_MARGIN_PX = 28;
 const FOCUS_CENTERED_THRESHOLD_PX = 36;
+// Follow smoothing: drive the body from one stable anchor (palm center) instead of whichever
+// landmark happened to be nearest at the touch instant, and low-pass the followed position / scale
+// on top of the landmark smoothing so fingertip-level jitter does not reach the body 1:1.
+const FOLLOW_ANCHOR_KIND: FocusHandPointKind = 'palmCenter';
+const FOLLOW_POSITION_ALPHA = 0.5;
+const FOLLOW_SCALE_ALPHA = 0.3;
 
 export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   focusedBody: null,
@@ -127,6 +139,7 @@ export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
 export class PlanetFocusController {
   private focusedBody: InteractiveCelestialBodyId | null = null;
   private dwellCandidate: DwellCandidate | null = null;
+  private dwellGapSince: number | null = null;
   private controlState: PlanetFocusSnapshot['controlState'] = 'Inactive';
   private activeHandKeys: string[] = [];
   private activeAnchorKinds: FocusHandPointKind[] = [];
@@ -136,6 +149,9 @@ export class PlanetFocusController {
   private twoBaseScaleMultiplier = 1;
   private screenPosition: { x: number; y: number } | null = null;
   private scaleMultiplier = 1;
+  private readonly singlePositionFilter = new LowPassPointFilter(FOLLOW_POSITION_ALPHA);
+  private readonly twoHandPositionFilter = new LowPassPointFilter(FOLLOW_POSITION_ALPHA);
+  private readonly twoHandScaleFilter = new LowPassNumberFilter(FOLLOW_SCALE_ALPHA);
   private trackingLostSince: number | null = null;
   private heatZoneClearRequired: 'intro' | 'release' | null = null;
   private pinchPhases = new Map<string, PinchPhase>();
@@ -194,6 +210,7 @@ export class PlanetFocusController {
   reset(): void {
     this.focusedBody = null;
     this.dwellCandidate = null;
+    this.dwellGapSince = null;
     this.controlState = 'Inactive';
     this.activeHandKeys = [];
     this.activeAnchorKinds = [];
@@ -203,6 +220,9 @@ export class PlanetFocusController {
     this.twoBaseScaleMultiplier = 1;
     this.screenPosition = null;
     this.scaleMultiplier = 1;
+    this.singlePositionFilter.reset();
+    this.twoHandPositionFilter.reset();
+    this.twoHandScaleFilter.reset();
     this.trackingLostSince = null;
     this.heatZoneClearRequired = null;
     this.pinchPhases.clear();
@@ -215,6 +235,7 @@ export class PlanetFocusController {
   ): void {
     this.focusedBody = focusedBody;
     this.dwellCandidate = null;
+    this.dwellGapSince = null;
     this.controlState = 'IntroCooldown';
     this.activeHandKeys = [];
     this.activeAnchorKinds = [];
@@ -290,15 +311,40 @@ export class PlanetFocusController {
     this.activeHandKeys = [];
     this.activeAnchorKinds = [];
 
-    if (touchCandidates.length >= 2) {
-      return this.updateTwoHandDwell(input, touchCandidates);
+    const heldCandidates = this.collectHeldDwellCandidates(
+      samples,
+      touchCandidates,
+    );
+
+    if (heldCandidates.length >= 2) {
+      this.dwellGapSince = null;
+      return this.updateTwoHandDwell(input, heldCandidates);
     }
 
-    if (touchCandidates.length === 1) {
-      return this.updateSingleHandDwell(input, samples, touchCandidates[0]);
+    if (heldCandidates.length === 1) {
+      this.dwellGapSince = null;
+      return this.updateSingleHandDwell(input, samples, heldCandidates[0]);
+    }
+
+    // No hand on the heat zone this frame. A single dropped frame (tracking loss or boundary
+    // flicker) should not wipe an in-progress dwell, so keep the candidate and its startedAt alive
+    // for a short grace window before giving up — mirroring the follow-state loss tolerance.
+    if (this.dwellCandidate) {
+      this.dwellGapSince ??= input.timestamp;
+
+      if (input.timestamp - this.dwellGapSince < DWELL_GAP_HOLD_MS) {
+        const snapshot = this.createSnapshot({
+          touchCandidates,
+          dwellMs: input.timestamp - this.dwellCandidate.startedAt,
+          reason: 'holding-dwell-through-brief-gap',
+        });
+        this.snapshot = snapshot;
+        return { snapshot, nextState: null };
+      }
     }
 
     this.dwellCandidate = null;
+    this.dwellGapSince = null;
     this.controlState =
       input.interactionState === 'PlanetFocusFloating'
         ? 'Floating'
@@ -309,6 +355,37 @@ export class PlanetFocusController {
     });
     this.snapshot = snapshot;
     return { snapshot, nextState: null };
+  }
+
+  private collectHeldDwellCandidates(
+    samples: FocusHandSample[],
+    touchCandidates: FocusHandSample[],
+  ): FocusHandSample[] {
+    if (!this.dwellCandidate) {
+      return touchCandidates;
+    }
+
+    const activeKeys =
+      this.dwellCandidate.mode === 'single'
+        ? [this.dwellCandidate.handKey]
+        : this.dwellCandidate.handKeys;
+
+    const held = samples.filter(
+      (sample) =>
+        activeKeys.includes(sample.handKey) &&
+        sample.normalizedDistance <= DWELL_HOLD_NORMALIZED_DISTANCE &&
+        !touchCandidates.some(
+          (candidate) => candidate.handKey === sample.handKey,
+        ),
+    );
+
+    if (held.length === 0) {
+      return touchCandidates;
+    }
+
+    return [...touchCandidates, ...held].sort(
+      (a, b) => a.normalizedDistance - b.normalizedDistance,
+    );
   }
 
   private updateSingleHandDwell(
@@ -331,7 +408,11 @@ export class PlanetFocusController {
     const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
 
     if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
-      this.enterSingleFollow(this.dwellCandidate, samples);
+      this.enterSingleFollow(
+        this.dwellCandidate,
+        samples,
+        input.target as FocusedCelestialBodyScreenTarget,
+      );
       const placement = this.computeSingleFollowPlacement(
         samples,
         input.target as FocusedCelestialBodyScreenTarget,
@@ -384,7 +465,11 @@ export class PlanetFocusController {
     const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
 
     if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
-      this.enterTwoHandFollow(this.dwellCandidate, pair);
+      this.enterTwoHandFollow(
+        this.dwellCandidate,
+        pair,
+        input.target as FocusedCelestialBodyScreenTarget,
+      );
       const placement = this.computeTwoHandFollowPlacement(
         pair,
         input.target as FocusedCelestialBodyScreenTarget,
@@ -456,7 +541,11 @@ export class PlanetFocusController {
 
       const dwellMs = input.timestamp - this.dwellCandidate.startedAt;
       if (dwellMs >= TOUCH_DWELL_REQUIRED_MS) {
-        this.enterTwoHandFollow(this.dwellCandidate, pair);
+        this.enterTwoHandFollow(
+          this.dwellCandidate,
+          pair,
+          input.target as FocusedCelestialBodyScreenTarget,
+        );
         const twoHandPlacement = this.computeTwoHandFollowPlacement(
           pair,
           input.target as FocusedCelestialBodyScreenTarget,
@@ -555,11 +644,23 @@ export class PlanetFocusController {
   private enterSingleFollow(
     dwell: SingleDwellCandidate,
     samples: FocusHandSample[],
+    target: FocusedCelestialBodyScreenTarget,
   ): void {
     this.controlState = 'SingleHandFollow';
     this.activeHandKeys = [dwell.handKey];
-    this.activeAnchorKinds = [dwell.anchorKind];
-    this.singleOffsetPx = dwell.offsetPx;
+    this.activeAnchorKinds = [FOLLOW_ANCHOR_KIND];
+    // Capture the anchor->body offset at the moment control engages (not at dwell start) using the
+    // stable palm-center anchor, so the body stays where it is instead of jumping by however much
+    // the hand drifted during the dwell second.
+    const sample = samples.find((candidate) => candidate.handKey === dwell.handKey);
+    const anchor = sample ? getPointByKind(sample, FOLLOW_ANCHOR_KIND) : null;
+    this.singleOffsetPx = anchor
+      ? {
+          x: target.screenPosition.x - anchor.pixel.x,
+          y: target.screenPosition.y - anchor.pixel.y,
+        }
+      : dwell.offsetPx;
+    this.singlePositionFilter.reset();
     this.dwellCandidate = null;
     this.initializePinchPhases(samples, this.activeHandKeys);
   }
@@ -567,13 +668,27 @@ export class PlanetFocusController {
   private enterTwoHandFollow(
     dwell: TwoHandDwellCandidate,
     pair: [FocusHandSample, FocusHandSample],
+    target: FocusedCelestialBodyScreenTarget,
   ): void {
     this.controlState = 'TwoHandFollow';
     this.activeHandKeys = [...dwell.handKeys];
-    this.activeAnchorKinds = [...dwell.anchorKinds];
-    this.twoOffsetPx = dwell.offsetPx;
-    this.twoBaseDistancePx = dwell.baseDistancePx;
-    this.twoBaseScaleMultiplier = dwell.baseScaleMultiplier;
+    this.activeAnchorKinds = [FOLLOW_ANCHOR_KIND, FOLLOW_ANCHOR_KIND];
+    // Re-capture midpoint offset and base distance at control engage time, from palm centers, so
+    // both position and the scale baseline start from the current pose (no engage-time jump).
+    const firstAnchor = getPointByKind(pair[0], FOLLOW_ANCHOR_KIND);
+    const secondAnchor = getPointByKind(pair[1], FOLLOW_ANCHOR_KIND);
+    const midpoint = averagePixel(firstAnchor.pixel, secondAnchor.pixel);
+    this.twoOffsetPx = {
+      x: target.screenPosition.x - midpoint.x,
+      y: target.screenPosition.y - midpoint.y,
+    };
+    this.twoBaseDistancePx = Math.max(
+      distancePixels(firstAnchor.pixel, secondAnchor.pixel),
+      1,
+    );
+    this.twoBaseScaleMultiplier = this.scaleMultiplier;
+    this.twoHandPositionFilter.reset();
+    this.twoHandScaleFilter.reset();
     this.dwellCandidate = null;
     this.initializePinchPhases(pair, this.activeHandKeys);
   }
@@ -605,15 +720,16 @@ export class PlanetFocusController {
     }
 
     const anchor = getPointByKind(sample, this.activeAnchorKinds[0]);
-    const rawPosition = {
+    const smoothed = this.singlePositionFilter.smooth({
       x: anchor.pixel.x + this.singleOffsetPx.x,
       y: anchor.pixel.y + this.singleOffsetPx.y,
-    };
+      z: 0,
+    });
 
     return {
       sample,
       screenPosition: clampFocusedBodyPosition(
-        rawPosition,
+        { x: smoothed.x, y: smoothed.y },
         target,
         this.scaleMultiplier,
         this.scaleMultiplier,
@@ -635,20 +751,23 @@ export class PlanetFocusController {
       distancePixels(firstAnchor.pixel, secondAnchor.pixel),
       1,
     );
-    const scaleMultiplier = clamp(
-      this.twoBaseScaleMultiplier *
-        (currentDistance / Math.max(this.twoBaseDistancePx, 1)),
-      MIN_FOCUS_SCALE_MULTIPLIER,
-      MAX_FOCUS_SCALE_MULTIPLIER,
+    const scaleMultiplier = this.twoHandScaleFilter.smooth(
+      clamp(
+        this.twoBaseScaleMultiplier *
+          (currentDistance / Math.max(this.twoBaseDistancePx, 1)),
+        MIN_FOCUS_SCALE_MULTIPLIER,
+        MAX_FOCUS_SCALE_MULTIPLIER,
+      ),
     );
-    const rawPosition = {
+    const smoothed = this.twoHandPositionFilter.smooth({
       x: midpoint.x + this.twoOffsetPx.x,
       y: midpoint.y + this.twoOffsetPx.y,
-    };
+      z: 0,
+    });
 
     return {
       screenPosition: clampFocusedBodyPosition(
-        rawPosition,
+        { x: smoothed.x, y: smoothed.y },
         target,
         scaleMultiplier,
         this.scaleMultiplier,
