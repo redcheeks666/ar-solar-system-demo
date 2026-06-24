@@ -100,7 +100,7 @@ export class FocusedCelestialBody {
     scaleMultiplier: number,
   ): void {
     this.targetWorldPosition.copy(worldPosition);
-    this.scaleMultiplier = clamp(scaleMultiplier, 0.4, 1.6);
+    this.scaleMultiplier = clamp(scaleMultiplier, 0.3, 1.8);
     this.introElapsedSeconds = FOCUS_INTRO_DURATION_SECONDS;
     this.applyScreenCenteredLayout(parent);
   }

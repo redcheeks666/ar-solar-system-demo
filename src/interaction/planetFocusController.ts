@@ -105,16 +105,25 @@ const PINCH_TAP_CLOSE_RATIO = 0.4;
 const PINCH_TAP_CLOSE_DISTANCE_PX = 72;
 const PINCH_TAP_OPEN_RATIO = 0.58;
 const PINCH_TAP_OPEN_DISTANCE_PX = 94;
-const MIN_FOCUS_SCALE_MULTIPLIER = 0.65;
-const MAX_FOCUS_SCALE_MULTIPLIER = 1.25;
+const MIN_FOCUS_SCALE_MULTIPLIER = 0.3;
+const MAX_FOCUS_SCALE_MULTIPLIER = 1.8;
 const MIN_SCREEN_EDGE_MARGIN_PX = 28;
 const FOCUS_CENTERED_THRESHOLD_PX = 36;
-// Follow smoothing: drive the body from one stable anchor (palm center) instead of whichever
-// landmark happened to be nearest at the touch instant, and low-pass the followed position / scale
-// on top of the landmark smoothing so fingertip-level jitter does not reach the body 1:1.
-const FOLLOW_ANCHOR_KIND: FocusHandPointKind = 'palmCenter';
+// Follow anchoring: single-hand drives the body from the thumb+index pinch midpoint; two-hand uses
+// the four thumb/index tips (see computeTwoHandTransform) — centroid for position, mean spread for
+// scale. Low-pass the followed position/scale on top of the landmark smoothing so fingertip jitter
+// does not reach the body 1:1; scale is noisier than position, so it gets a stronger filter.
+const FOLLOW_ANCHOR_KIND: FocusHandPointKind = 'pinchMidpoint';
 const FOLLOW_POSITION_ALPHA = 0.5;
-const FOLLOW_SCALE_ALPHA = 0.3;
+const FOLLOW_SCALE_ALPHA = 0.25;
+// Two-hand follow: when one hand clearly leaves the heat zone while the other still grips, drop the
+// leaving hand and continue as the staying hand's single-hand (move-only) control. KEEP/WITHDRAW
+// form a deadband so boundary noise during a steady two-hand hold does not flip control.
+const TWO_HAND_KEEP_NORMALIZED = 1.1;
+const TWO_HAND_WITHDRAW_NORMALIZED = 1.3;
+// Re-acquire the active single-follow hand by spatial continuity when its hand key shifts (an
+// off-hand entering/leaving the frame changes the array index / side), so control is not dropped.
+const ACTIVE_HAND_REACQUIRE_RADIUS_PX = 220;
 
 export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   focusedBody: null,
@@ -145,7 +154,7 @@ export class PlanetFocusController {
   private activeAnchorKinds: FocusHandPointKind[] = [];
   private singleOffsetPx = { x: 0, y: 0 };
   private twoOffsetPx = { x: 0, y: 0 };
-  private twoBaseDistancePx = 1;
+  private twoBaseSpanPx = 1;
   private twoBaseScaleMultiplier = 1;
   private screenPosition: { x: number; y: number } | null = null;
   private scaleMultiplier = 1;
@@ -216,7 +225,7 @@ export class PlanetFocusController {
     this.activeAnchorKinds = [];
     this.singleOffsetPx = { x: 0, y: 0 };
     this.twoOffsetPx = { x: 0, y: 0 };
-    this.twoBaseDistancePx = 1;
+    this.twoBaseSpanPx = 1;
     this.twoBaseScaleMultiplier = 1;
     this.screenPosition = null;
     this.scaleMultiplier = 1;
@@ -587,6 +596,23 @@ export class PlanetFocusController {
       return this.handleFollowTrackingLoss(input, touchCandidates);
     }
 
+    // If one hand has clearly left the heat zone while the other still grips, drop the leaving hand
+    // and continue as single-hand (move-only) follow with the one that stayed — instead of dragging
+    // the body toward the withdrawing hand via the two-hand centroid.
+    const staying = pair.filter(
+      (sample) => sample.normalizedDistance <= TWO_HAND_KEEP_NORMALIZED,
+    );
+    const leaving = pair.filter(
+      (sample) => sample.normalizedDistance > TWO_HAND_WITHDRAW_NORMALIZED,
+    );
+    if (staying.length === 1 && leaving.length === 1) {
+      return this.downgradeToSingleFollow(
+        staying[0],
+        input.target as FocusedCelestialBodyScreenTarget,
+        touchCandidates,
+      );
+    }
+
     this.trackingLostSince = null;
     const placement = this.computeTwoHandFollowPlacement(
       [pair[0], pair[1]],
@@ -612,6 +638,36 @@ export class PlanetFocusController {
       touchCandidates,
       pinchMetrics: pair[0].pinchMetrics,
       reason: 'two-hand-following',
+    });
+    this.snapshot = snapshot;
+    return { snapshot, nextState: null };
+  }
+
+  private downgradeToSingleFollow(
+    sample: FocusHandSample,
+    target: FocusedCelestialBodyScreenTarget,
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    // Keep the body where it currently is, then have the staying hand move it (scale frozen). The
+    // offset is re-captured from this hand so control hands over without the body jumping.
+    this.controlState = 'SingleHandFollow';
+    this.activeHandKeys = [sample.handKey];
+    this.activeAnchorKinds = [FOLLOW_ANCHOR_KIND];
+    const anchor = getPointByKind(sample, FOLLOW_ANCHOR_KIND);
+    const bodyPosition = this.screenPosition ?? target.screenPosition;
+    this.singleOffsetPx = {
+      x: bodyPosition.x - anchor.pixel.x,
+      y: bodyPosition.y - anchor.pixel.y,
+    };
+    this.singlePositionFilter.reset();
+    this.dwellCandidate = null;
+    this.trackingLostSince = null;
+    this.initializePinchPhases([sample], this.activeHandKeys);
+
+    const snapshot = this.createSnapshot({
+      touchCandidates,
+      pinchMetrics: sample.pinchMetrics,
+      reason: 'two-hand-downgraded-to-single-follow',
     });
     this.snapshot = snapshot;
     return { snapshot, nextState: null };
@@ -673,19 +729,16 @@ export class PlanetFocusController {
     this.controlState = 'TwoHandFollow';
     this.activeHandKeys = [...dwell.handKeys];
     this.activeAnchorKinds = [FOLLOW_ANCHOR_KIND, FOLLOW_ANCHOR_KIND];
-    // Re-capture midpoint offset and base distance at control engage time, from palm centers, so
-    // both position and the scale baseline start from the current pose (no engage-time jump).
-    const firstAnchor = getPointByKind(pair[0], FOLLOW_ANCHOR_KIND);
-    const secondAnchor = getPointByKind(pair[1], FOLLOW_ANCHOR_KIND);
-    const midpoint = averagePixel(firstAnchor.pixel, secondAnchor.pixel);
+    // Two-hand transform is driven by the four thumb/index tips: centroid for position, mean spread
+    // from the centroid for scale. Re-capture the centroid offset and base span at engage time so
+    // control starts from the current pose (no engage jump); bringing the four tips together can
+    // now shrink the body far smaller than palm-center distance ever allowed.
+    const transform = computeTwoHandTransform(pair);
     this.twoOffsetPx = {
-      x: target.screenPosition.x - midpoint.x,
-      y: target.screenPosition.y - midpoint.y,
+      x: target.screenPosition.x - transform.center.x,
+      y: target.screenPosition.y - transform.center.y,
     };
-    this.twoBaseDistancePx = Math.max(
-      distancePixels(firstAnchor.pixel, secondAnchor.pixel),
-      1,
-    );
+    this.twoBaseSpanPx = transform.span;
     this.twoBaseScaleMultiplier = this.scaleMultiplier;
     this.twoHandPositionFilter.reset();
     this.twoHandScaleFilter.reset();
@@ -708,12 +761,63 @@ export class PlanetFocusController {
     });
   }
 
+  private resolveActiveSingleSample(
+    samples: FocusHandSample[],
+  ): FocusHandSample | null {
+    const handKey = this.activeHandKeys[0];
+    const exact = samples.find((candidate) => candidate.handKey === handKey);
+
+    if (exact) {
+      return exact;
+    }
+
+    // The hand key embeds the array index / side, which shifts when a second hand enters or leaves
+    // the frame. Re-acquire the active hand by spatial continuity to the anchor it had last frame,
+    // so an off-hand merely appearing does not look like the controlling hand vanished.
+    if (!this.screenPosition) {
+      return null;
+    }
+
+    const expectedAnchor = {
+      x: this.screenPosition.x - this.singleOffsetPx.x,
+      y: this.screenPosition.y - this.singleOffsetPx.y,
+    };
+    let best: FocusHandSample | null = null;
+    let bestDistance = ACTIVE_HAND_REACQUIRE_RADIUS_PX;
+
+    samples.forEach((sample) => {
+      const anchor = getPointByKind(sample, this.activeAnchorKinds[0]);
+      const distance = distancePixels(anchor.pixel, expectedAnchor);
+      if (distance <= bestDistance) {
+        bestDistance = distance;
+        best = sample;
+      }
+    });
+
+    if (best) {
+      this.rebindActiveSingleHand((best as FocusHandSample).handKey);
+    }
+
+    return best;
+  }
+
+  private rebindActiveSingleHand(newHandKey: string): void {
+    const oldHandKey = this.activeHandKeys[0];
+    if (oldHandKey === newHandKey) {
+      return;
+    }
+
+    const phase = this.pinchPhases.get(oldHandKey) ?? 'open';
+    this.pinchPhases.delete(oldHandKey);
+    this.pinchPhases.set(newHandKey, phase);
+    this.activeHandKeys = [newHandKey];
+  }
+
   private computeSingleFollowPlacement(
     samples: FocusHandSample[],
     target: FocusedCelestialBodyScreenTarget,
   ): { sample: FocusHandSample; screenPosition: { x: number; y: number } } | null {
-    const handKey = this.activeHandKeys[0];
-    const sample = samples.find((candidate) => candidate.handKey === handKey);
+    const sample = this.resolveActiveSingleSample(samples);
 
     if (!sample) {
       return null;
@@ -744,24 +848,18 @@ export class PlanetFocusController {
     screenPosition: { x: number; y: number };
     scaleMultiplier: number;
   } {
-    const firstAnchor = getPointByKind(pair[0], this.activeAnchorKinds[0]);
-    const secondAnchor = getPointByKind(pair[1], this.activeAnchorKinds[1]);
-    const midpoint = averagePixel(firstAnchor.pixel, secondAnchor.pixel);
-    const currentDistance = Math.max(
-      distancePixels(firstAnchor.pixel, secondAnchor.pixel),
-      1,
-    );
+    const transform = computeTwoHandTransform(pair);
     const scaleMultiplier = this.twoHandScaleFilter.smooth(
       clamp(
         this.twoBaseScaleMultiplier *
-          (currentDistance / Math.max(this.twoBaseDistancePx, 1)),
+          (transform.span / Math.max(this.twoBaseSpanPx, 1)),
         MIN_FOCUS_SCALE_MULTIPLIER,
         MAX_FOCUS_SCALE_MULTIPLIER,
       ),
     );
     const smoothed = this.twoHandPositionFilter.smooth({
-      x: midpoint.x + this.twoOffsetPx.x,
-      y: midpoint.y + this.twoOffsetPx.y,
+      x: transform.center.x + this.twoOffsetPx.x,
+      y: transform.center.y + this.twoOffsetPx.y,
       z: 0,
     });
 
@@ -981,6 +1079,31 @@ function getBestTwoHandPair(
   );
 
   return second ? [first, second] : null;
+}
+
+interface TwoHandTransform {
+  center: { x: number; y: number };
+  span: number;
+}
+
+/**
+ * Two-hand transform from the two hands' pinch midpoints (each = thumb+index average). `center` is
+ * the midpoint between them (= centroid of the four tips) and drives position; `span` is the
+ * distance between the two hands and drives scale. Crucially the span is the *inter-hand* distance,
+ * so opening/closing a single hand's pinch does not change scale or position — that is reserved for
+ * the pinch-tap release. Scale tracks span / baseSpan: spread the hands to grow, draw them together
+ * to shrink, with a far wider range than two palm centers could reach.
+ */
+function computeTwoHandTransform(
+  pair: [FocusHandSample, FocusHandSample],
+): TwoHandTransform {
+  const first = getPointByKind(pair[0], 'pinchMidpoint').pixel;
+  const second = getPointByKind(pair[1], 'pinchMidpoint').pixel;
+
+  return {
+    center: averagePixel(first, second),
+    span: Math.max(distancePixels(first, second), 1),
+  };
 }
 
 function createFocusHandPoints(

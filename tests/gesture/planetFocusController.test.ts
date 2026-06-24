@@ -323,6 +323,195 @@ describe('PlanetFocusController', () => {
     expect(released.snapshot.transitionReason).toBe('two-hand-pinch-tap-release');
   });
 
+  it('shrinks the focused body below the old scale floor when the four finger tips draw together', () => {
+    const controller = new PlanetFocusController();
+
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(520, 300),
+      timestamp: 0,
+    });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [],
+      target: target(640, 360),
+      timestamp: 450,
+    });
+
+    // Engage two-hand follow with the hands spread wide (large base span).
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 520, y: 360, side: 'left' }),
+        handAtPixel({ x: 760, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const engaged = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 520, y: 360, side: 'left' }),
+        handAtPixel({ x: 760, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(engaged.snapshot.controlState).toBe('TwoHandFollow');
+
+    // Draw the four tips together (hands close + tight pinch); span collapses so the body shrinks
+    // well past the previous 0.65 floor, down toward the new 0.3 minimum.
+    let shrunk = engaged;
+    for (let i = 1; i <= 10; i += 1) {
+      shrunk = step({
+        controller,
+        state: 'PlanetFocusControlled',
+        hands: [
+          handAtPixel({ x: 620, y: 360, side: 'left', pinchRatio: 0.18 }),
+          handAtPixel({ x: 660, y: 360, side: 'right', pinchRatio: 0.18 }),
+        ],
+        target: target(640, 360),
+        timestamp: 1500 + i * 60,
+      });
+    }
+    expect(shrunk.snapshot.controlState).toBe('TwoHandFollow');
+    expect(shrunk.snapshot.scaleMultiplier).toBeLessThan(0.5);
+    expect(shrunk.snapshot.scaleMultiplier).toBeGreaterThanOrEqual(0.3);
+  });
+
+  it('does not change two-hand scale when a hand closes its pinch (scale decoupled from pinch)', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const engaged = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(engaged.snapshot.controlState).toBe('TwoHandFollow');
+
+    // Keep both hands in place but close their pinches. Scale must stay put (it tracks the distance
+    // between the hands, not within-hand pinch), and closing alone must not release.
+    let closed = engaged;
+    for (let i = 1; i <= 5; i += 1) {
+      closed = step({
+        controller,
+        state: 'PlanetFocusControlled',
+        hands: [
+          handAtPixel({ x: 580, y: 360, side: 'left', pinchRatio: 0.15 }),
+          handAtPixel({ x: 700, y: 360, side: 'right', pinchRatio: 0.15 }),
+        ],
+        target: target(640, 360),
+        timestamp: 1500 + i * 60,
+      });
+    }
+    expect(closed.snapshot.controlState).toBe('TwoHandFollow');
+    expect(closed.snapshot.scaleMultiplier).toBeCloseTo(1, 1);
+  });
+
+  it('keeps single-hand follow when an off-hand appears outside the heat zone', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right' })],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const follow = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right' })],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(follow.nextState).toBe('PlanetFocusControlled');
+
+    // An off-hand enters the frame far from the planet. It shifts the active hand's array index
+    // (right:0 -> right:1), but control must continue with the original hand, not drop.
+    const offHandAppears = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [
+        handAtPixel({ x: 120, y: 120, side: 'left' }),
+        handAtPixel({ x: 640, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1560,
+    });
+    expect(offHandAppears.nextState).toBeNull();
+    expect(offHandAppears.snapshot.controlState).toBe('SingleHandFollow');
+    expect(offHandAppears.snapshot.transitionReason).toBe('single-hand-following');
+  });
+
+  it('downgrades two-hand follow to single when one hand leaves the heat zone', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const engaged = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(engaged.snapshot.controlState).toBe('TwoHandFollow');
+
+    // Right hand withdraws far out of the heat zone; left hand stays gripping.
+    const downgraded = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 1150, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1560,
+    });
+    expect(downgraded.nextState).toBeNull();
+    expect(downgraded.snapshot.controlState).toBe('SingleHandFollow');
+    expect(downgraded.snapshot.controlMode).toBe('single');
+    expect(downgraded.snapshot.transitionReason).toBe('two-hand-downgraded-to-single-follow');
+  });
+
   it('keeps an in-progress dwell alive through a brief tracking gap', () => {
     const controller = new PlanetFocusController();
 
