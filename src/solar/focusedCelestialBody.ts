@@ -18,6 +18,7 @@ export const FOCUS_BODY_WORLD_Z = 0.62;
 export const FOCUS_BODY_MIN_SCREEN_HEIGHT_FRACTION = 0.5;
 export const FOCUS_BODY_MAX_SCREEN_HEIGHT_FRACTION = 2 / 3;
 export const FOCUS_INTRO_DURATION_SECONDS = 0.3;
+export const FOCUS_RETURN_DURATION_SECONDS = 0.5;
 
 const FOCUS_RENDER_ORDER = 96;
 const SPHERE_WIDTH_SEGMENTS = 56;
@@ -35,18 +36,22 @@ export class FocusedCelestialBody {
 
   private readonly targetWorldScale: number;
   private readonly targetWorldPosition = new Vector3(0, 0, FOCUS_BODY_WORLD_Z);
-  private readonly introSourceWorldPosition = new Vector3();
+  private readonly transitionSourceWorldPosition = new Vector3();
   private readonly spinGroup = new Group();
   private readonly tiltGroup = new Group();
   private readonly geometries: BufferGeometry[] = [];
   private readonly materials: Material[] = [];
   private readonly textures: Texture[] = [];
-  private introElapsedSeconds = FOCUS_INTRO_DURATION_SECONDS;
-  private introSourceWorldScale = 1;
+  private transitionKind: 'intro' | 'return' | null = null;
+  private transitionElapsedSeconds = FOCUS_INTRO_DURATION_SECONDS;
+  private transitionDurationSeconds = FOCUS_INTRO_DURATION_SECONDS;
+  private transitionSourceWorldScale = 1;
+  private transitionTargetWorldScale: number;
   private scaleMultiplier = 1;
 
   constructor(readonly definition: CelestialBodyDefinition) {
     this.targetWorldScale = getFocusedBodyWorldScale(definition);
+    this.transitionTargetWorldScale = this.targetWorldScale;
     this.root.name = `focus-${definition.id}-root`;
     this.root.visible = false;
 
@@ -67,10 +72,10 @@ export class FocusedCelestialBody {
       return;
     }
 
-    if (this.introElapsedSeconds < FOCUS_INTRO_DURATION_SECONDS) {
-      this.introElapsedSeconds = Math.min(
-        FOCUS_INTRO_DURATION_SECONDS,
-        this.introElapsedSeconds + deltaSeconds,
+    if (this.transitionElapsedSeconds < this.transitionDurationSeconds) {
+      this.transitionElapsedSeconds = Math.min(
+        this.transitionDurationSeconds,
+        this.transitionElapsedSeconds + deltaSeconds,
       );
     }
 
@@ -86,11 +91,34 @@ export class FocusedCelestialBody {
     sourceWorldPosition: Vector3,
     sourceWorldScale: number,
   ): void {
+    this.transitionKind = 'intro';
+    this.transitionDurationSeconds = FOCUS_INTRO_DURATION_SECONDS;
     this.targetWorldPosition.set(0, 0, FOCUS_BODY_WORLD_Z);
+    this.transitionTargetWorldScale = this.targetWorldScale;
     this.scaleMultiplier = 1;
-    this.introSourceWorldPosition.copy(sourceWorldPosition);
-    this.introSourceWorldScale = Math.max(sourceWorldScale, 0.0001);
-    this.introElapsedSeconds = 0;
+    this.transitionSourceWorldPosition.copy(sourceWorldPosition);
+    this.transitionSourceWorldScale = Math.max(sourceWorldScale, 0.0001);
+    this.transitionElapsedSeconds = 0;
+    this.root.visible = true;
+    this.applyScreenCenteredLayout(parent);
+  }
+
+  startReturnTransition(
+    parent: Group,
+    targetWorldPosition: Vector3,
+    targetWorldScale: number,
+  ): void {
+    this.transitionKind = 'return';
+    this.transitionDurationSeconds = FOCUS_RETURN_DURATION_SECONDS;
+    this.transitionSourceWorldPosition.copy(this.getWorldPosition(TEMP_CURRENT_WORLD_POSITION));
+    this.transitionSourceWorldScale = Math.max(
+      this.getMaxWorldScale(TEMP_CURRENT_WORLD_SCALE),
+      0.0001,
+    );
+    this.targetWorldPosition.copy(targetWorldPosition);
+    this.transitionTargetWorldScale = Math.max(targetWorldScale, 0.0001);
+    this.transitionElapsedSeconds = 0;
+    this.root.visible = true;
     this.applyScreenCenteredLayout(parent);
   }
 
@@ -99,10 +127,27 @@ export class FocusedCelestialBody {
     worldPosition: Vector3,
     scaleMultiplier: number,
   ): void {
+    this.transitionKind = null;
+    this.transitionDurationSeconds = FOCUS_INTRO_DURATION_SECONDS;
     this.targetWorldPosition.copy(worldPosition);
     this.scaleMultiplier = clamp(scaleMultiplier, 0.3, 1.8);
-    this.introElapsedSeconds = FOCUS_INTRO_DURATION_SECONDS;
+    this.transitionTargetWorldScale = this.targetWorldScale * this.scaleMultiplier;
+    this.transitionElapsedSeconds = this.transitionDurationSeconds;
     this.applyScreenCenteredLayout(parent);
+  }
+
+  isReturnTransitionComplete(): boolean {
+    return (
+      this.transitionKind === 'return' &&
+      this.transitionElapsedSeconds >= this.transitionDurationSeconds
+    );
+  }
+
+  isReturnTransitionActive(): boolean {
+    return (
+      this.transitionKind === 'return' &&
+      this.transitionElapsedSeconds < this.transitionDurationSeconds
+    );
   }
 
   applyScreenCenteredLayout(parent: Group): void {
@@ -116,19 +161,19 @@ export class FocusedCelestialBody {
     );
 
     const introProgress =
-      this.introElapsedSeconds >= FOCUS_INTRO_DURATION_SECONDS
+      this.transitionElapsedSeconds >= this.transitionDurationSeconds
         ? 1
         : smoothstep(
-            this.introElapsedSeconds / FOCUS_INTRO_DURATION_SECONDS,
+            this.transitionElapsedSeconds / this.transitionDurationSeconds,
           );
     const targetWorldScale = lerp(
-      this.introSourceWorldScale,
-      this.targetWorldScale * this.scaleMultiplier,
+      this.transitionSourceWorldScale,
+      this.transitionTargetWorldScale,
       introProgress,
     );
 
     TEMP_FOCUS_WORLD_POSITION
-      .copy(this.introSourceWorldPosition)
+      .copy(this.transitionSourceWorldPosition)
       .lerp(this.targetWorldPosition, introProgress);
     parent.worldToLocal(TEMP_FOCUS_LOCAL_POSITION.copy(TEMP_FOCUS_WORLD_POSITION));
     parent.getWorldQuaternion(TEMP_PARENT_QUATERNION);
@@ -237,3 +282,5 @@ const TEMP_PARENT_SCALE = new Vector3();
 const TEMP_PARENT_QUATERNION = new Quaternion();
 const TEMP_FOCUS_WORLD_POSITION = new Vector3();
 const TEMP_FOCUS_LOCAL_POSITION = new Vector3();
+const TEMP_CURRENT_WORLD_POSITION = new Vector3();
+const TEMP_CURRENT_WORLD_SCALE = new Vector3();

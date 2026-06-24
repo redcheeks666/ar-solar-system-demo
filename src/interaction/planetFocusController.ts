@@ -101,10 +101,14 @@ const TRACKING_LOSS_HOLD_MS = 260;
 // it clearly leaves the heat zone (DWELL_HOLD_NORMALIZED_DISTANCE > strict 1.0 entry threshold).
 const DWELL_GAP_HOLD_MS = 220;
 const DWELL_HOLD_NORMALIZED_DISTANCE = 1.12;
-const PINCH_TAP_CLOSE_RATIO = 0.4;
-const PINCH_TAP_CLOSE_DISTANCE_PX = 72;
-const PINCH_TAP_OPEN_RATIO = 0.58;
-const PINCH_TAP_OPEN_DISTANCE_PX = 94;
+// pinch-tap (close then open) releases the held body. Ratio ONLY — the raw thumb-finger pixel gap
+// shrinks when the hand is near the camera, so an open hand read as "closed" and a later stray pixel
+// spike read as "open" dropped the body mid-move (real log: multi-finger ratio stayed 0.37-0.50 the
+// whole control segment — never a real pinch — yet distancePx<=72 held a false "closed"). Thresholds
+// match the multi-finger ratio (it picks the finger nearest the thumb, so it runs low): a deliberate
+// pinch dips well under 0.32, while holding/moving an open hand stays above it and never taps.
+const PINCH_TAP_CLOSE_RATIO = 0.32;
+const PINCH_TAP_OPEN_RATIO = 0.45;
 const MIN_FOCUS_SCALE_MULTIPLIER = 0.3;
 const MAX_FOCUS_SCALE_MULTIPLIER = 1.8;
 const MIN_SCREEN_EDGE_MARGIN_PX = 28;
@@ -124,6 +128,7 @@ const TWO_HAND_WITHDRAW_NORMALIZED = 1.3;
 // Re-acquire the active single-follow hand by spatial continuity when its hand key shifts (an
 // off-hand entering/leaving the frame changes the array index / side), so control is not dropped.
 const ACTIVE_HAND_REACQUIRE_RADIUS_PX = 220;
+const RETIRED_GESTURE_RETURN_REQUIRED_MS = 0;
 
 export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   focusedBody: null,
@@ -142,6 +147,10 @@ export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   pinchDistancePx: null,
   pinchRatio: null,
   pinchTapHandKey: null,
+  returnGestureMs: 0,
+  returnGestureRequiredMs: RETIRED_GESTURE_RETURN_REQUIRED_MS,
+  returnGestureScore: 0,
+  returnGestureHandKey: null,
   transitionReason: 'inactive',
 };
 
@@ -164,6 +173,9 @@ export class PlanetFocusController {
   private trackingLostSince: number | null = null;
   private heatZoneClearRequired: 'intro' | 'release' | null = null;
   private pinchPhases = new Map<string, PinchPhase>();
+  private returnGestureMs = 0;
+  private returnGestureScore = 0;
+  private returnGestureHandKey: string | null = null;
   private snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
 
   update(input: PlanetFocusUpdateInput): PlanetFocusUpdate {
@@ -196,7 +208,6 @@ export class PlanetFocusController {
     const touchCandidates = samples.filter(
       (sample) => sample.normalizedDistance <= 1,
     );
-
     if (this.heatZoneClearRequired) {
       return this.updateHeatZoneClearGate(input, touchCandidates);
     }
@@ -235,6 +246,7 @@ export class PlanetFocusController {
     this.trackingLostSince = null;
     this.heatZoneClearRequired = null;
     this.pinchPhases.clear();
+    this.clearReturnGesture();
     this.snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
   }
 
@@ -253,6 +265,13 @@ export class PlanetFocusController {
     this.trackingLostSince = null;
     this.heatZoneClearRequired = 'intro';
     this.pinchPhases.clear();
+    this.clearReturnGesture();
+  }
+
+  private clearReturnGesture(): void {
+    this.returnGestureMs = 0;
+    this.returnGestureScore = 0;
+    this.returnGestureHandKey = null;
   }
 
   private updateHeatZoneClearGate(
@@ -960,6 +979,10 @@ export class PlanetFocusController {
       pinchDistancePx: pinchMetrics?.distancePx ?? null,
       pinchRatio: pinchMetrics?.ratio ?? null,
       pinchTapHandKey: input.pinchTapHandKey ?? null,
+      returnGestureMs: this.returnGestureMs,
+      returnGestureRequiredMs: RETIRED_GESTURE_RETURN_REQUIRED_MS,
+      returnGestureScore: this.returnGestureScore,
+      returnGestureHandKey: this.returnGestureHandKey,
       transitionReason: input.reason,
     };
   }
@@ -1178,17 +1201,11 @@ function computeMultiFingerPinchMetrics(
 }
 
 function isPinchTapClosed(metrics: PinchMetrics): boolean {
-  return (
-    metrics.ratio <= PINCH_TAP_CLOSE_RATIO ||
-    metrics.distancePx <= PINCH_TAP_CLOSE_DISTANCE_PX
-  );
+  return metrics.ratio <= PINCH_TAP_CLOSE_RATIO;
 }
 
 function isPinchTapOpen(metrics: PinchMetrics): boolean {
-  return (
-    metrics.ratio >= PINCH_TAP_OPEN_RATIO ||
-    metrics.distancePx >= PINCH_TAP_OPEN_DISTANCE_PX
-  );
+  return metrics.ratio >= PINCH_TAP_OPEN_RATIO;
 }
 
 function clampFocusedBodyPosition(

@@ -124,4 +124,87 @@ describe('HandStartupGestureController', () => {
       drive(Math.min(0.12 + i * 0.03, 0.5), 'SolarFreeHover');
     }
   });
+
+  it('does not re-arm from the hand withdrawal right after collapsing to EmptyIdle', () => {
+    const controller = new HandStartupGestureController();
+    let timestamp = 0;
+
+    // Active solar state so the following EmptyIdle entry is treated as a post-collapse return.
+    for (let i = 0; i < 5; i += 1) {
+      controller.update(
+        handsAtDistance(0.12),
+        'SolarClosing',
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+      timestamp += 16;
+    }
+
+    let state: InteractionState = 'EmptyIdle';
+    const seen = new Set<InteractionState>();
+
+    // Within the cooldown the user withdraws: the closed hands part quickly, which geometrically
+    // looks just like a pull-open. It must not re-arm. 30 * 16ms = 480ms < the 1000ms cooldown.
+    for (let i = 0; i < 30; i += 1) {
+      const update = controller.update(
+        handsAtDistance(Math.min(0.12 + i * 0.04, 0.6)),
+        state,
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+      if (update.nextState) {
+        state = update.nextState;
+        seen.add(state);
+      }
+      timestamp += 16;
+    }
+
+    expect(seen.has('HandsClosed')).toBe(false);
+    expect(seen.has('PullArmed')).toBe(false);
+    expect(state).toBe('EmptyIdle');
+  });
+
+  it('allows a fresh pull-open once the post-collapse cooldown passes', () => {
+    const controller = new HandStartupGestureController();
+    let timestamp = 0;
+
+    for (let i = 0; i < 5; i += 1) {
+      controller.update(
+        handsAtDistance(0.12),
+        'SolarClosing',
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+      timestamp += 16;
+    }
+
+    let state: InteractionState = 'EmptyIdle';
+    const seen = new Set<InteractionState>();
+    const drive = (distance: number): void => {
+      const update = controller.update(
+        handsAtDistance(distance),
+        state,
+        timestamp,
+        DEFAULT_GESTURE_THRESHOLDS,
+      );
+      if (update.nextState) {
+        state = update.nextState;
+        seen.add(state);
+      }
+      timestamp += 16;
+    };
+
+    // Hold the hands closed well past the cooldown (1000ms) plus the closed-stable window (220ms),
+    // so the cooldown is no longer a factor, then pull apart — a genuine re-open must still work.
+    for (let i = 0; i < 90; i += 1) {
+      drive(0.12);
+    }
+    for (let i = 0; i < 30; i += 1) {
+      drive(Math.min(0.12 + i * 0.03, 0.5));
+    }
+
+    expect(seen.has('HandsClosed')).toBe(true);
+    expect(seen.has('PullArmed')).toBe(true);
+    expect(state).toBe('PullArmed');
+  });
 });

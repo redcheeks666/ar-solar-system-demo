@@ -60,7 +60,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [x] In the first-stage single-planet focus view, the focused body is visible as a unified overlay and the background solar system is dimmed and interaction-locked while preserving basic motion.
 - [ ] The focused body keeps self-rotating during activation, focus, heat-zone follow, release-to-floating, and inspection; one-hand focus zoom/pan/reset is retired.
 - [ ] Single-hand heat-zone dwell follows the focused body, two-hand heat-zone dwell follows and scales it, and a following hand `PinchTap` releases follow-control into floating focus.
-- [ ] A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit and exits back to the solar-system view.
+- [ ] In single-planet focus states, a transparent glass-style button appears at the top-left; holding the tracked index fingertip on "长按返回太阳系" for 1 second fills its progress bar, returns the focused body to orbit, plays a 0.5 second position/scale adjustment animation, restores background opacity, unlocks solar interaction, and exits back to the solar-system view. Mouse/pointer clicking is not the product path, and palm-facing open-hand return is retired.
 - [ ] Documentation is updated when requirements or completed scope change, including `TODO.zh-CN.md` whenever `TODO.md` changes.
 - [ ] The private `agent-companion-repo` companion repo is updated whenever the main code repo is committed or agent workflow context changes.
 
@@ -453,7 +453,7 @@ Tasks:
 - [x] Expose `group`, `update`, `setVisible`, `setOpeningProgress`, `setTransform`, and `dispose` on the placeholder solar-system layer.
 - [x] Add renderer `addObject3D` / `removeObject3D` helpers and frame timing values so visual layers can update before render.
 - [x] Add the dev-only `?solarPreview=1` URL entry, while keeping the normal product path visually empty.
-- [x] Keep the placeholder independent from startup gestures, hover, activation, focus, and throw-return logic.
+- [x] Keep the placeholder independent from startup gestures, hover, activation, focus, and return logic.
 
 Acceptance criteria:
 
@@ -753,6 +753,10 @@ Acceptance criteria:
 - [x] Visual intro-centering cooldown and heat-zone-clear gating prevent immediate follow during/after the centered intro in controller tests; needs real-camera verification.
 - [x] Single-hand 1-second heat-zone dwell moves the focused body and keeps it inside the screen in controller tests; needs real-camera verification.
 - [x] Two-hand 1-second heat-zone dwell scales the focused body by hand distance in controller tests; needs real-camera verification.
+- [x] Two-hand scale is driven by the distance between the two hands (not within-hand pinch), so closing a pinch neither scales nor places the body down, and drawing the hands together shrinks it below the previous floor, in controller tests; needs real-camera verification.
+- [x] Single-hand follow is not dropped when an off-hand appears outside the heat zone in controller tests; needs real-camera verification.
+- [x] Two-hand follow downgrades to single-hand move-only control when one hand leaves the heat zone while the other stays in controller tests; needs real-camera verification.
+- [x] The 1-second heat-zone dwell survives a brief tracking gap and only resets past the grace window in controller tests; needs real-camera verification.
 - [x] Following-hand `PinchTap` releases the focused body into `PlanetFocusFloating` in controller tests; needs real-camera verification.
 - [x] After release, the controller stays deselected until the focused-body heat zone is clear in controller tests; needs real-camera verification.
 - [x] `npm run build` passes.
@@ -781,52 +785,50 @@ Done when:
 - TODO.md is updated.
 ```
 
-## Milestone 9 — PinchTap Release, Floating Focus, and Throw Return
+## Milestone 9 — PinchTap Release, Floating Focus, and Index-Finger Return Button
 
-Status: `TODO`
+Status: `NEEDS_MANUAL_VERIFY`
 
-Goal: Let the user place the focused body down in the single-planet focus view, keep it floating there, then explicitly pinch-and-throw it back to its original orbit.
+Goal: Let the user place the focused body down in the single-planet focus view, keep it floating there, then explicitly return it to its original orbit by holding the tracked index fingertip on the top-left glass button for 1 second. The old pinch-and-throw and palm-facing open-hand return commands are retired; mouse/pointer clicking the DOM button is not the product path.
 
 Tasks:
 
 - [x] Detect following-hand `PinchTap` during single-hand or two-hand heat-zone follow and release to floating focus; needs real-camera verification.
 - [x] On accepted `PinchTap`, release heat-zone follow and keep the focused body floating at the current position in `PlanetFocusView`; needs real-camera verification.
 - [x] Keep the floating focused body self-rotating and do not return to orbit automatically in automated coverage; needs real-camera verification.
-- [ ] Show the original orbit target or directional cue in the background for throw-return.
-- [ ] Allow the floating focused body to be pinch-selected again.
-- [ ] Track recent hand velocity while pinch-holding the focused body.
-- [ ] Define throw velocity threshold based on normalized screen/scene units.
-- [ ] Detect throw intent only when high velocity occurs shortly before pinch release.
-- [ ] Bias throw confidence when hand movement direction points toward the original orbit target.
-- [ ] Add `BodyReturning` state.
-- [ ] Animate returning body back to original orbit position with visible tail/streak feedback.
-- [ ] Add visible tail, streak, or light feedback during return.
-- [ ] Restore original body scale and parent relationship on return.
-- [ ] Resume original orbit after return and keep self-rotation.
-- [ ] After return completes, exit `PlanetFocusView`, return to the solar-system view, and unlock solar-system interaction.
-- [ ] Ensure low-velocity release remains floating in `PlanetFocusView`.
+- [x] Retire the old pinch-and-throw return command in docs and product semantics.
+- [x] Retire the palm-facing open-hand return command in docs and product semantics.
+- [x] Show a transparent glass-style top-left return button in `PlanetFocusView`, `PlanetFocusControlled`, and `PlanetFocusFloating`.
+- [x] Require the tracked index fingertip to stay on the top-left button for 1 second before entering `BodyReturning`.
+- [x] Fill a visible button progress bar while the index-finger hold charges, and reset it when the fingertip leaves the button, the hand is lost, or focus exits.
+- [x] Add `BodyReturning` state entry from the index-finger return button.
+- [x] Animate the focused overlay back to the solar-system body position and size over 0.5 seconds.
+- [x] Keep the solar-system background dimmed and interaction-locked during the 0.5 second return animation.
+- [x] Restore original body scale/relationship, resume orbit, restore background opacity, exit focus view, and return to `SolarFreeHover` after the return animation.
 - [x] Add debug values for focus PinchTap, floating state, active follow hands, dwell time, touch heat radius, and focus scale.
-- [ ] Add debug values for throw velocity, throw direction score, and throw confidence.
+- [x] Remove open-palm return debug rows from the visible debug panel so they are not presented as current controls.
 
 Acceptance criteria:
 
 - [x] Following-hand `PinchTap` places the focused body down in controller tests; needs real-camera verification.
 - [x] Placed-down body remains floating in `PlanetFocusView` and keeps self-rotating in automated coverage; needs real-camera verification.
-- [ ] Low-velocity pinch release does not return body to orbit.
-- [ ] Clear pinch-and-throw toward the orbit target returns body to orbit.
-- [ ] Return animation is visible and smooth.
-- [ ] Body resumes original orbit relationship after return.
-- [ ] After return, the app exits to the solar-system view and unlocks solar interaction.
-- [ ] Moon can return to Earth/Moon relationship correctly.
+- [x] Pinch release, low-velocity hand movement, ordinary hand motion, and open-palm motion do not return the body to orbit because gesture return is retired.
+- [x] Holding the tracked index fingertip on the top-left return button for 1 second enters `BodyReturning` in app logic and gesture-helper tests; needs real-camera/browser verification.
+- [x] Moving the index fingertip off the button before 1 second resets the return progress in gesture-helper tests; needs real-camera/browser verification.
+- [x] The return button remains available even after the focused body is placed down into floating focus; needs real-camera/browser verification.
+- [x] Return animation moves and scales the focused overlay back to the solar-system body over 0.5 seconds in unit coverage; needs real-camera verification.
+- [x] Body resumes original orbit relationship after return in unit coverage; needs real-camera verification.
+- [x] After return, the app exits to the solar-system view, restores background opacity, and unlocks solar interaction in unit/app logic; needs real-camera verification.
+- [x] Moon uses the same unified return path back to its Earth/Moon relationship in metadata/unit coverage; needs real-camera verification.
 - [ ] False positives are low enough for a 30-60 second demo.
-- [ ] `npm run build` passes.
-- [ ] Behavior is manually tested or marked `NEEDS_MANUAL_VERIFY`.
+- [x] `npm run typecheck`, `npm test`, and `npm run build` pass.
+- [x] Behavior is marked `NEEDS_MANUAL_VERIFY` for real webcam testing.
 
 Suggested Codex prompt:
 
 ```text
 Goal:
-Implement Milestone 9: PinchTap release, floating focus, and throw-return behavior.
+Implement Milestone 9: PinchTap release, floating focus, and top-left index-finger return button behavior.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.11, 7.12, and 13.
@@ -834,12 +836,15 @@ Read @ar_solar_system_prd.md sections 7.11, 7.12, and 13.
 Constraints:
 - PinchTap release keeps the body floating in PlanetFocusView.
 - Floating focus must not return to orbit automatically.
-- Throw return requires clear velocity and direction near pinch release.
-- Returning body should restore original scale, orbit layer, and motion, then exit back to the solar-system view.
+- The old pinch-and-throw return command is retired.
+- The palm-facing open-hand return command is retired.
+- Return requires the tracked index fingertip to stay on the top-left glass button for 1 second.
+- The button shows a visible progress bar and cancels when the fingertip leaves the button, the hand is lost, or focus exits.
+- Returning body should animate for 0.5 seconds, restore original scale, orbit layer, opacity, and motion, then exit back to the solar-system view.
 - Update docs if thresholds or behavior are changed.
 
 Done when:
-- Focused body can be placed down, left floating, then thrown back to orbit.
+- Focused body can be placed down, left floating, then returned to orbit by holding the tracked index fingertip on the top-left button.
 - npm run build passes.
 - TODO.md is updated.
 ```
@@ -855,8 +860,8 @@ Tasks:
 - [ ] Improve solar glow, orbit materials, and body readability.
 - [ ] Add star dust and nebula effects only after opening begins.
 - [ ] Add hand-proximity feedback such as small light rings or particles.
-- [ ] Add return tail effect.
-- [ ] Tune smoothing for body reference, hands, scale, rotation, pinch, and throw.
+- [ ] Add optional return highlight or trail effect if the 0.5s adjustment needs stronger feedback.
+- [ ] Tune smoothing for body reference, hands, scale, rotation, pinch, and return animation.
 - [ ] Tune trigger thresholds for common laptop webcam framing.
 - [ ] Reduce particle count or post-processing if FPS is unstable.
 - [ ] Add presentation/recording mode that hides debug UI.
@@ -868,7 +873,7 @@ Acceptance criteria:
 - [ ] A viewer can understand the solar system is pulled from between the hands.
 - [ ] A viewer can understand the solar system is a hand-controlled object that can free-hover where it is released.
 - [ ] Scaling and rotation look spatial.
-- [ ] Activation, planet focus, PinchTap release-to-floating, and throw-return are visually obvious.
+- [ ] Activation, planet focus, PinchTap release-to-floating, and top-left index-finger return are visually obvious.
 - [ ] Demo runs at a usable frame rate on a normal laptop.
 - [ ] Recording mode hides debug clutter.
 - [ ] `npm run build` passes.
@@ -971,12 +976,17 @@ Manual verification handoff rule:
 13. Pinch-activate a body and confirm it stops orbiting but keeps self-rotating.
 14. After pinch-activating a body, use the same activating hand's thumb/index pair to close, reopen, and close again; confirm it enters the planet focus view.
 15. In the focus view, confirm one-hand spread/contract/fist/push does not zoom, pan, or reset the focused body.
-16. After entering the focus view, keep a hand in the focused-body heat zone through the intro, then move it out and touch again; confirm it does not follow during the centered intro and only starts follow after the fresh touch dwells for 1 second.
+16. After entering the focus view, keep a hand in the focused-body heat zone through the intro, then move it out and touch again; confirm the body finishes its ~0.3s zoom-to-center intro, does not follow during the centered intro, and only starts follow after the fresh touch dwells for 1 second.
 17. Touch the focused body heat zone with one hand for 1 second, move it, then perform a close-open PinchTap with that hand to place it down; confirm it enters deselected/wait-for-clear, floats in the focus view, and becomes selectable again only after the hand leaves the heat zone.
-18. Touch the focused body heat zone with both hands for 1 second, move both hands and change the hand distance, then perform a close-open PinchTap with either hand to place it down; confirm the body follows the midpoint, scales with hand distance, then waits until both hands leave the heat zone before it can be selected again.
-17. Pinch the floating body again and throw toward the orbit target; confirm it returns to orbit and exits back to the solar-system view.
-17. Repeat with Moon and Saturn.
-18. Run recording mode and confirm debug UI is hidden.
+18. Touch the focused body heat zone with both hands for 1 second, then move both hands and change the distance between them; confirm the body follows the midpoint and scales with the distance between the two hands, then perform a close-open PinchTap with either hand to place it down and confirm it waits until both hands leave the heat zone before it can be selected again.
+19. In two-hand follow, draw the two hands together (and/or close each hand's pinch) to shrink the body; confirm the body shrinks well below its entered size and is NOT placed down just from the hands or fingers coming together.
+20. In single-hand follow, bring the other (off) hand into the frame but keep it away from the focused-body heat zone; confirm control stays with the original hand and the body is not dropped.
+21. In two-hand follow, pull one hand out of the focused-body heat zone while keeping the other on it; confirm control switches to single-hand move-only with the staying hand and the body does not lurch toward the withdrawn hand.
+22. In the focus view, confirm a transparent glass-style rectangular button appears at the top-left with a return icon and the label "长按返回太阳系".
+23. Put your tracked index fingertip on the top-left return button and move it away before 1 second; confirm the button progress resets, the state does not enter `BodyReturning`, and the focused body stays in the focus view. Mouse clicking should not be needed for this test.
+24. Hold your tracked index fingertip on the top-left return button for 1 second; confirm the progress fills, the app enters `BodyReturning`, the focused body animates back to the solar-system body position/size over about 0.5 seconds, background opacity restores, and the state returns to `SolarFreeHover`.
+25. Repeat with Moon and Saturn.
+26. Run recording mode and confirm debug UI is hidden.
 
 ### Milestone 3 Manual Verification Checklist
 
@@ -1042,10 +1052,10 @@ These should not block early milestones, but Codex should record decisions when 
 - [x] Whether to use plain TypeScript modules or add React. Decision: use plain TypeScript modules for the initial Web Demo.
 - [x] Exact mapping from MediaPipe landmark coordinates to Three.js scene coordinates. Decision: centralized in `src/interaction/coordinateMapping.ts` (object-fit: contain + mirror aware); `mapNormalizedToWorld` unprojects with three's `Raycaster` against `scene.getCamera()` and the `z = INTERACTION_PLANE_Z` plane. The debug overlay already maps through it; M4 3D content must use the same module. Final world-plane depth still subject to M4 tuning.
 - [ ] Final pinch threshold values after real webcam testing.
-- [ ] Final throw velocity threshold after real webcam testing.
+- [ ] Final return button size, top-left placement, progress feel, and 1-second hold comfort after real webcam testing.
 - [ ] Final PinchTap timing threshold after real webcam testing.
-- [ ] Final focused-body screen clamp and return-target direction thresholds after real webcam testing.
-- [ ] How strong original-orbit placeholder markers should be.
+- [ ] Final focused-body screen clamp after real webcam testing.
+- [ ] Whether the button-return animation needs an additional subtle trail or highlight.
 - [ ] Whether labels use Chinese names, English names, or both.
 
 ## Deferred / Post-MVP Ideas
@@ -1065,6 +1075,52 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-24 — M9 return moved from open-palm gesture to top-left index-finger button
+
+- Requirement change: the palm-facing-screen five-finger open-hand return command is retired because it was unreliable during focus/control state changes. Single-planet return is now a transparent glass-style rectangular button at the top-left of the screen, with a return icon and the label "长按返回太阳系"; the user activates it by holding the tracked index fingertip on the button, not by mouse-clicking it.
+- Interaction update: holding the tracked index fingertip on the top-left button for 1 second fills the button progress bar and enters `BodyReturning`; moving the fingertip off the button before the threshold resets the progress and keeps the body in the focus view.
+- Implementation update: `main.ts` owns the index-finger return-button dwell and starts the existing 0.5 second focused-body return animation, while `PlanetFocusController` no longer detects open-palm return gestures.
+- Verification update: open-palm gesture tests were removed, return animation unit coverage remains, gesture-helper tests cover index-finger button hit/hold/reset, and manual browser/camera verification now covers the top-left button visibility, progress reset, and 1-second index-finger return.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `index.html`, `src/main.ts`, `src/interaction/planetReturnButton.ts`, `src/interaction/planetFocusController.ts`, `src/rendering/debugOverlay.ts`, `src/rendering/interactionStatusSummary.ts`, `src/styles.css`, `tests/gesture/planetReturnButton.test.ts`, and `tests/gesture/planetFocusController.test.ts`.
+- Remaining ambiguity: real webcam/browser testing should confirm the button position, size, glass readability, index-finger hit tolerance, progress feel, and whether the 1-second hold is comfortable during the demo.
+
+### 2026-06-24 — BodyReturning animation no longer gets cancelled by focus clearing
+
+- Bug fix: after `BodyReturning` started, a later activation/focus update could clear `focusedBody` while the 0.5 second return animation was still active. The UI then showed "returning" with the then-current open-palm return reason, but the large focused body stayed visually stuck instead of animating back. Later on 2026-06-24, the trigger itself was superseded by the top-left index-finger button.
+- Implementation update: `main.ts` now treats `BodyReturning` as a dedicated return phase and skips planet activation/focus input updates while the return animation is active. `CodePlaceholderSolarSystem` also preserves an active focused return overlay if a mid-return `focusedBody: null` clear arrives, ignores any same-frame follow placement write while the return transition is active, and only allows clearing after the return transition completes.
+- Verification update: added `tests/unit/solarSystemInteraction.test.ts` coverage that mid-return focus clearing and same-frame follow placement writes do not hide/cancel the overlay, and the return still completes.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/main.ts`, `src/solar/focusedCelestialBody.ts`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam verification should confirm the status changes from `BodyReturning` back to `SolarFreeHover` immediately after the visible 0.5 second return animation.
+
+### 2026-06-24 — M9 open-palm return hold shortened and made control-state tolerant
+
+- Requirement change: the open-palm single-planet return hold threshold is now 2 seconds instead of the previous longer hold.
+- Requirement clarification: if the not-yet-complete open-palm hold touches the focused-body heat zone and causes `PlanetFocusControlled` / `SingleHandFollow`, that state change is allowed and must not reset the return timer; the timer continues until the 2-second threshold.
+- Implementation update: `PlanetFocusController` now treats non-ready open-palm return detection as a parallel timer rather than an early state-blocking update, so heat-zone dwell/control can proceed while the return hold accumulates.
+- Verification update: `tests/gesture/planetFocusController.test.ts` now covers the 2-second threshold, movement reset, and continued return timing through single-hand follow.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/planetFocusController.ts`, `src/main.ts`, `src/rendering/interactionStatusSummary.ts`, and `tests/gesture/planetFocusController.test.ts`.
+- Remaining ambiguity: real webcam testing must confirm whether 2 seconds plus the current stable-hand radius feels intentional without creating accidental returns during normal focus manipulation.
+
+### 2026-06-24 — M9 open-palm return replaces throw-return
+
+- Requirement change: the old single-planet return command, pinch-and-throw toward the original orbit target, is retired. The current return command is one palm facing the screen with five fingers straight, held stable for 2 seconds.
+- Implementation update: `PlanetFocusController` now detects the open-palm return hold only in focus states, tracks hold time/score/hand key in debug output, resets the timer when posture is lost or the hand moves too far, and enters `BodyReturning` only after the full 2-second stable hold.
+- Return animation: the focused overlay now animates back to the solar-system body position and size over 0.5 seconds. The background solar system remains dimmed and interaction-locked during that animation; once complete, focus state clears, opacity is restored, the body resumes its original orbit relationship, and the app returns to `SolarFreeHover`.
+- Verification update: added/extended `tests/gesture/planetFocusController.test.ts` and `tests/unit/solarSystemInteraction.test.ts` for 2-second hold acceptance, movement reset, 0.5-second return animation, and opacity/interaction restore. `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/planetActivationController.ts`, `src/interaction/planetFocusController.ts`, `src/main.ts`, `src/rendering/debugOverlay.ts`, `src/rendering/interactionStatusSummary.ts`, `src/solar/focusedCelestialBody.ts`, `src/solar/solarSystem.ts`, `src/utils/types.ts`, `tests/gesture/planetFocusController.test.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam testing must confirm palm-facing score, five-finger open-hand scoring, stable-hand radius, and 2-second hold feel are reliable enough for a 30-60 second demo.
+
+### 2026-06-24 — M8 focus centering fix, dwell stability, and pinch-decoupled two-hand scaling
+
+- Bug fix: entering `PlanetFocusView` could leave the focused body stuck off-center and never able to start follow. `applyPlanetFocusSnapshot` in `main.ts` was driving the body placement every frame during the intro/centering/dwell, which cancelled the ~0.3s intro animation and pinned the body at the source screen position, deadlocking the centered-intro gate. `main.ts` now drives the body transform from hand input only while the controller is in `SingleHandFollow` / `TwoHandFollow`; the intro animation and the post-follow hold own the transform in all other focus states.
+- Stability: the 1-second heat-zone dwell now tolerates brief tracking gaps and boundary flicker. A single dropped frame no longer resets the dwell timer (short grace window), and a hand already dwelling stays counted as touching until it clearly leaves the heat zone (hysteresis past the strict touch radius).
+- Follow anchoring: single-hand follow drives the body from the thumb+index pinch midpoint (previously the palm center); two-hand follow drives position from the midpoint between the two hands' pinch midpoints. The followed position and scale are low-pass smoothed.
+- Two-hand scaling decoupled from pinch: scale is driven only by the distance between the two hands (their pinch midpoints), not by either hand's own thumb/index pinch, so a shrink gesture is no longer misread as a `PinchTap` that drops the body. The scale range was widened (controller and `FocusedCelestialBody` clamps) so drawing the hands together can shrink the body well below the previous floor.
+- Off-hand robustness: an off-hand entering or leaving the frame during single-hand follow shifts the active hand's internal key; the controller now re-acquires the active hand by spatial continuity, so a second hand merely appearing outside the heat zone no longer drops follow.
+- Two-hand to single downgrade: if one hand clearly leaves the focused body's heat zone while the other keeps gripping, control downgrades to single-hand (move-only, scale frozen) follow with the staying hand instead of dragging the body toward the withdrawing hand; re-entering two-hand follow requires the second hand to re-dwell 1 second in the heat zone.
+- Verification update: extended `tests/gesture/planetFocusController.test.ts` to cover dwell grace through a brief gap and reset past the grace window, two-hand shrink below the old floor, scale staying put when only a pinch closes, single-hand follow surviving an off-hand appearing outside the heat zone, and two-hand downgrade to single when one hand leaves the zone. Full suite green.
+- Remaining ambiguity: real webcam testing should confirm the follow position/scale smoothing, the dwell grace window, and the two-hand keep/withdraw heat-zone thresholds feel right.
 
 ### 2026-06-24 — M8 focus follow gated by visual intro cooldown and heat-zone re-entry
 
@@ -1379,11 +1435,11 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 
 ### 2026-06-22 — Planet focus gesture model and milestone plan updated
 
-- Requirement refinement: replaced the old body grab/freeze/release flow with the new planet interaction model: hover, pinch activation, main-hand pinch lock plus off-hand spread to enter `PlanetFocusView`, always-on self-rotation, then-current single-planet zoom/pan/support, off-hand `PinchTap` release-to-floating, and pinch-and-throw return. Superseded note: single-planet one-hand zoom/pan/reset was removed on 2026-06-24; support/floating/return remain.
-- Added Milestone 5.5 for one-hand solar-system free-hover inspection controls, and rewrote Milestones 6-9 around interactive body metadata, pinch activation, planet focus view, PinchTap release, floating focus, and throw return.
+- Requirement refinement: replaced the old body grab/freeze/release flow with the new planet interaction model: hover, pinch activation, main-hand pinch lock plus off-hand spread to enter `PlanetFocusView`, always-on self-rotation, then-current single-planet zoom/pan/support, off-hand `PinchTap` release-to-floating, and the then-planned pinch-and-throw return. Superseded note: single-planet one-hand zoom/pan/reset was removed on 2026-06-24, and pinch-and-throw return was first replaced by open-palm return on 2026-06-24, then replaced again by the top-left index-finger button.
+- Added Milestone 5.5 for one-hand solar-system free-hover inspection controls, and rewrote Milestones 6-9 around interactive body metadata, pinch activation, planet focus view, PinchTap release, floating focus, and the then-planned return behavior.
 - Updated PRD and durable agent rules so activated/focused bodies stop original orbiting but keep self-rotation; normal place-down does not return to orbit or exit the focus view.
 - Affected files: `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `ar_solar_system_prd.md`, and `~/CodeXProject/物理宇宙资料/手势操控语义整理.md`.
-- Remaining ambiguity: exact PinchTap timing, heat-zone dwell, focused-body clamp limits, two-hand scale feel, and throw direction thresholds need real webcam tuning.
+- Remaining ambiguity: exact PinchTap timing, heat-zone dwell, focused-body clamp limits, and two-hand scale feel need real webcam tuning; the old throw direction threshold ambiguity is now superseded by return-button tuning.
 
 ### 2026-06-22 — Convention update: reuse-vs-custom balance, dead-state rule, changelog scope
 

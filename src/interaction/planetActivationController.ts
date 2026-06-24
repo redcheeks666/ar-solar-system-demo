@@ -81,15 +81,22 @@ const PINCH_START_RATIO = 0.48;
 const PINCH_END_RATIO = 0.62;
 const PINCH_START_MAX_DISTANCE_PX = 96;
 const PINCH_END_MAX_DISTANCE_PX = 128;
-const DOUBLE_CLOSE_STABLE_MS = 40;
+// Tuned against a real gesture log: users make shallow, sharp pinches (ratio bottoms out near 0.30
+// for only 1-2 frames) and re-open only slightly between the two closes, so the reopen registers
+// slowly. These constants are set so that real pattern reaches focus in ~3.5s instead of never.
+//
+// Sharp pinch => a short debounce (1-2 frames) is enough to reject a single-frame noise spike.
+const DOUBLE_CLOSE_STABLE_MS = 50;
 const DOUBLE_CLOSE_MIN_OPEN_GAP_MS = 70;
-const DOUBLE_CLOSE_MAX_INTERVAL_MS = 1600;
+// A slow, slight reopen eats into this budget, so it must be generous. False entry is held off by
+// the wide open/close hysteresis below + the full open-close-open-close sequence, not a short window.
+const DOUBLE_CLOSE_MAX_INTERVAL_MS = 2500;
 const DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS = 180;
 const DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS = 900;
-const DOUBLE_CLOSE_OPEN_RATIO = 0.34;
-const DOUBLE_CLOSE_CLOSE_RATIO = 0.28;
-const DOUBLE_CLOSE_OPEN_DISTANCE_PX = 66;
-const DOUBLE_CLOSE_CLOSE_DISTANCE_PX = 56;
+// Wide hysteresis: the close ratio is loose enough to catch the shallow pinches users actually make
+// (~0.30), while the 0.09 gap up to the open ratio stops small finger fidgets faking a double-close.
+const DOUBLE_CLOSE_OPEN_RATIO = 0.42;
+const DOUBLE_CLOSE_CLOSE_RATIO = 0.33;
 const DOUBLE_CLOSE_REOPEN_DELTA_RATIO = 0.035;
 const DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX = 7;
 const DOUBLE_CLOSE_RECLOSE_DELTA_RATIO = 0.03;
@@ -651,8 +658,10 @@ export class PlanetActivationController {
     }
 
     return (
+      // OR (mirrors isClosedAfterReopen): a clear ratio rise OR a clear pixel rise counts as a
+      // reopen, so a modest deliberate re-open is not missed — that miss forced repeated pinches.
       metrics.ratio - this.latchedCloseMetrics.ratio >=
-        DOUBLE_CLOSE_REOPEN_DELTA_RATIO &&
+        DOUBLE_CLOSE_REOPEN_DELTA_RATIO ||
       metrics.distancePx - this.latchedCloseMetrics.distancePx >=
         DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX
     );
@@ -689,7 +698,8 @@ function isPlanetFocusState(state: InteractionState): boolean {
   return (
     state === 'PlanetFocusView' ||
     state === 'PlanetFocusControlled' ||
-    state === 'PlanetFocusFloating'
+    state === 'PlanetFocusFloating' ||
+    state === 'BodyReturning'
   );
 }
 
@@ -770,18 +780,15 @@ function isPinchHeld(metrics: PinchMetrics): boolean {
 }
 
 function isDoubleCloseOpen(metrics: PinchMetrics): boolean {
-  return (
-    metrics.ratio >= DOUBLE_CLOSE_OPEN_RATIO ||
-    metrics.distancePx >= DOUBLE_CLOSE_OPEN_DISTANCE_PX ||
-    !isPinchHeld(metrics)
-  );
+  // Ratio is palm-scale-relative, so it is robust to how far the hand is from the camera; the raw
+  // pixel gap is not, so it is intentionally excluded. `!isPinchHeld` stays as a fully-open fallback.
+  return metrics.ratio >= DOUBLE_CLOSE_OPEN_RATIO || !isPinchHeld(metrics);
 }
 
 function isDoubleCloseClosed(metrics: PinchMetrics): boolean {
-  return (
-    metrics.ratio <= DOUBLE_CLOSE_CLOSE_RATIO ||
-    metrics.distancePx <= DOUBLE_CLOSE_CLOSE_DISTANCE_PX
-  );
+  // Ratio only: the raw pixel gap shrinks as the hand moves away from the camera and would otherwise
+  // read open fingers as "closed" — the main source of false focus entries.
+  return metrics.ratio <= DOUBLE_CLOSE_CLOSE_RATIO;
 }
 
 function maxPinchMetrics(

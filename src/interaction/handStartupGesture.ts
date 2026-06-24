@@ -18,6 +18,10 @@ const PULL_VELOCITY_THRESHOLD = 0.05;
 const PULL_STOP_GRACE_MS = 1000;
 const POSITION_SMOOTHING_ALPHA = 0.42;
 const VELOCITY_SMOOTHING_ALPHA = 0.35;
+// After collapsing back to EmptyIdle the hands are still in frame and closed; withdrawing them
+// (hands part, then leave the frame) otherwise reads as a fresh pull-open. Hold off re-arming for
+// this long so the withdrawal motion cannot re-open the system.
+const POST_COLLAPSE_COOLDOWN_MS = 1000;
 
 const EMPTY_HAND_STARTUP_SNAPSHOT: HandStartupGestureSnapshot = {
   leftHand: null,
@@ -62,6 +66,8 @@ export class HandStartupGestureController {
   private handsClosedExitSince: number | null = null;
   private pullStartDistance: number | null = null;
   private lastPullMovementAt: number | null = null;
+  private previousState: InteractionState | null = null;
+  private pullCooldownUntil: number | null = null;
 
   update(
     tracking: TrackingSnapshot,
@@ -69,6 +75,8 @@ export class HandStartupGestureController {
     timestamp: number,
     thresholds: GestureThresholds,
   ): HandStartupGestureUpdate {
+    this.updatePullCooldown(currentState, timestamp);
+
     if (!isStartupState(currentState)) {
       this.resetTrackingMemory();
       return {
@@ -170,7 +178,33 @@ export class HandStartupGestureController {
     this.rightFilter.reset();
     this.distanceFilter.reset();
     this.velocityFilter.reset();
+    this.previousState = null;
+    this.pullCooldownUntil = null;
     this.resetTrackingMemory();
+  }
+
+  /**
+   * Returning to EmptyIdle from any active solar state (e.g. after a collapse) means the hands are
+   * still in frame and closed. The natural withdrawal — hands part, then leave the frame — would
+   * otherwise be re-read as a fresh pull-open. Arm a short cooldown on that transition so it cannot.
+   * Tracked here (not in resetTrackingMemory) so a momentary hand loss during withdrawal does not
+   * clear the cooldown.
+   */
+  private updatePullCooldown(currentState: InteractionState, timestamp: number): void {
+    if (
+      currentState === 'EmptyIdle' &&
+      this.previousState !== null &&
+      this.previousState !== 'CameraReady' &&
+      !isStartupState(this.previousState)
+    ) {
+      this.pullCooldownUntil = timestamp + POST_COLLAPSE_COOLDOWN_MS;
+    }
+
+    this.previousState = currentState;
+  }
+
+  private isInPullCooldown(timestamp: number): boolean {
+    return this.pullCooldownUntil !== null && timestamp < this.pullCooldownUntil;
   }
 
   private resolveHandPair(
@@ -248,6 +282,13 @@ export class HandStartupGestureController {
     }
 
     if (currentState === 'EmptyIdle') {
+      if (this.isInPullCooldown(timestamp)) {
+        // Hold in EmptyIdle through the post-collapse cooldown, and keep the closed-stable timer
+        // from accumulating so the cooldown's end does not immediately snap to HandsClosed.
+        this.closedStableSince = null;
+        return null;
+      }
+
       return this.updateIdleState(distance, hasClosedEvidence, timestamp);
     }
 

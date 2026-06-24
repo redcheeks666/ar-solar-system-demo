@@ -174,6 +174,14 @@ export class DebugOverlay {
       ],
       ['Focus pinch hand', snapshot.planetFocus.pinchTapHandKey ?? 'none'],
       ['Focus reason', snapshot.planetFocus.transitionReason],
+      [
+        'Return button',
+        snapshot.planetFocus.returnGestureRequiredMs > 0
+          ? `${Math.round(snapshot.planetFocus.returnGestureMs)}ms / ${Math.round(
+              snapshot.planetFocus.returnGestureRequiredMs,
+            )}ms, hand=${snapshot.planetFocus.returnGestureHandKey ?? 'none'}`
+          : 'hidden',
+      ],
       ['Throw velocity', formatNullable(snapshot.throwVelocity)],
       ['Whole control', snapshot.wholeSystem.controlState],
       [

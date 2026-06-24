@@ -292,7 +292,13 @@ export class CodePlaceholderSolarSystem {
     };
     scaleMultiplier: number;
   }): void {
-    this.focusedBodies.get(input.focusedBody)?.setWorldPlacement(
+    const focusedBody = this.focusedBodies.get(input.focusedBody);
+
+    if (!focusedBody || focusedBody.isReturnTransitionActive()) {
+      return;
+    }
+
+    focusedBody.setWorldPlacement(
       this.group,
       TEMP_FOCUS_CONTROL_POSITION.set(
         input.worldPosition.x,
@@ -303,12 +309,54 @@ export class CodePlaceholderSolarSystem {
     );
   }
 
+  startFocusedBodyReturn(input: {
+    focusedBody: InteractiveCelestialBodyId;
+  }): boolean {
+    const focusedBody = this.focusedBodies.get(input.focusedBody);
+
+    if (!focusedBody?.root.visible) {
+      return false;
+    }
+
+    const sourceBody = this.getBodyById(input.focusedBody);
+    const sourceWorldPosition = sourceBody.getWorldPosition(
+      TEMP_FOCUS_RETURN_POSITION,
+    );
+    const sourceWorldScale = sourceBody.getMaxWorldScale(TEMP_FOCUS_RETURN_SCALE);
+    focusedBody.startReturnTransition(
+      this.group,
+      sourceWorldPosition,
+      sourceWorldScale,
+    );
+
+    return true;
+  }
+
+  isFocusedBodyReturnComplete(
+    focusedBody: InteractiveCelestialBodyId | null,
+  ): boolean {
+    if (!focusedBody) {
+      return false;
+    }
+
+    return (
+      this.focusedBodies.get(focusedBody)?.isReturnTransitionComplete() ?? false
+    );
+  }
+
   applyBodyInteractionState(input: {
     hoveredBody: InteractiveCelestialBodyId | null;
     activatedBody: InteractiveCelestialBodyId | null;
     focusedBody?: InteractiveCelestialBodyId | null;
   }): void {
-    const nextFocusedBody = input.focusedBody ?? null;
+    let nextFocusedBody = input.focusedBody ?? null;
+    if (
+      !nextFocusedBody &&
+      this.focusedBody &&
+      this.focusedBodies.get(this.focusedBody)?.isReturnTransitionActive()
+    ) {
+      nextFocusedBody = this.focusedBody;
+    }
     const focusEntered =
       nextFocusedBody !== null && nextFocusedBody !== this.focusedBody;
     this.focusedBody = nextFocusedBody;
@@ -495,6 +543,8 @@ const TEMP_FOCUS_SOURCE_SCALE = new Vector3();
 const TEMP_FOCUS_WORLD_POSITION = new Vector3();
 const TEMP_FOCUS_WORLD_SCALE = new Vector3();
 const TEMP_FOCUS_CONTROL_POSITION = new Vector3();
+const TEMP_FOCUS_RETURN_POSITION = new Vector3();
+const TEMP_FOCUS_RETURN_SCALE = new Vector3();
 
 function getBodyVisualState(
   id: InteractiveCelestialBodyId,

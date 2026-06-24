@@ -19,9 +19,9 @@ The MVP experience is:
 11. A pinch-activated body stops its original orbit but keeps natural self-rotation; after activation, two closeDown events from the same activating hand's thumb/index pair enter a single-planet focus view.
 12. In the single-planet focus view, the selected body remains self-rotating while it is heat-zone-followed, released to floating, and inspected; one-hand focus zoom, pan, and reset controls are retired. The background solar system is dimmed and interaction-locked while preserving basic motion.
 13. In focus view, heat-zone follow is gated by an intro cooldown and heat-zone-clear rule: after DoubleClose enters the focus view, wait for the focused body to finish its centered intro, then require the hands to leave the focused body's heat zone before any follow dwell can begin.
-14. One hand touching the focused body's heat zone for 1 second enters single-hand follow, while two hands touching the heat zone for 1 second enter two-hand follow; two-hand distance scales the focused body.
+14. One hand touching the focused body's heat zone for 1 second enters single-hand follow, while two hands touching the heat zone for 1 second enter two-hand follow; focused-body size is driven by the distance between the two hands (not by either hand's own pinch), and if one hand leaves the heat zone the staying hand keeps move-only control.
 15. During single-hand follow, that hand's thumb-to-any-finger close-open `PinchTap` places the body down; during two-hand follow, either following hand can perform the same `PinchTap` to place it down and clear follow selection. After place-down, the controller must wait until all hands leave the focused body's heat zone before returning to the selectable idle/floating state. It remains floating in the planet focus view and does not return to orbit.
-16. A clear pinch-and-throw gesture toward the original orbit target returns the focused body to orbit, then exits back to the solar-system view.
+16. In the single-planet focus view, a transparent glass-style rectangular button appears at the top-left of the screen with a return icon and the label "长按返回太阳系"; placing the tracked index fingertip on that button and holding it there for a stable 1 second fills a progress bar, returns the focused body to its original orbit, then exits back to the solar-system view after a 0.5 second position/scale adjustment animation. Mouse/pointer clicking the DOM button is not the product interaction. The palm-facing open-hand return gesture is retired.
 
 This is not a normal 3D solar system page. It is a **webcam AR interaction demo** where the 3D content appears to exist in the camera-visible space controlled by the user's hands.
 
@@ -98,7 +98,7 @@ camera on
 → inspect the self-rotating body with heat-zone dwell follow, release-to-floating, and return gestures
 → after the intro and heat-zone clear, one-hand 1s heat-zone dwell moves the body; two-hand 1s heat-zone dwell moves and scales it by hand distance
 → a following hand PinchTap leaves it floating in the focus view, then all hands must leave the heat zone before it becomes selectable again
-→ pinch-and-throw returns it to orbit and exits back to the solar-system view
+→ tracked index fingertip held on the top-left glass return button for 1 second returns it to orbit and exits back to the solar-system view after the 0.5 second return adjustment animation
 ```
 
 ## Recommended Tech Stack
@@ -161,7 +161,7 @@ Prefer this structure for the first Web Demo:
       solarOpeningController.ts
       planetActivationController.ts
       planetFocusController.ts
-      throwDetector.ts
+      planetReturnButton.ts
     solar/
       solarSystem.ts
       celestialBody.ts
@@ -329,14 +329,15 @@ Only one body may be activated or focused at a time in the MVP.
 - The focused body keeps self-rotating during activation, focus, heat-zone follow, release-to-floating, and inspection.
 - One-hand spread/contract, one-hand push, and contract-to-fist hold are retired focus controls; they must not zoom, pan, or reset the focused body unless the user explicitly reopens that requirement.
 - After entering `PlanetFocusView`, focus follow enters an intro cooldown state until the focused body is actually near the screen-centered focus position. This is not a fixed-time unlock: hands that are already touching the focused body's heat zone during or after the intro must leave the heat zone, then re-enter it, before a new dwell can begin.
-- One hand touching the current focused body's heat zone for 1 second enters single-hand follow; the focused body follows that hand and stays constrained to the visible screen.
-- Two hands touching the current focused body's heat zone for 1 second enter two-hand follow; the focused body follows the two-hand midpoint, and the distance between the two hands adjusts focused-body size.
+- One hand touching the current focused body's heat zone for 1 second enters single-hand follow; the focused body follows that hand's thumb+index pinch midpoint and stays constrained to the visible screen. A second (off) hand merely appearing in frame outside the heat zone must not drop single-hand follow; control stays with the original hand (the controller re-acquires the active hand by spatial continuity even if its internal hand key shifts when the hand count changes).
+- Two hands touching the current focused body's heat zone for 1 second enter two-hand follow; the focused body follows the midpoint between the two hands' thumb+index pinch midpoints. Focused-body size is driven only by the distance between the two hands, not by either hand's own thumb/index pinch, so closing a pinch must not scale the body or be misread as a place-down; drawing the two hands together can shrink the body well below its engaged size.
+- During two-hand follow, if one hand clearly leaves the focused body's heat zone while the other keeps gripping, control downgrades to single-hand (move-only, scale frozen) follow with the staying hand rather than dragging the body toward the withdrawing hand. Bringing a second hand back into the heat zone and dwelling 1 second re-enters two-hand follow.
 - During single-hand follow, the following hand can perform a thumb-to-any-finger close-open `PinchTap` to place the body down.
 - During two-hand follow, either following hand can perform the same `PinchTap` to place the body down and clear follow selection. In the current product semantics, clearing follow selection means entering `PlanetFocusFloating`; it does not exit focus view or return the body to orbit.
 - After any follow `PinchTap` places the focused body down, the controller must enter a deselected/wait-for-clear state: no new follow dwell may begin until every visible hand is outside the focused body's heat zone.
 - A floating focused body must not automatically return to orbit.
-- A clear pinch-and-throw gesture toward the original orbit target enters `BodyReturning`.
-- A returning body animates back to its original orbit, restores its original layer/relationship, resumes orbiting, and exits back to the solar-system view.
+- The old pinch-and-throw return command is retired. The palm-facing-screen five-finger open-hand return command is also retired. In `PlanetFocusView`, `PlanetFocusControlled`, and `PlanetFocusFloating`, show a transparent glass-style rectangular button at the top-left of the screen with a return icon and the label "长按返回太阳系"; holding the tracked index fingertip on the button for 1 second fills the button progress bar and enters `BodyReturning`. Mouse/pointer clicking the DOM button must not be required for the product path.
+- A returning body animates back to its original solar-system position and scale over about 0.5 seconds, restores its original layer/relationship, resumes orbiting, restores background solar-system opacity, unlocks solar-system interaction, and exits back to the solar-system view.
 
 ## Interaction State Machine
 
@@ -380,13 +381,13 @@ Required smoothing:
 - Short hold window for missing hands during startup gestures and active planet activation/focus.
 - Hysteresis thresholds for pinch start and pinch end.
 - Slerp or equivalent smoothing for 3D rotations.
-- Velocity smoothing for throw detection.
+- Stable tracked-index-fingertip hold timing for the top-left return button progress.
 - Once visible 3D solar-system content is driven by hand endpoints, reject abrupt endpoint-geometry outliers before updating the solar-system transform. Fast hand withdrawal, edge-of-frame partial hand tracking, or one-frame MediaPipe mis-detection must hold the last stable transform instead of shrinking or jumping the model.
-- Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release, or throw velocity. Rendering still runs every requestAnimationFrame.
+- Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release stability, or return-button index-finger dwell. Rendering still runs every requestAnimationFrame.
 - Assign visual-left/right hand identity from the previous frame's trajectory before smoothing, then smooth per visual slot (`gestureInputFrame.ts`). Do not smooth per MediaPipe handedness, which swaps history when hands cross.
 - Keep MediaPipe image-landmark z out of screen-plane gesture distances (close / pull / endpoint / hover / support); use 2D x/y. Prefer world landmarks for hand-shape (open-hand / fist / pinch).
 
-Avoid single-frame state flips for important actions such as pull open, pinch start, pinch end, and throw return.
+Avoid single-frame state flips for important gesture actions such as pull open, pinch start, and pinch end; UI return requires the tracked index fingertip to stay on the top-left button for 1 second.
 
 ## Debug and Recording Requirements
 
@@ -424,7 +425,7 @@ Debug panel should eventually show:
 - Current hovered body.
 - Current activated/focused body.
 - Pinch state.
-- Throw velocity.
+- Single-planet return button visibility and long-press progress.
 
 Add a recording mode or presentation mode that hides debug UI and leaves only minimal user-facing guidance.
 
@@ -549,7 +550,7 @@ These shared modules exist so the same logic is not re-derived in multiple files
 - `src/interaction/wholeSystemIntent.ts` — the orchestration layer ONLY: the `WholeSystemIntentController` state machine plus cross-frame state (endpoints, latches, stable timers, previous hand-axis angle/palm normal). Stateful rotation-velocity scoring stays here because it needs previous-frame data; all stateless computation is delegated to the modules above. Do not move pure scoring back in, and do not relocate the stateful rotation methods out.
 - `src/interaction/coordinateMapping.ts` — the only place that converts normalized MediaPipe coordinates into displayed stage pixels and Three.js world coordinates. It is `object-fit: contain` and mirror aware. `mapNormalizedToWorld` unprojects with three's `Raycaster` against the real `scene.getCamera()` and the `z = INTERACTION_PLANE_Z` plane, so it stays correct for any camera pose; do not reintroduce a fixed-camera `tan(fov/2)` projection. The debug landmark overlay and all future 3D content (M4+) must map through it, passing `scene.getCamera()`, so hands, virtual endpoints, and 3D content stay pixel-aligned. Do not hand-roll `(1 - x) * width` style mapping elsewhere.
 - `src/interaction/gestureInputFrame.ts` — turns raw MediaPipe hands into stabilized hands by assigning visual-left/right identity from the previous frame's trajectory BEFORE smoothing (per visual slot), so a MediaPipe handedness flip during a hand crossing cannot swap smoother history. `HandTracker` builds raw hands (`buildTrackedHand`) and runs them through this; do not move smoothing back ahead of visual pairing.
-- `src/interaction/freshFrameGate.ts` — `isFreshTrackingFrame`: interaction controllers update only when `TrackingSnapshot.lastUpdatedAt` changes, fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release, or throw velocity. The `main.ts` render loop enforces this; do not run the controllers every requestAnimationFrame.
+- `src/interaction/freshFrameGate.ts` — `isFreshTrackingFrame`: interaction controllers update only when `TrackingSnapshot.lastUpdatedAt` changes, fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, or release stability. The `main.ts` render loop enforces this; do not run gesture controllers every requestAnimationFrame. UI-only long-press progress may run on render frames.
 
 Gesture geometry conventions:
 
@@ -587,7 +588,7 @@ When you deliberately choose custom over an available built-in, record the reaso
 - Do not auto-play the opening animation independent of hand distance.
 - If implementing any approved rotation, do not implement it as only 2D screen rotation.
 - Do not make PinchTap place-down, ordinary pinch relaxation, or tracking loss return a body to orbit.
-- Do not make throw return trigger on every release.
+- Do not make ordinary open-hand motion return a body to orbit; single-planet return is now UI-driven by holding the tracked index fingertip on the top-left "长按返回太阳系" button for 1 second, not by mouse-clicking the DOM button.
 - Do not add real backend services for the MVP.
 - Do not add login, database, payments, analytics, or deployment setup for the MVP.
 - Do not add Electron, Unity, Unreal, TouchDesigner, or XR support unless explicitly requested.

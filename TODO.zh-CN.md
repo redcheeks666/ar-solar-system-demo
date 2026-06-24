@@ -60,7 +60,7 @@
 - [x] 第一阶段单颗行星画面中，当前行星以统一 overlay 明确显示，背景太阳系弱化并锁定交互，但保留基础动效。
 - [ ] 当前行星在激活、焦点、热区跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
 - [ ] 单手热区停留可让当前星球跟手，双手热区停留可跟手并按手距缩放，跟随手 `PinchTap` 会解除跟手控制并让行星悬浮在单颗行星画面中。
-- [ ] 明确朝原轨道目标 pinch-and-throw 的手势会让当前行星回轨，并退出回太阳系画面。
+- [ ] 单颗行星焦点状态中，屏幕左上角显示透明玻璃质感按钮；用摄像头追踪到的食指尖按住“长按返回太阳系”1 秒填满进度条后，让当前行星回轨，播放 0.5 秒位置/大小调整动画，恢复背景不透明度、解锁太阳系交互，并退出回太阳系画面。鼠标/DOM pointer 点击不是产品路径，掌心朝屏幕开掌返回已退役。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
 - [ ] 每当主代码仓库提交，或 agent 工作流上下文变化时，私有 `agent-companion-repo` 伴生仓库也必须更新。
 
@@ -453,7 +453,7 @@ Done when:
 - [x] 在占位太阳系层暴露 `group`、`update`、`setVisible`、`setOpeningProgress`、`setTransform` 和 `dispose`。
 - [x] 为 renderer 增加 `addObject3D` / `removeObject3D` 辅助方法和帧时间值，让视觉层可以在 render 前更新。
 - [x] 新增开发专用 `?solarPreview=1` URL 入口，同时保持正常产品路径视觉空场。
-- [x] 保持占位层独立于启动手势、hover、激活、焦点和甩回逻辑。
+- [x] 保持占位层独立于启动手势、hover、激活、焦点和返回逻辑。
 
 验收标准：
 
@@ -717,7 +717,7 @@ Done when:
 
 状态：`NEEDS_MANUAL_VERIFY`
 
-目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、热区跟随、放下悬浮和后续甩回。已退役的单手焦点缩放、平移和复位控制不得实现。
+目标：从激活天体进入单颗行星画面，并让用户在当前行星持续自转的情况下进行观察、热区跟随、放下悬浮和后续左上角按钮返回。已退役的单手焦点缩放、平移和复位控制不得实现。
 
 任务：
 
@@ -752,6 +752,10 @@ Done when:
 - [x] 焦点视觉居中冷却和热区清空门闸可在 controller 测试中阻止居中动画期间/之后立即跟手；仍需真实摄像头验证。
 - [x] 单手热区停留 1 秒可以移动当前行星，并保持在屏幕内；已有 controller 测试覆盖，仍需真实摄像头验证。
 - [x] 双手热区停留 1 秒可以按手距缩放当前行星；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 双手缩放只由两手之间的距离驱动（与手内捏合无关），所以收拢捏合既不缩放也不放下，两手收拢可把行星缩到比进入时更小；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 单手跟随时副手仅出现在热区外不会导致行星被放下；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 双手跟随时一只手离开热区、另一只仍在，会降级为留下那只手的单手移动控制；已有 controller 测试覆盖，仍需真实摄像头验证。
+- [x] 1 秒热区停留对偶发单帧脱手有容错，仅在超过容错窗口后才重新计时；已有 controller 测试覆盖，仍需真实摄像头验证。
 - [x] 跟随手 `PinchTap` 会将当前行星释放到 `PlanetFocusFloating`；已有 controller 测试覆盖，仍需真实摄像头验证。
 - [x] 放下后 controller 会保持取消选中，直到当前星球热区清空；已有 controller 测试覆盖，仍需真实摄像头验证。
 - [x] `npm run build` 通过。
@@ -780,52 +784,50 @@ Done when:
 - TODO.md is updated.
 ```
 
-## Milestone 9 — PinchTap 放下、焦点悬浮和甩回原轨道
+## Milestone 9 — PinchTap 放下、焦点悬浮和食指按钮返回
 
-状态：`TODO`
+状态：`NEEDS_MANUAL_VERIFY`
 
-目标：让用户在单颗行星画面中放下当前行星，使其悬浮在当前位置，然后明确 pinch-and-throw 回原轨道。
+目标：让用户在单颗行星画面中放下当前行星，使其悬浮在当前位置，然后用追踪到的食指尖按住左上角玻璃按钮 1 秒明确回到原轨道。旧的 pinch-and-throw 返回指令和掌心朝屏幕开掌返回指令都已弃用；鼠标/DOM pointer 点击按钮不是产品路径。
 
 任务：
 
 - [x] 单手或双手热区跟随期间，检测跟随手完成的 `PinchTap` 并释放到焦点悬浮；仍需真实摄像头验证。
 - [x] 接受 `PinchTap` 后，解除热区跟手控制，让当前行星悬浮在 `PlanetFocusView` 的当前位置；仍需真实摄像头验证。
 - [x] 悬浮的当前行星保持自转，并且不自动回轨；已有自动化覆盖，仍需真实摄像头验证。
-- [ ] 在背景中显示原轨道目标或方向提示。
-- [ ] 允许悬浮的当前行星再次被 pinch 选中。
-- [ ] pinch 持有当前行星时追踪近期手部速度。
-- [ ] 基于归一化屏幕/场景单位定义甩出速度阈值。
-- [ ] 只在 pinch 释放前短时间内出现高速度时检测为甩出意图。
-- [ ] 当手部运动方向指向原轨道目标时，提高甩出置信度。
-- [ ] 添加 `BodyReturning` 状态。
-- [ ] 将 returning 天体带可见尾迹/光 streak 动画回原轨道位置。
-- [ ] 添加返回过程中的可见尾迹、光 streak 或光效反馈。
-- [ ] 返回时恢复原始天体缩放和父子关系。
-- [ ] 回轨后恢复原始公转，并保持自转。
-- [ ] 回轨完成后退出 `PlanetFocusView`，回到太阳系画面并解锁太阳系交互。
-- [ ] 确保低速释放仍保持在 `PlanetFocusView` 中悬浮。
+- [x] 在文档和产品语义中弃用旧的 pinch-and-throw 返回指令。
+- [x] 在文档和产品语义中弃用掌心朝屏幕开掌返回指令。
+- [x] 在 `PlanetFocusView`、`PlanetFocusControlled` 和 `PlanetFocusFloating` 中显示左上角透明玻璃质感返回按钮。
+- [x] 进入 `BodyReturning` 前要求追踪食指尖在左上角按钮上稳定停留 1 秒。
+- [x] 食指停留蓄力时填充可见按钮进度条；食指尖离开按钮、手部丢失或退出焦点状态时重置进度。
+- [x] 由长按返回按钮进入 `BodyReturning` 状态。
+- [x] 用 0.5 秒动画把焦点 overlay 移回太阳系天体位置和大小。
+- [x] 0.5 秒返回动画期间，背景太阳系保持弱化并锁定交互。
+- [x] 返回动画结束后恢复原始天体缩放/关系、恢复公转、恢复背景不透明度、退出焦点界面并回到 `SolarFreeHover`。
 - [x] 添加焦点 PinchTap、悬浮状态、当前跟随手、停留时间、触碰热区半径和焦点缩放调试值。
-- [ ] 添加甩出速度、甩出方向分数和甩出置信度调试值。
+- [x] 从可见 Debug 面板移除开掌返回调试行，避免把旧手势呈现为当前控制。
 
 验收标准：
 
 - [x] 跟随手 `PinchTap` 可在 controller 测试中放下当前行星；仍需真实摄像头验证。
 - [x] 放下后的当前行星仍在 `PlanetFocusView` 中悬浮，并保持自转；已有自动化覆盖，仍需真实摄像头验证。
-- [ ] 低速 pinch 释放不会让当前行星回轨。
-- [ ] 明确朝原轨道目标 pinch-and-throw 会让当前行星回轨。
-- [ ] 返回动画可见且平滑。
-- [ ] 返回后天体恢复原始轨道关系。
-- [ ] 返回后应用退出到太阳系画面并解锁太阳系交互。
-- [ ] 月球能正确回到地月关系。
+- [x] Pinch 释放、低速手部移动、普通手势和开掌动作不会让当前行星回轨，因为手势返回已弃用。
+- [x] 食指尖按住左上角返回按钮 1 秒可在应用逻辑和手势 helper 测试中进入 `BodyReturning`；仍需真实摄像头/浏览器验证。
+- [x] 1 秒前食指尖移出按钮区域会在手势 helper 测试中重置返回进度；仍需真实摄像头/浏览器验证。
+- [x] 当前星球放下并进入焦点悬浮后，返回按钮仍可使用；仍需真实摄像头/浏览器验证。
+- [x] 返回动画可在单元覆盖中用 0.5 秒把焦点 overlay 移动并缩放回太阳系天体；仍需真实摄像头验证。
+- [x] 返回后天体在单元覆盖中恢复原始轨道关系；仍需真实摄像头验证。
+- [x] 返回后应用退出到太阳系画面、恢复背景不透明度并解锁太阳系交互；已有单元/应用逻辑覆盖，仍需真实摄像头验证。
+- [x] 月球沿统一返回路径回到地月关系；已有元数据/单元覆盖，仍需真实摄像头验证。
 - [ ] 误触发足够低，可以支持 30-60 秒演示。
-- [ ] `npm run build` 通过。
-- [ ] 行为已人工测试，或标记为 `NEEDS_MANUAL_VERIFY`。
+- [x] `npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- [x] 行为已标记为 `NEEDS_MANUAL_VERIFY`，等待真实摄像头测试。
 
 建议 Codex 提示词：
 
 ```text
 Goal:
-Implement Milestone 9: PinchTap release, floating focus, and throw-return behavior.
+Implement Milestone 9: PinchTap release, floating focus, and top-left index-finger return button behavior.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.11, 7.12, and 13.
@@ -833,12 +835,15 @@ Read @ar_solar_system_prd.md sections 7.11, 7.12, and 13.
 Constraints:
 - PinchTap release keeps the body floating in PlanetFocusView.
 - Floating focus must not return to orbit automatically.
-- Throw return requires clear velocity and direction near pinch release.
-- Returning body should restore original scale, orbit layer, and motion, then exit back to the solar-system view.
+- The old pinch-and-throw return command is retired.
+- The palm-facing open-hand return command is retired.
+- Return requires the tracked index fingertip to stay on the top-left glass button for 1 second.
+- The button shows a visible progress bar and cancels when the fingertip leaves the button, the hand is lost, or focus exits.
+- Returning body should animate for 0.5 seconds, restore original scale, orbit layer, opacity, and motion, then exit back to the solar-system view.
 - Update docs if thresholds or behavior are changed.
 
 Done when:
-- Focused body can be placed down, left floating, then thrown back to orbit.
+- Focused body can be placed down, left floating, then returned to orbit by holding the tracked index fingertip on the top-left button.
 - npm run build passes.
 - TODO.md is updated.
 ```
@@ -854,8 +859,8 @@ Done when:
 - [ ] 改进太阳光晕、轨道材质和天体可读性。
 - [ ] 只在展开开始后添加星尘和星云效果。
 - [ ] 添加手部接近反馈，例如小型光环或粒子。
-- [ ] 添加返回尾迹效果。
-- [ ] 调整身体参考、手、缩放、旋转、pinch 和甩出的平滑参数。
+- [ ] 如果 0.5 秒返回调整需要更强反馈，添加可选返回高亮或尾迹效果。
+- [ ] 调整身体参考、手、缩放、旋转、pinch 和返回动画的平滑参数。
 - [ ] 针对常见笔记本摄像头构图调整触发阈值。
 - [ ] 如果 FPS 不稳定，减少粒子数量或后处理。
 - [ ] 添加隐藏调试 UI 的 presentation/recording mode。
@@ -867,7 +872,7 @@ Done when:
 - [ ] 观众能理解太阳系是从双手之间被拉出来的。
 - [ ] 观众能理解太阳系是一个可由双手控制并停在松手位置的自由悬浮物体。
 - [ ] 缩放和旋转看起来具有空间感。
-- [ ] 激活、单颗行星画面、PinchTap 放下悬浮和甩回都在视觉上清楚。
+- [ ] 激活、单颗行星画面、PinchTap 放下悬浮和左上角食指按钮返回都在视觉上清楚。
 - [ ] Demo 在普通笔记本上以可用帧率运行。
 - [ ] 录制模式隐藏调试杂物。
 - [ ] `npm run build` 通过。
@@ -970,12 +975,17 @@ Done when:
 13. Pinch 激活天体，确认它停止公转但保持自转。
 14. Pinch 激活天体后，用同一只激活手的拇指/食指闭合、张开、再闭合，确认进入单颗行星画面。
 15. 在单颗行星画面中，确认单手张开/收拢/握拳/推动不会缩放、平移或复位当前行星。
-16. 进入单颗星球界面后，先保持手在热区内观察，再撤出热区并重新触碰；确认居中过渡期间不会直接跟手，重新触碰停留 1 秒后才开始跟手。
+16. 进入单颗星球界面后，先保持手在热区内观察，再撤出热区并重新触碰；确认星球先完成约 0.3 秒放大居中过渡，居中过渡期间不会直接跟手，重新触碰停留 1 秒后才开始跟手。
 17. 单手触碰当前星球热区 1 秒后移动它，再用同一只手完成 close-open PinchTap 放下；确认它进入取消选中/等待撤出热区状态，手离开热区后才可再次触碰选中。
-18. 双手触碰当前星球热区 1 秒后移动双手并改变手距，再用任意一只跟随手完成 close-open PinchTap 放下；确认星球跟随两手中点、会按手距缩放，然后仍在单颗行星画面中悬浮，并等两只手都离开热区后才可再次选中。
-17. 再次 pinch 悬浮行星并朝原轨道目标甩回；确认它回轨并退出到太阳系画面。
-18. 用月球和土星重复测试。
-19. 运行录制模式，确认 debug UI 已隐藏。
+18. 双手触碰当前星球热区 1 秒后移动双手并改变两手之间的距离；确认星球跟随两手中点、并按两手之间的距离缩放，再用任意一只跟随手完成 close-open PinchTap 放下，确认两只手都离开热区后才可再次选中。
+19. 双手跟随时把两只手收拢（或各自捏合）以缩小星球；确认星球能缩到比进入时明显更小，且不会仅因为手或手指靠拢就被放下。
+20. 单手跟随时，让另一只（副）手进入画面但停留在星球热区之外；确认控制仍保留在原来那只手，星球不被放下。
+21. 双手跟随时，把一只手撤出星球热区、另一只仍留在热区；确认控制切换为留下那只手的单手移动（缩放冻结），星球不会被撤出的那只手拽走。
+22. 在单颗星球界面中，确认屏幕左上角出现透明玻璃质感矩形按钮，按钮包含返回 icon 和“长按返回太阳系”。
+23. 用摄像头追踪到的食指尖按住左上角返回按钮，但在 1 秒前移开；确认按钮进度重置，状态不会进入 `BodyReturning`，焦点星球仍留在单颗星球界面。这个测试不依赖鼠标点击。
+24. 用食指尖按住左上角返回按钮 1 秒；确认进度条填满，应用进入 `BodyReturning`，焦点星球约 0.5 秒内调整回太阳系天体位置和大小，背景不透明度恢复，状态回到 `SolarFreeHover`。
+25. 用月球和土星重复测试。
+26. 运行录制模式，确认 debug UI 已隐藏。
 
 ### Milestone 3 人工验收 Checklist
 
@@ -1041,10 +1051,10 @@ Done when:
 - [x] 使用纯 TypeScript 模块还是添加 React。决策：初始 Web Demo 使用纯 TypeScript 模块。
 - [x] MediaPipe 关键点坐标到 Three.js 场景坐标的具体映射。决策：集中在 `src/interaction/coordinateMapping.ts`（感知 object-fit: contain + 镜像）；`mapNormalizedToWorld` 通过 three 的 `Raycaster` 对真实相机 `scene.getCamera()` 和 `z = INTERACTION_PLANE_Z` 平面做反投影。Debug overlay 已经走这个映射；M4 的 3D 内容必须使用同一模块。最终世界平面深度仍待 M4 调试确定。
 - [ ] 真实摄像头测试后的最终 pinch 阈值。
-- [ ] 真实摄像头测试后的最终甩出速度阈值。
+- [ ] 真实摄像头测试后最终确定返回按钮尺寸、左上角位置、进度手感和 1 秒长按舒适度。
 - [ ] 真实摄像头测试后的最终 PinchTap 时序阈值。
-- [ ] 真实摄像头测试后的最终聚焦天体屏幕限制和回轨方向阈值。
-- [ ] 原轨道占位标记应该多明显。
+- [ ] 真实摄像头测试后的最终聚焦天体屏幕限制。
+- [ ] 按钮返回动画是否需要额外的轻微尾迹或高亮。
 - [ ] 标签使用中文名、英文名，还是双语。
 
 ## 延后 / Post-MVP 想法
@@ -1065,6 +1075,52 @@ Done when:
 
 ## 变更日志
 
+### 2026-06-24 — M9 返回从开掌手势改为左上角食指按钮
+
+- 需求变更：掌心朝屏幕、五指伸直的开掌返回指令因在焦点/控制状态切换中不够可靠而退役。单颗行星返回入口改为屏幕左上角透明玻璃质感矩形按钮，按钮包含返回 icon 和“长按返回太阳系”；用户用追踪食指尖按住按钮触发返回，不是鼠标点击按钮。
+- 交互更新：食指尖按住左上角按钮 1 秒会填满按钮进度条并进入 `BodyReturning`；如果在阈值前食指尖移出按钮区域、手部丢失或退出焦点状态，则进度重置，星球继续留在焦点画面。
+- 实现更新：`main.ts` 负责食指返回按钮停留计时并启动已有的 0.5 秒焦点星球返回动画；`PlanetFocusController` 不再检测开掌返回手势。
+- 验证更新：已移除开掌手势测试，保留返回动画单元覆盖；手势 helper 测试覆盖食指按钮命中/停留/重置；手动浏览器/摄像头验收现在覆盖左上角按钮可见性、进度重置和 1 秒食指返回。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`index.html`、`src/main.ts`、`src/interaction/planetReturnButton.ts`、`src/interaction/planetFocusController.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/styles.css`、`tests/gesture/planetReturnButton.test.ts` 和 `tests/gesture/planetFocusController.test.ts`。
+- 待定：仍需真实摄像头/浏览器验证按钮位置、尺寸、玻璃质感可读性、食指命中容差、进度手感，以及 1 秒停留在演示中是否舒服。
+
+### 2026-06-24 — BodyReturning 返回动画不再被焦点清理打断
+
+- Bug 修复：`BodyReturning` 开始后，后续 activation/focus 更新可能在 0.5 秒返回动画尚未完成时清空 `focusedBody`。界面状态会显示“正在返回”并带有当时的开掌返回 reason，但大号焦点星球视觉上卡住，没有动画回到太阳系。随后在 2026-06-24，该触发入口已被左上角食指按钮取代。
+- 实现更新：`main.ts` 现在把 `BodyReturning` 作为专属返回阶段处理，返回动画激活期间跳过行星激活/焦点输入更新。`CodePlaceholderSolarSystem` 也会在返回动画进行中保护 focused overlay，即使收到中途的 `focusedBody: null` 清理，或同一帧还有跟手 placement 写入，也不会隐藏/取消返回动画；只在返回转场完成后才允许真正清空。
+- 验证更新：新增/扩展 `tests/unit/solarSystemInteraction.test.ts` 覆盖：返回中途清空 focus 或同帧跟手 placement 写入都不会隐藏/取消 overlay，返回动画仍会完成。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/main.ts`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 待定：仍需真实摄像头验证可见 0.5 秒返回动画结束后，状态会立即从 `BodyReturning` 回到 `SolarFreeHover`。
+
+### 2026-06-24 — M9 开掌返回保持时间缩短，并容忍控制状态切换
+
+- 需求变更：单颗星球开掌返回的保持阈值从原先更长的等待调整为 2 秒。
+- 需求澄清：如果尚未满 2 秒的开掌手触碰当前星球热区并导致 `PlanetFocusControlled` / `SingleHandFollow`，该状态切换允许发生，但不能重置返回计时；计时继续累计到 2 秒阈值。
+- 实现更新：`PlanetFocusController` 现在把未完成的开掌返回识别作为并行计时，不再用早期 holding 更新拦截热区停留/操控状态。
+- 验证更新：`tests/gesture/planetFocusController.test.ts` 覆盖 2 秒阈值、移动重置，以及进入单手跟随后继续累计返回计时。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetFocusController.ts`、`src/main.ts`、`src/rendering/interactionStatusSummary.ts` 和 `tests/gesture/planetFocusController.test.ts`。
+- 待定：真实摄像头测试仍需确认 2 秒加当前稳定半径是否既有意图感，又不会在正常焦点操控时误触发。
+
+### 2026-06-24 — M9 开掌返回替代甩回
+
+- 需求变更：旧的单颗星球返回指令（朝原轨道目标 pinch-and-throw）已弃用。当前返回指令是一只手掌心朝向屏幕、五指伸直，并稳定保持 2 秒。
+- 实现更新：`PlanetFocusController` 现在只在焦点状态中检测开掌返回保持，在 debug 中记录保持时间、分数和手部 key；当姿态丢失或手移动过远时重置计时，只有完整稳定保持 2 秒才进入 `BodyReturning`。
+- 返回动画：焦点 overlay 现在用 0.5 秒移动并缩放回太阳系天体位置和大小。动画期间背景太阳系保持弱化并锁定交互；完成后清除焦点状态、恢复不透明度、天体恢复原轨道关系，并回到 `SolarFreeHover`。
+- 验证更新：新增/扩展 `tests/gesture/planetFocusController.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`，覆盖 2 秒保持触发、移动重置、0.5 秒回归动画和不透明度/交互恢复。`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts`、`src/interaction/planetFocusController.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts`、`tests/gesture/planetFocusController.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 待定：真实摄像头测试仍需确认掌心朝向分数、五指开掌评分、稳定手半径和 2 秒保持手感是否足够支持 30-60 秒演示。
+
+### 2026-06-24 — M8 焦点居中修复、停留稳定性与解耦捏合的双手缩放
+
+- Bug 修复：进入 `PlanetFocusView` 后焦点星球可能停在偏离中心的位置且无法开始跟手。`main.ts` 的 `applyPlanetFocusSnapshot` 在进场/居中/停留期间每帧都在驱动星球位置，导致约 0.3 秒的进场动画被取消、星球被钉在源屏幕位置，从而把“居中后才放行”的门闸卡死。现在 `main.ts` 只在控制器处于 `SingleHandFollow` / `TwoHandFollow` 时才用手部输入驱动星球 transform；其余焦点状态下由进场动画和跟手后的保持逻辑掌控 transform。
+- 稳定性：1 秒热区停留现在对短暂追踪丢失和边界抖动有容错。偶发单帧脱手不再清零停留计时（短暂宽限窗口），正在停留的手在明显离开热区前仍按“仍在触碰”计（超出严格触碰半径的滞回）。
+- 跟手锚点：单手跟随改为以该手拇指+食指中点驱动（此前为掌心）；双手跟随以两手各自捏合中点之间的中点驱动位置。跟手位置与缩放都做了低通平滑。
+- 双手缩放与捏合解耦：缩放只由两手之间（两手捏合中点之间）的距离驱动，与任一手自身拇指食指捏合无关，因此缩小动作不再被误判为 `PinchTap` 而放下星球。同时放宽了缩放上下限（控制器与 `FocusedCelestialBody` 的 clamp），两手收拢可把星球缩到比此前下限更小。
+- 副手鲁棒性：单手跟随时副手进入或离开画面会改变激活手的内部编号；控制器现在按空间连续性重新锁定激活手，因此副手仅出现在热区外不再导致跟手被放下。
+- 双手降级为单手：双手跟随时若一只手明显离开焦点星球热区而另一只仍在，控制降级为留下那只手的单手移动（缩放冻结），而不是把星球拽向撤出的那只手；要重新进入双手跟随需把第二只手放回热区重新停留 1 秒。
+- 验证更新：扩展 `tests/gesture/planetFocusController.test.ts`，覆盖停留在短暂脱手时不清零、超过宽限窗口才重置、双手缩小到旧下限以下、仅闭合捏合时缩放不变、单手跟随在副手出现在热区外时不掉控、以及一只手离开热区时双手降级为单手。全量测试通过。
+- 待定：跟手位置/缩放平滑、停留宽限窗口、双手保持/撤出热区阈值的真实手感仍需真实摄像头验证。
+
 ### 2026-06-24 — M8 焦点跟随改为视觉居中冷却和热区重入门闸
 
 - 需求变更：同手 DoubleClose 进入 `PlanetFocusView` 后，焦点居中动画期间不能开始跟手。上一版固定 400ms 冷却仍然太敏感，因此控制器现在会一直保持进场冷却，直到焦点星球实际接近屏幕居中位置。
@@ -1083,7 +1139,7 @@ Done when:
 - 实现更新：新增 `PlanetFocusController`、焦点 debug 快照行、焦点状态摘要/引导文案、焦点星球位置/缩放接口、屏幕像素到世界坐标映射和焦点星球热区目标。焦点跟随只更新 focus overlay，不改变整个太阳系 transform。
 - 验证更新：新增 `tests/gesture/planetFocusController.test.ts`，覆盖单手停留/跟手/放下、双手停留/跟手/缩放/放下，以及热区外不触发；扩展 `tests/unit/solarSystemInteraction.test.ts`，断言焦点位置/缩放不会改变太阳系 group。
 - 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/coordinateMapping.ts`、`src/interaction/planetFocusController.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/rendering/interactionStatusSummary.ts`、`src/solar/focusedCelestialBody.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts`、`tests/gesture/planetFocusController.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
-- 剩余不确定性：仍需真实摄像头调优 300-600ms 停留手感、焦点星球热区半径、close-open PinchTap 阈值和双手缩放范围。
+- 剩余不确定性：仍需真实摄像头调优 1 秒停留手感、焦点星球热区半径、close-open PinchTap 阈值和双手缩放范围。
 
 ### 2026-06-24 — M8 焦点行星进入过渡动画
 
@@ -1189,7 +1245,7 @@ Done when:
 ### 2026-06-24 — M5.5 单手观察和焦点行星单手控制退役
 
 - 需求调整：用户移除了 free-hovered 太阳系的 M5.5 单手五指张开放大、单手收拢缩小、握拳保持复位和单手推动平移。
-- 需求调整：用户也移除了单颗行星焦点里的单手缩放、平移和复位控制；当前行星保持自转，托住/悬浮/甩回仍在范围内。
+- 需求调整：用户也移除了单颗行星焦点里的单手缩放、平移和复位控制；当前行星保持自转，托住/悬浮/返回仍在范围内。后续 2026-06-24 已将当时的甩回返回改为开掌返回。
 - 实现更新：删除太阳系单手观察 controller 路径、运行时 M5.5 checklist/export/reset/report/verification helper、`verify:m5.5` 和专门的太阳系观察 gesture 测试。`SolarFreeHover` 现在保持最后稳定 transform，并等待端点重新扶住或反向收起。
 - 文档更新：本条记录取代下面 2026-06-23 的 M5.5 实现、调优和 checklist 记录；那些内容仅保留为项目历史。
 - 验证：`npm run typecheck`、`npm run test:gesture`、`npm test`、`npm run build` 和 `git diff --check` 通过。`npm run lint` 不可用，因为当前仓库没有 `lint` 脚本。
@@ -1378,11 +1434,11 @@ Done when:
 
 ### 2026-06-22 — 更新行星焦点手势模型和里程碑计划
 
-- 需求细化：用新的行星交互模型替换旧的天体抓取/冻结/release 闭环：hover、pinch 激活、主手 pinch 锁定 + 副手张开进入 `PlanetFocusView`、始终保持自转、当时规划的单颗行星缩放/平移/托住、副手 `PinchTap` 放下悬浮，以及 pinch-and-throw 甩回。已取代说明：单颗行星单手缩放/平移/复位已在 2026-06-24 删除，托住/悬浮/甩回保留。
-- 新增 Milestone 5.5，用于太阳系自由悬浮后的单手观察控制；重写 Milestone 6-9，使其围绕可交互天体元数据、pinch 激活、单颗行星画面、PinchTap 放下、焦点悬浮和甩回展开。
+- 需求细化：用新的行星交互模型替换旧的天体抓取/冻结/release 闭环：hover、pinch 激活、主手 pinch 锁定 + 副手张开进入 `PlanetFocusView`、始终保持自转、当时规划的单颗行星缩放/平移/托住、副手 `PinchTap` 放下悬浮，以及当时规划的 pinch-and-throw 返回。已取代说明：单颗行星单手缩放/平移/复位已在 2026-06-24 删除，pinch-and-throw 返回先在 2026-06-24 被开掌返回取代，随后又被左上角食指按钮取代。
+- 新增 Milestone 5.5，用于太阳系自由悬浮后的单手观察控制；重写 Milestone 6-9，使其围绕可交互天体元数据、pinch 激活、单颗行星画面、PinchTap 放下、焦点悬浮和当时规划的返回行为展开。
 - 更新 PRD 和长期 agent 规则：被激活/聚焦天体停止原轨道公转但保持自转；普通放下不回轨，也不退出单颗行星画面。
 - 影响文件：`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`ar_solar_system_prd.md` 和 `~/CodeXProject/物理宇宙资料/手势操控语义整理.md`。
-- 剩余不明确项：单手张开/收拢阈值、PinchTap 时序、托住停留时间、聚焦天体屏幕限制和甩回方向阈值都需要真实摄像头调试。
+- 剩余不明确项：单手张开/收拢阈值、PinchTap 时序、托住停留时间和聚焦天体屏幕限制需要真实摄像头调试；旧的甩回方向阈值已在 2026-06-24 被返回按钮调参取代。
 
 ### 2026-06-22 — 规范更新：复用 vs 自写的权衡、死状态规则、变更日志范围
 

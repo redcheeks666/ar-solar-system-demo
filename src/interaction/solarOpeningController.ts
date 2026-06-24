@@ -5,7 +5,7 @@ import type {
   NormalizedPoint,
   TrackingSnapshot,
 } from '../utils/types';
-import { clamp, clamp01, inverseLerp } from '../utils/math';
+import { clamp, clamp01, inverseLerp, unwrapAngle } from '../utils/math';
 import {
   type PreviewLayout,
   type Vec3,
@@ -13,6 +13,7 @@ import {
 } from './coordinateMapping';
 import { getVisualTrackedHandPair } from './handPairing';
 import { SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN } from '../solar/solarSystemData';
+import { LowPassNumberFilter, LowPassPointFilter } from '../tracking/smoothing';
 
 export interface SolarOpeningSnapshot {
   active: boolean;
@@ -108,6 +109,15 @@ const ACTIVE_RELEASE_GRACE_MS = 220;
 const ENDPOINT_RADIUS_WORLD_SCALE = 0.72;
 const MIN_ENDPOINT_RADIUS_WORLD = 0.32;
 const MAX_ENDPOINT_RADIUS_WORLD = 1;
+// Frame-to-frame low-pass on the geometry-driven transform while the system is held / collapsing,
+// so scale, midpoint and rotation stop jittering with raw hand-landmark noise (PRD §13).
+const SCALE_SMOOTHING_ALPHA = 0.25;
+const MIDPOINT_SMOOTHING_ALPHA = 0.3;
+const ROTATION_SMOOTHING_ALPHA = 0.28;
+// Rotation responsiveness fades to zero between these two-hand screen spans: atan2 angle noise
+// blows up as the hands close, so freeze the angle near collapse instead of letting it spin.
+const ROTATION_FREEZE_DISTANCE = 0.12;
+const ROTATION_FULL_RESPONSE_DISTANCE = 0.3;
 
 export class SolarOpeningController {
   private previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null =
@@ -122,6 +132,9 @@ export class SolarOpeningController {
   private activeReleaseSince: number | null = null;
   private smoothedOpenProgress = 0;
   private lastRawOpenProgress = 0;
+  private readonly scaleFilter = new LowPassNumberFilter(SCALE_SMOOTHING_ALPHA);
+  private readonly midpointFilter = new LowPassPointFilter(MIDPOINT_SMOOTHING_ALPHA);
+  private smoothedRotationZ: number | null = null;
 
   update(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
     if (input.interactionState === 'PullArmed') {
@@ -175,6 +188,9 @@ export class SolarOpeningController {
     this.activeReleaseSince = null;
     this.smoothedOpenProgress = 0;
     this.lastRawOpenProgress = 0;
+    this.scaleFilter.reset();
+    this.midpointFilter.reset();
+    this.smoothedRotationZ = null;
     this.lastSnapshot = EMPTY_SOLAR_OPENING_SNAPSHOT;
   }
 
@@ -209,9 +225,10 @@ export class SolarOpeningController {
         OPEN_TARGET_MAX_DISTANCE,
       );
 
-    const snapshot = this.createSnapshot(geometry, 'pull-armed-opening-started');
+    const rawSnapshot = this.createSnapshot(geometry, 'pull-armed-opening-started');
+    const snapshot = this.smoothTransform(rawSnapshot);
     this.smoothedOpenProgress = snapshot.progress;
-    this.lastRawOpenProgress = snapshot.progress;
+    this.lastRawOpenProgress = rawSnapshot.progress;
     this.acceptGeometry(geometry, input.timestamp);
     this.lastSnapshot = snapshot;
 
@@ -263,9 +280,12 @@ export class SolarOpeningController {
     }
 
     this.missingSince = null;
-    const snapshot = this.createSnapshot(geometry, 'opening-follows-hand-distance');
+    const rawSnapshot = this.createSnapshot(
+      geometry,
+      'opening-follows-hand-distance',
+    );
     const unstableReason = this.getUnstableGeometryReason(
-      snapshot,
+      rawSnapshot,
       input.timestamp,
       'opening',
     );
@@ -281,16 +301,16 @@ export class SolarOpeningController {
     }
 
     const smoothedProgress = this.smoothOpeningProgress(
-      snapshot.progress,
+      rawSnapshot.progress,
       input.timestamp,
     );
     const smoothedSnapshot: SolarOpeningSnapshot = {
-      ...snapshot,
+      ...this.smoothTransform(rawSnapshot),
       progress: smoothedProgress,
       visible: smoothedProgress > 0.001,
     };
 
-    this.lastRawOpenProgress = snapshot.progress;
+    this.lastRawOpenProgress = rawSnapshot.progress;
     this.acceptGeometry(geometry, input.timestamp);
     this.lastSnapshot = smoothedSnapshot;
 
@@ -389,7 +409,7 @@ export class SolarOpeningController {
       };
     }
 
-    const snapshot = {
+    const rawSnapshot = {
       ...this.createSnapshot(geometry, 'solar-handle-control-started'),
       active: true,
       visible: true,
@@ -397,7 +417,7 @@ export class SolarOpeningController {
     };
 
     const unstableReason = this.getUnstableGeometryReason(
-      snapshot,
+      rawSnapshot,
       input.timestamp,
       'active',
     );
@@ -415,6 +435,7 @@ export class SolarOpeningController {
       };
     }
 
+    const snapshot = this.smoothTransform(rawSnapshot);
     this.endpointHitSince = null;
     this.endpointMissSince = null;
     this.acceptGeometry(geometry, input.timestamp);
@@ -525,10 +546,12 @@ export class SolarOpeningController {
     }
 
     if (geometry.normalizedDistance <= input.thresholds.collapseStartDistance) {
-      const snapshot = this.createClosingSnapshot(
-        geometry,
-        input.thresholds,
-        'solar-closing-from-handle-control',
+      const snapshot = this.smoothTransform(
+        this.createClosingSnapshot(
+          geometry,
+          input.thresholds,
+          'solar-closing-from-handle-control',
+        ),
       );
       this.acceptGeometry(geometry, input.timestamp);
       this.lastSnapshot = snapshot;
@@ -552,7 +575,7 @@ export class SolarOpeningController {
 
     this.endpointMissSince = null;
     this.missingSince = null;
-    const snapshot = {
+    const rawSnapshot = {
       ...this.createSnapshot(geometry, 'solar-handle-control-follows-endpoints'),
       active: true,
       visible: true,
@@ -560,7 +583,7 @@ export class SolarOpeningController {
     };
 
     const unstableReason = this.getUnstableGeometryReason(
-      snapshot,
+      rawSnapshot,
       input.timestamp,
       'active',
     );
@@ -578,6 +601,7 @@ export class SolarOpeningController {
       };
     }
 
+    const snapshot = this.smoothTransform(rawSnapshot);
     this.acceptGeometry(geometry, input.timestamp);
     this.lastSnapshot = snapshot;
 
@@ -630,12 +654,12 @@ export class SolarOpeningController {
       geometry.normalizedDistance >=
       input.thresholds.collapseStartDistance + input.thresholds.pullMinDistanceDelta
     ) {
-      const snapshot = {
+      const snapshot = this.smoothTransform({
         ...this.createSnapshot(geometry, 'solar-closing-reopened-to-handle-control'),
         active: true,
         visible: true,
         progress: 1,
-      };
+      });
       this.acceptGeometry(geometry, input.timestamp);
       this.lastSnapshot = snapshot;
 
@@ -645,10 +669,12 @@ export class SolarOpeningController {
       };
     }
 
-    const snapshot = this.createClosingSnapshot(
-      geometry,
-      input.thresholds,
-      'solar-closing-follows-inward-endpoints',
+    const snapshot = this.smoothTransform(
+      this.createClosingSnapshot(
+        geometry,
+        input.thresholds,
+        'solar-closing-follows-inward-endpoints',
+      ),
     );
     this.acceptGeometry(geometry, input.timestamp);
     this.lastSnapshot = snapshot;
@@ -798,6 +824,63 @@ export class SolarOpeningController {
 
     this.smoothedOpenProgress = clamp01(capped);
     return this.smoothedOpenProgress;
+  }
+
+  /**
+   * Frame-to-frame low-pass on the geometry-driven transform (scale, midpoint, rotationZ) so the
+   * held / collapsing solar system stops jittering with raw hand-landmark noise. Must be called
+   * ONLY on accepted (non-outlier) frames — it advances stateful filters, so a rejected glitch
+   * frame must never reach it. Progress and other fields pass through untouched.
+   */
+  private smoothTransform(snapshot: SolarOpeningSnapshot): SolarOpeningSnapshot {
+    if (
+      !snapshot.midpointWorld ||
+      snapshot.normalizedDistance === null ||
+      snapshot.rotationZ === null
+    ) {
+      return snapshot;
+    }
+
+    const scale = this.scaleFilter.smooth(snapshot.scale);
+    const midpoint = this.midpointFilter.smooth(snapshot.midpointWorld);
+    const rotationZ = this.smoothRotationZ(
+      snapshot.rotationZ,
+      snapshot.normalizedDistance,
+    );
+
+    return {
+      ...snapshot,
+      scale,
+      midpointWorld: { x: midpoint.x, y: midpoint.y, z: midpoint.z },
+      rotationZ,
+    };
+  }
+
+  /**
+   * Low-pass the hand-axis angle, unwrapped against the current smoothed value so a ±π wrap does
+   * not snap. Responsiveness fades to zero as the two-hand span shrinks because atan2 angle noise
+   * grows without bound when the hands are close — this is what stops the system spinning during
+   * collapse.
+   */
+  private smoothRotationZ(rawRotation: number, normalizedDistance: number): number {
+    if (this.smoothedRotationZ === null) {
+      this.smoothedRotationZ = rawRotation;
+      return rawRotation;
+    }
+
+    const responsiveness = clamp01(
+      inverseLerp(
+        ROTATION_FREEZE_DISTANCE,
+        ROTATION_FULL_RESPONSE_DISTANCE,
+        normalizedDistance,
+      ),
+    );
+    const alpha = ROTATION_SMOOTHING_ALPHA * responsiveness;
+    const target =
+      this.smoothedRotationZ + unwrapAngle(rawRotation - this.smoothedRotationZ);
+
+    this.smoothedRotationZ += (target - this.smoothedRotationZ) * alpha;
+    return this.smoothedRotationZ;
   }
 
   private getUnstableGeometryReason(

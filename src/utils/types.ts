@@ -347,6 +347,10 @@ export interface PlanetFocusDebugSnapshot {
   pinchDistancePx: number | null;
   pinchRatio: number | null;
   pinchTapHandKey: string | null;
+  returnGestureMs: number;
+  returnGestureRequiredMs: number;
+  returnGestureScore: number;
+  returnGestureHandKey: string | null;
   transitionReason: string;
 }
 

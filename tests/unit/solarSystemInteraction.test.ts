@@ -4,6 +4,7 @@ import { CAMERA_FOV, CAMERA_Z } from '../../src/rendering/scene';
 import {
   FOCUS_BODY_WORLD_Z,
   FOCUS_INTRO_DURATION_SECONDS,
+  FOCUS_RETURN_DURATION_SECONDS,
   getFocusedBodyScreenHeightFraction,
 } from '../../src/solar/focusedCelestialBody';
 import { CodePlaceholderSolarSystem } from '../../src/solar/solarSystem';
@@ -413,6 +414,120 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       expect(solarSystem.group.scale.distanceTo(groupScale)).toBeLessThan(
         0.000001,
       );
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('animates the focused body back to its solar-system position and restores focus dimming after return', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+    solarSystem.setTransform({
+      position: { x: 0.2, y: -0.15, z: 0 },
+      rotation: { x: -0.5, y: 0.18, z: 0.06 },
+      scale: 1.15,
+    });
+
+    try {
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'earth',
+        focusedBody: 'earth',
+      });
+      solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+      solarSystem.setFocusedBodyPlacement({
+        focusedBody: 'earth',
+        worldPosition: { x: 0.5, y: -0.26, z: FOCUS_BODY_WORLD_Z },
+        scaleMultiplier: 1.35,
+      });
+
+      const focusRoot = solarSystem.group.getObjectByName('focus-earth-root');
+      const sourcePosition = solarSystem
+        .getBodyWorldPosition('earth', new Vector3())
+        .clone();
+      const sourceWorldScale = solarSystem.group.getWorldScale(new Vector3()).x;
+      const beforeReturnDistance = focusRoot!.getWorldPosition(new Vector3()).distanceTo(
+        sourcePosition,
+      );
+
+      expect(beforeReturnDistance).toBeGreaterThan(0.05);
+      expect(solarSystem.startFocusedBodyReturn({ focusedBody: 'earth' })).toBe(true);
+      solarSystem.setFocusedBodyPlacement({
+        focusedBody: 'earth',
+        worldPosition: { x: -0.72, y: 0.34, z: FOCUS_BODY_WORLD_Z },
+        scaleMultiplier: 1.8,
+      });
+      solarSystem.update(FOCUS_RETURN_DURATION_SECONDS / 2);
+      expect(solarSystem.isFocusedBodyReturnComplete('earth')).toBe(false);
+      expect(focusRoot!.getWorldPosition(new Vector3()).distanceTo(sourcePosition)).toBeLessThan(
+        beforeReturnDistance,
+      );
+
+      solarSystem.update(FOCUS_RETURN_DURATION_SECONDS / 2);
+      expect(solarSystem.isFocusedBodyReturnComplete('earth')).toBe(true);
+      expect(focusRoot!.getWorldPosition(new Vector3()).distanceTo(sourcePosition)).toBeLessThan(
+        0.000001,
+      );
+      expect(focusRoot!.getWorldScale(new Vector3()).x).toBeCloseTo(
+        sourceWorldScale,
+        5,
+      );
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: null,
+        focusedBody: null,
+      });
+      expect(focusRoot?.visible).toBe(false);
+      expect(solarSystem.getBodyRenderState('earth')).toMatchObject({
+        opacity: 1,
+        transparent: false,
+        depthWrite: true,
+      });
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('keeps the focused return animation alive if focus state is cleared mid-return', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'jupiter',
+        focusedBody: 'jupiter',
+      });
+      solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+      solarSystem.setFocusedBodyPlacement({
+        focusedBody: 'jupiter',
+        worldPosition: { x: -0.42, y: 0.18, z: FOCUS_BODY_WORLD_Z },
+        scaleMultiplier: 1.4,
+      });
+
+      const focusRoot = solarSystem.group.getObjectByName('focus-jupiter-root');
+      expect(focusRoot?.visible).toBe(true);
+      expect(solarSystem.startFocusedBodyReturn({ focusedBody: 'jupiter' })).toBe(true);
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: null,
+        focusedBody: null,
+      });
+      expect(focusRoot?.visible).toBe(true);
+
+      solarSystem.update(FOCUS_RETURN_DURATION_SECONDS);
+      expect(solarSystem.isFocusedBodyReturnComplete('jupiter')).toBe(true);
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: null,
+        focusedBody: null,
+      });
+      expect(focusRoot?.visible).toBe(false);
     } finally {
       solarSystem.dispose();
     }

@@ -189,7 +189,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         snapshot.planetFocus.controlMode === 'two'
           ? '双手跟随，手距调整大小'
           : '单手跟随移动',
-      reason: '触碰热区停留已成立；捏合拇指和任一手指后张开会放下当前星球并转为悬浮',
+      reason: '触碰热区停留已成立；捏合拇指和任一手指后张开会放下当前星球并转为悬浮；食指尖按住左上角按钮可返回太阳系',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Mode=${snapshot.planetFocus.controlMode}`,
@@ -207,11 +207,24 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
       reason:
         snapshot.planetFocus.controlState === 'DeselectedWaitForClear'
           ? '跟手选中已取消；需要所有手离开当前星球热区后，才会重新进入待选中状态'
-          : '跟手控制已解除；当前星球仍留在单颗星球界面并持续自转，不自动回轨',
+          : '跟手控制已解除；当前星球仍留在单颗星球界面并持续自转，不自动回轨；食指尖按住左上角按钮可返回太阳系',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
         `Focus=${snapshot.planetFocus.controlState}`,
+        `Reason=${snapshot.planetFocus.transitionReason}`,
+      ],
+    };
+  }
+
+  if (snapshot.interactionState === 'BodyReturning') {
+    return {
+      title: '正在返回太阳系',
+      state: `${snapshot.activatedBody ?? snapshot.planetFocus.focusedBody ?? '当前星球'} 回到原轨道`,
+      reason: '食指尖按住左上角返回按钮已确认；焦点星球正在用 0.5 秒调整回太阳系位置和大小，完成后恢复太阳系交互与不透明度',
+      params: [
+        `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
         `Reason=${snapshot.planetFocus.transitionReason}`,
       ],
     };
@@ -267,7 +280,7 @@ function focusViewReason(snapshot: DebugSnapshot): string {
     return '进入焦点后检测到手仍在热区内；需要先离开热区，再重新触碰并停留 1 秒';
   }
 
-  return '当前行星保持自转；单手或双手重新碰触当前星球热区并停留 1 秒后才进入跟手控制';
+  return '当前行星保持自转；单手或双手重新碰触当前星球热区并停留 1 秒后才进入跟手控制；食指尖按住左上角按钮 1 秒返回太阳系';
 }
 
 function cameraStateText(status: DebugSnapshot['cameraStatus']): string {

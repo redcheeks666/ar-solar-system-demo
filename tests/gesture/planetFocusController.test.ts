@@ -430,6 +430,56 @@ describe('PlanetFocusController', () => {
     expect(closed.snapshot.scaleMultiplier).toBeCloseTo(1, 1);
   });
 
+  it('does not release a held body when an open hand near the camera has a small pixel gap', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right' })],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const follow = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right' })],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(follow.nextState).toBe('PlanetFocusControlled');
+    expect(follow.snapshot.controlState).toBe('SingleHandFollow');
+
+    // The hand stays OPEN (multi-finger ratio ~0.45) while holding the body, but sits close to the
+    // camera so the raw thumb-finger pixel gap is small (~58px <= the old 72px "closed" threshold).
+    // Ratio-only pinch-tap must keep this 'open'; the old pixel-OR test read it as a false 'closed'.
+    const openSmallGap = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.45 })],
+      target: target(640, 360),
+      timestamp: 1600,
+    });
+    expect(openSmallGap.nextState).toBeNull();
+    expect(openSmallGap.snapshot.controlState).toBe('SingleHandFollow');
+    expect(openSmallGap.snapshot.pinchState).toBe('open');
+
+    // A landmark jitter spike widens the pixel gap past the old 94px "open" threshold (ratio ~0.74).
+    // Under the old logic that completed a false close->open tap and dropped the body mid-move. The
+    // hand never actually pinched (ratio never went under 0.32), so it must NOT release now.
+    const jitterSpike = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.74 })],
+      target: target(640, 360),
+      timestamp: 1700,
+    });
+    expect(jitterSpike.nextState).toBeNull();
+    expect(jitterSpike.snapshot.controlState).toBe('SingleHandFollow');
+  });
+
   it('keeps single-hand follow when an off-hand appears outside the heat zone', () => {
     const controller = new PlanetFocusController();
 
