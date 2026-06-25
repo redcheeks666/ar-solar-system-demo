@@ -1,7 +1,7 @@
 # TODO.zh-CN.md
 
 项目：AR Solar System Webcam Gesture Demo
-当前规划基线：PRD v0.6，2026-06-24
+当前规划基线：PRD v0.8，2026-06-25
 主要交付目标：Web Demo 优先
 
 ## 如何使用本文件
@@ -61,6 +61,7 @@
 - [ ] 当前行星在激活、焦点、热区跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
 - [ ] 单手热区停留可让当前星球跟手，双手热区停留可跟手并按手距缩放，跟随手 `PinchTap` 会解除跟手控制并让行星悬浮在单颗行星画面中。
 - [ ] 单颗行星焦点状态中，屏幕左上角显示透明玻璃质感按钮；用摄像头追踪到的食指尖按住“长按返回太阳系”1 秒填满进度条后，让当前行星回轨，播放 0.5 秒位置/大小调整动画，恢复背景不透明度、解锁太阳系交互，并退出回太阳系画面。鼠标/DOM pointer 点击不是产品路径，掌心朝屏幕开掌返回已退役。
+- [ ] 视觉效果工作必须保留已经测试通过的交互逻辑和既有展示控制逻辑；除非用户明确要求修改逻辑或展示控制行为。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
 - [ ] 每当主代码仓库提交，或 agent 工作流上下文变化时，私有 `agent-companion-repo` 伴生仓库也必须更新。
 
@@ -856,6 +857,7 @@ Done when:
 
 任务：
 
+- [ ] 在视觉打磨过程中保留当前已测试通过的交互逻辑，以及既有对象可见/隐藏生命周期。
 - [ ] 改进太阳光晕、轨道材质和天体可读性。
 - [ ] 只在展开开始后添加星尘和星云效果。
 - [ ] 添加手部接近反馈，例如小型光环或粒子。
@@ -869,6 +871,7 @@ Done when:
 
 验收标准：
 
+- [ ] 除非用户明确要求，否则视觉打磨不修改已测试通过的交互逻辑、手势阈值、状态流转或对象展示控制生命周期。
 - [ ] 观众能理解太阳系是从双手之间被拉出来的。
 - [ ] 观众能理解太阳系是一个可由双手控制并停在松手位置的自由悬浮物体。
 - [ ] 缩放和旋转看起来具有空间感。
@@ -889,6 +892,7 @@ Read @ar_solar_system_prd.md sections 8, 13, 15, 16, and 17.
 
 Constraints:
 - Do not break the core interaction loop.
+- Do not modify previously tested interaction logic, gesture thresholds, state transitions, or existing object show/hide control unless the user explicitly asks for that change.
 - Do not show 3D content in initial empty scene.
 - Tune performance before adding heavy effects.
 - Keep debug mode available but hidden for recording.
@@ -898,6 +902,66 @@ Done when:
 - npm run build passes.
 - TODO.md is updated.
 ```
+
+## VFX Asset Pipeline
+
+状态：`IN_PROGRESS`
+
+目标：为后续太阳系材质、地球 focus 视觉、HUD 元素和粒子效果建立稳定的素材路径与贴图加载层，同时不改变现有交互或展示控制生命周期。
+
+任务：
+
+- [x] 在 `src/solar/solarAssetManifest.ts` 中定义 medium 质量的 NASA 运行时贴图路径；high 分辨率贴图虽然存在于磁盘，但不是默认运行时来源。
+- [x] 定义来自 `/assets/solar/nasa/runtime/medium/earth/` 的地球 day/cloud/night-light 贴图路径。
+- [x] 定义水星、金星、月球、火星、木星、土星、天王星和海王星的可用行星 albedo 贴图路径。
+- [x] 将用户提供的 NASA 水星和天王星 albedo 源文件整理进 NASA 素材结构；水星有 2K 和 4K runtime 输出，天王星源文件为 2048x1024，因此只生成 2K。
+- [x] 将用户提供的 NASA 土星环源文件整理进 NASA 素材结构，并生成 2K 和 4K runtime 条带贴图。
+- [x] 定义 medium starfield 贴图路径。
+- [x] 定义当前所有 `/assets/solar/fx/*.png` 路径，包括 rift、shockwave、HUD、手部锚点光效、土星环、lens flare、粒子和星云素材。
+- [x] 新增 `src/solar/textureAssets.ts`，作为带缓存的 `TextureLoader` 封装：为 color/albedo 贴图设置 sRGB color space，设置安全 anisotropy，并在加载失败时 warning 后返回 `null`。
+- [x] 通过 asset manifest 升级太阳系总览行星材质：Earth、Mercury、Venus、Moon、Mars、Jupiter、Saturn、Uranus 和 Neptune 在贴图加载成功时使用 NASA medium albedo，现有程序材质仍作为 fallback。
+- [x] 调整太阳系总览贴图可读性：加载成功的 NASA albedo 贴图也作为适度的 per-body emissive map 使用，让 AR 小尺寸预览中的 Earth、Neptune 等深色行星不会被总览光照压成黑块。
+- [x] 升级太阳系总览 Saturn ring 材质优先级：优先 NASA runtime ring PNG，其次 AI `saturn-ring-texture.png`，最后保留现有程序 ring；PNG alpha 保持透明，depth write 保持关闭。
+- [x] 仅升级单颗行星 focus overlay 中的 Earth：使用 day 地表基底、亮度抠像云层 shell、轻微 additive 夜景灯光 shell 和蓝色 Fresnel 大气 shell。
+- [x] 根据真实录屏复查继续调优 Earth focus：新增柔和昼夜分界 shadow shell，将城市灯限制在假夜侧，提高云层可读性，并收窄大气边缘光。
+- [x] 根据第二条录屏继续调优 Earth focus：让夜景城市灯更暖、更可读，把夜景灯渲染到云层之上，并压暗夜侧云层，避免白色云纹理盖住城市灯。
+- [x] 按反馈将 Earth focus 回到 surface shader 之前的视觉版本：恢复普通 loaded day texture base，同时保留暖色夜景灯 shell、夜侧云层压暗和柔和 shadow shell。
+- [x] 将 Planet Focus View 升级为 profile-driven 多层结构，覆盖 Mercury、Venus、Earth、Moon、Mars、Jupiter、Saturn、Uranus 和 Neptune；Sun focus 仍不在本轮范围内。
+- [x] 添加 profile-driven focus 视觉层时，保持已有 focused-body public API 和行星 focus/return 交互规则不变。
+- [x] Earth focus 使用 day 地表基底、亮度抠像云层 shell、暖色夜景灯 shell、柔和 shadow 和蓝色 Fresnel 大气。
+- [x] Venus focus 使用 NASA albedo，并增加金色 haze shell 和厚重大气暖色边缘光。
+- [x] Mercury focus 优先 NASA albedo，否则使用岩石程序 fallback，只加非常轻的冷色 rim。
+- [x] Moon focus 使用月面坑纹 albedo 和轻微冷色 rim，不加厚重大气。
+- [x] Mars focus 使用红色 albedo，并增加很薄的程序沙尘 haze 和橙红 rim。
+- [x] Jupiter focus 使用气体行星条纹 albedo，并增加轻量程序云带 shell 和浅暖色 rim。
+- [x] Saturn focus 使用 NASA albedo，并增加透明 ring：优先 NASA ring PNG，其次 AI PNG，最后程序 fallback。
+- [x] Uranus focus 保持干净的青蓝色 albedo/fallback 和浅蓝 rim，不强行显示低质量 ring。
+- [x] Neptune focus 使用深蓝 albedo，并增加很薄的风带 overlay 和电蓝色 rim。
+- [x] 将太阳系总览里的 Sun 升级为只依赖材质的 plasma VFX core：time-driven inner shader sphere、additive Fresnel corona shell 和可选 FX lens-flare sprite。
+- [x] Sun VFX 仍挂在现有 `CelestialBody` 可见性生命周期内，因此 pull-open 前的初始空场不会出现任何太阳系 3D 内容。
+- [x] Sun pass 不使用全屏 postprocessing；未新增 `EffectComposer`、`UnrealBloomPass` 或覆盖摄像头画面的 bloom layer。
+- [x] 升级太阳系总览 hover/activated HUD 视觉：优先使用 `target-lock-ring.png` target-lock sprite，加载失败时保留程序 ring fallback；idle 轨道更细更暗，hover/activated 轨道更亮，行星 label 改为玻璃 HUD 风格。
+- [x] 保持 `setInteractionVisualState` API 不变，同时让 hover、activated、label、orbit 和 target-lock HUD 视觉继续响应 focus background dimming。
+- [x] 升级太阳系 opening 视觉：新增 progress-driven opening VFX group，开始阶段显示 thin crack，中段显示 blue/gold rift，接近完成时显示 burst/shockwave，并在左右 control endpoint 附近显示蓝/金 hand anchor glow。
+- [x] Opening VFX 完全由现有 `openingProgress` 驱动；未新增 timer、自动播放完成、controller 阈值、状态机或 `SolarOpeningController` 行为变化。
+- [x] Opening VFX 只在 `visibleRequested` 为 true 且 `openingProgress > 0` 时显示，且所有 sprite opacity 都从 progress 派生，从而保持初始空场不显示特效。
+- [x] 新增轻量 `SolarParticleField`，使用总计 200 个 `Points` 粒子表现星尘、轨道拖尾点缀和 micro flare；粒子只在太阳系可见且 `openingProgress > 0.25` 时出现。
+- [x] 粒子 opacity 在 opening 期间由 progress 驱动淡入，并在 planet focus 中压暗，避免背景星尘/拖尾抢主角。
+- [ ] 等新的视觉特效方案确认后，再把 manifest 和 loader 接入剩余 HUD frame 和后续获批的视觉系统。
+
+验收标准：
+
+- [x] 未修改手势逻辑、状态机、`main.ts` 交互流或对象可见性生命周期。
+- [x] 太阳系总览 `CelestialBody` 材质升级不改变 hover ring、label、activated 视觉、focus 入口逻辑、hot zone、hit test、背景 dimming 或对象可见性生命周期。
+- [x] 初始空场保持不变；未在 pull-open 前新增 starfield、nebula、particles、opening rift、HUD 装饰、bloom、太阳 plasma 或额外 3D 内容。
+- [x] 素材缺失或贴图加载失败不会导致页面崩溃；loader 返回 `null`，调用方可继续使用现有程序材质 fallback。
+- [x] Planet focus 继续使用原有 focus root、placement、scale、intro、follow、floating 和 return API；新增层只是视觉子对象。
+- [x] Focus 层级已有单元测试结构断言覆盖，包括 Earth 云层/夜景灯/昼夜分界/大气 shell、各行星 profile shell 和 Saturn focus ring。
+- [x] Sun plasma 层级已有单元测试结构断言覆盖，包括 plasma core、corona shell、lens flare sprite 和 time uniform 更新。
+- [x] Hover/activated HUD 视觉已有单元测试结构断言覆盖，包括 target-lock 对象创建、label 可见性、orbit 变亮、activation 变亮和 focus dimming。
+- [x] Opening VFX 已有单元测试结构断言覆盖，包括初始隐藏状态、由 progress 驱动的 crack/rift/burst/shockwave 可见性、endpoint anchor 附着和 full progress fade-out。
+- [x] Solar particles 已有单元测试结构断言覆盖，包括总 point count、初始隐藏状态、opening-progress 阈值和 focus dimming。
+- [x] `npm run typecheck`、`npm test` 和 `npm run build` 通过。
 
 ## 跨里程碑工程任务
 
@@ -1074,6 +1138,164 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-06-25 — 根据录屏调优 Solar particle pass
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 17.34.25.mov` 后，第一版粒子的生命周期和性能形态是对的，但视觉上太像彩色 UI 点，而不是细腻星尘。
+- 视觉调优：粒子总数从 264 降到 200，整体 size 和 opacity 下调；micro flare 减到 4 个非常弱的、贴近拖尾的点；cyan/gold trail points 更贴近轨道平面，减少 z/垂直方向散布。
+- Focus 调优：粒子在 focus view 中的 dimming 更强，使背景星尘/拖尾在单颗行星 focus 时更明显退后。
+- 护栏：这仍然只是 `SolarParticleField` 的视觉调优，使用 5 个 `Points` 对象；未修改手势识别、状态机、controller、`main.ts`、opening progress 来源或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/solarParticles.ts`。
+- 剩余不明确项：还需要再录一版真实画面，确认粒子现在读作细空气尘和轻微拖尾，而不是可交互 UI 标记。
+
+### 2026-06-25 — 新增轻量星尘和行星拖尾粒子
+
+- 视觉更新：新增 `SolarParticleField`，作为轻量粒子层，使用总计 264 个 `Points` 粒子，覆盖 white stardust、soft stardust、cyan trail accents、gold trail accents 和 micro flares，并使用现有 FX particle 贴图。
+- 生命周期更新：粒子挂在太阳系 group 下的 `solar-particles-root`，初始空场保持隐藏；只有 `visibleRequested` 为 true 且 `openingProgress > 0.25` 时才显示。
+- Opacity 更新：粒子 opacity 从 opening progress 0.25 到 0.72 淡入，保持较低强度以适配 AR 可读性；进入单颗行星 focus view 后会乘以 focus dim scale 变暗。
+- 性能护栏：本轮使用 5 个 `Points` 对象，而不是数百个 mesh；未引入 GPU simulation、postprocessing，也未修改手势识别、状态机、controller 或 `main.ts` 交互流。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarParticles.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要真实浏览器/摄像头预览，根据是否抢手部识别视觉或行星 label 来微调粒子 opacity/size。
+
+### 2026-06-25 — 根据真实录屏调优太阳系 opening VFX
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 17.17.22.mov` 后，早期 crack/rift sprites 因继承较小的 opening group scale 而很难看清；后期 shockwave 则读成了人物脸前突然出现的大圆形 portal。
+- 视觉调优：opening crack 和 blue/gold rift sprites 现在使用有上限的 scale compensation，让早期由手撕开的裂缝更可读；burst/shockwave sprites 被后移、缩小并降低 opacity；hand-anchor glows 仍保持 endpoint 位置，但使用更强的补偿尺寸。
+- 护栏：VFX 仍然只从 `openingProgress` 派生；未新增 timer、自动播放，也未修改 `SolarOpeningController`、状态机、手势阈值、endpoint-control、`main.ts`、focus/return 或初始空场行为。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/solarSystem.ts`。
+- 剩余不明确项：还需要再录一次真实画面，确认 opening 现在读作横向手撕裂缝，而不是突然出现的圆形 portal。
+
+### 2026-06-25 — 新增太阳系 opening 裂缝 VFX
+
+- 视觉更新：`CodePlaceholderSolarSystem` 现在拥有 `solar-opening-vfx` group，用于显示由 progress 驱动的 opening sprites：早期 `thin-space-crack.png`，中段 `blue-gold-energy-rift.png`，接近完成时 `burst-rift.png` 与 cyan/blue-gold shockwave rings，并在左右 control endpoint 附近显示蓝色/金色 hand-anchor glow sprites。
+- Progress 更新：sprite opacity 和 scale 直接由 `openingProgress` 映射；VFX 不运行 timer，也不能自动把 opening 播放完成。
+- 护栏：VFX group 只在 `visibleRequested` 为 true 且 `openingProgress > 0` 时可见；`openingProgress = 0` 时太阳系 group 仍隐藏，保持初始空场。到 `openingProgress = 1` 时，opening crack/rift/burst/anchor sprites 会淡出。
+- 交互护栏：未修改 `SolarOpeningController`、状态机、手势阈值、endpoint-control 语义、`main.ts` 交互流、hover/activation/focus/return 规则或全局 postprocessing。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要真实摄像头预览，根据手距和摄像头曝光调整 sprite scale/opacity。
+
+### 2026-06-25 — 行星 hover 与 activated HUD 升级
+
+- 视觉更新：行星 hover 和 activated 现在使用 HUD 风格 target lock 对象。优先视觉是通过 asset manifest 加载的 `target-lock-ring.png`；PNG 尚未加载或加载失败时，现有程序 ring 会作为 fallback 保留。
+- 视觉更新：轨道 ring 在 idle 状态更细更暗，hover 状态更亮，activated 状态最亮。行星 label 保留 canvas 文字路径，但底框改成深色玻璃 HUD 面板，带 cyan 边线和 gold 角标。
+- Dimming 更新：`setFocusBackgroundDimmed` 仍然控制背景弱化；focus view 激活时，body opacity、target-lock/fallback hover ring、orbit、label 和 planet ring opacity 都会变暗。
+- 护栏：`setInteractionVisualState` API 不变，未修改 `planetActivationController`，也未修改任何手势/状态机/focus 入口/返回按钮逻辑。未新增启动前可见 3D 内容、全局 starfield、nebula、particles、bloom 或 postprocessing。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/celestialBody.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要浏览器预览确认 target-lock sprite 尺寸和 label 在摄像头曝光下的可读性。
+
+### 2026-06-25 — 太阳系总览 Sun 升级为 plasma core VFX
+
+- 视觉更新：太阳系总览里的 Sun 现在使用专用的材质型 VFX 结构，包括 time-driven inner plasma shader sphere、additive Fresnel corona shell，以及从 asset manifest 加载的可选横向 FX lens-flare sprite。
+- Fallback 更新：lens flare 贴图通过安全缓存 texture loader 加载。如果 FX PNG 缺失或加载失败，sprite 保持隐藏，plasma/corona core 仍正常渲染且不抛错。
+- 护栏：本次仅作用于现有 `CelestialBody` 的 Sun 分支；没有新增 Sun focus、全屏 postprocessing、`EffectComposer`、`UnrealBloomPass`、global bloom、starfield、nebula、particles、opening rift 或 HUD 装饰。初始空场仍由现有太阳系可见性生命周期控制。
+- 交互护栏：未修改手势逻辑、状态机、交互 controller、`main.ts` 流程、hover/activation/focus 入口、返回按钮 hold 规则或行星 focus 规则。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/celestialBody.ts`、`src/solar/solarVfxMaterials.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要真实浏览器/摄像头预览，根据录屏观察调整 corona 和 lens flare 强度。
+
+### 2026-06-25 — 全部行星 focus view 升级为 profile-driven 多层视觉
+
+- 视觉更新：`FocusedCelestialBody` 现在通过可复用 focus profile 构建单颗行星主角画面：base sphere、可选贴图/程序 overlay shell、可选 shadow shell、可选 Fresnel atmosphere shell 和可选 ring mesh。
+- 行星更新：Earth 保留 day/cloud/night-light/blue atmosphere 多层；Venus 增加金色 haze；Mercury 和 Moon 强调岩石/坑纹 albedo 与轻微冷色 rim；Mars 增加薄红色沙尘；Jupiter 增加气体云带 overlay；Saturn 增加 NASA/AI/程序三段 fallback 的透明 ring；Uranus 保持干净青蓝与浅色 rim；Neptune 增加薄风带和深蓝大气边缘光。
+- Fallback 更新：focus albedo、Earth overlay textures 和 Saturn ring textures 都通过安全缓存 loader 加载。素材缺失或加载失败时 warning，并继续使用现有程序 focus 材质或 ring fallback，不抛错，也不让 focus view 黑屏。
+- 护栏：未修改手势逻辑、状态机、交互 controller、`main.ts` 流程、hover/activation/focus 入口、返回按钮 hold 规则、背景 dimming 或初始空场生命周期。未新增 opening rift、全局 starfield、nebula、particles、bloom、HUD 装饰或 Sun focus。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/focusPlanetProfiles.ts`、`src/solar/focusedCelestialBody.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要真实浏览器/摄像头预览逐个检查各 focus 行星后，再微调每颗行星的大气/overlay 强度。
+
+### 2026-06-25 — 太阳系总览行星升级为 NASA 贴图
+
+- 视觉更新：太阳系总览的天体材质现在从 asset manifest 读取 albedo 贴图路径。Earth 使用 NASA medium day texture；Mercury、Venus、Moon、Mars、Jupiter、Saturn、Uranus 和 Neptune 在加载成功时使用各自 NASA medium planet albedo。
+- 可读性更新：加载成功的 NASA 总览贴图也会作为适度的 `emissiveMap` 使用，并按天体设置不同强度，让小尺寸预览行星在 AR 总览光照下更清楚；不改变 focus Earth，也不新增灯光或特效。
+- Fallback 更新：每个总览天体仍先创建现有程序材质，NASA 贴图成功加载后才替换 map；素材缺失或加载失败时由 `textureAssets.ts` warning，并继续使用程序 fallback，不抛错。
+- Ring 更新：太阳系总览 Saturn ring 现在先尝试 NASA runtime ring PNG，再尝试 AI `saturn-ring-texture.png`，最后保留现有程序 ring 材质。ring 材质保持 transparent，PNG alpha 生效，`depthWrite` 保持关闭。
+- 护栏：未修改手势逻辑、状态机、tracking、坐标映射、交互 controller、`main.ts` 交互流、focus/follow/return 语义、label、hover ring、hit test、背景 dimming 或初始空场生命周期。未新增 starfield、nebula、particles、rift、HUD 装饰、bloom、太阳 plasma、corona 或 lens flare。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/celestialBody.ts` 和 `src/solar/planetTextureMaterials.ts`。
+- 剩余不明确项：还需要真实浏览器预览确认每个 NASA 贴图的视觉亮度/朝向，以及 AR 画面里 Saturn ring alpha 的实际观感。
+
+### 2026-06-25 — 导入水星、天王星和土星环 NASA 素材
+
+- 素材更新：把用户提供的 NASA 源文件从 `inbox/` 复制到 `public/assets/solar/nasa/masters/`，并在 `public/assets/solar/nasa/runtime/` 下生成可支持的 runtime 文件。
+- Runtime 更新：水星现在有 2048x1024 和 4096x2048 albedo runtime 文件；天王星只有 2048x1024 albedo runtime，没有强行放大生成 4K；土星环现在有 2048x125 和 4096x250 条带 runtime 贴图。
+- Manifest 更新：`public/assets/solar/manifests/nasa-assets.json` 将水星、天王星和土星环从 `missing` 替换为具体素材元数据；`src/solar/solarAssetManifest.ts` 将水星和天王星标记为可用 medium runtime 贴图，并新增 `NASA_RING_TEXTURES.saturn`。
+- 护栏：未修改手势逻辑、状态机、追踪、坐标映射、控制器行为、`main.ts` 交互流或对象可见性生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`public/assets/solar/manifests/nasa-assets.json`、`src/solar/solarAssetManifest.ts`，以及 `public/assets/solar/nasa/masters/` 和 `public/assets/solar/nasa/runtime/` 下的新文件。
+- 剩余不明确项：用户提供的源文件没有附原始 NASA 网页 URL，因此 manifest 记录为来自 `inbox/` 的用户提供 NASA 源文件。
+
+### 2026-06-25 — Earth focus 回退到 surface shader 之前的版本
+
+- 视觉修正：根据用户反馈，Earth focus 已恢复到 day/night surface shader 实验之前的版本。加载成功的 day texture 重新直接应用到 base material；现有 shadow、cloud、night-light 和 atmosphere 层保留。
+- 被替代调优：这次有意撤回前两条记录中的 surface-shader 压暗方案，因为它在真实摄像头预览中让地球读成过黑。
+- 护栏：这仍然是 `FocusedCelestialBody` 内的纯视觉调参；未修改手势逻辑、行星 focus controller 规则、返回按钮 hold 规则、状态机、`main.ts` 流程或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/focusedCelestialBody.ts`。
+- 剩余不明确项：下一步夜侧可读性改进应避免重新引入过黑的 surface-shader 方案。
+
+### 2026-06-25 — Earth focus 夜侧从过黑状态回调
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 14.49.55.mov` 后，上一版 Earth focus 夜侧过暗，读起来像黑盘，而不是电影感夜侧。
+- 视觉调优：Earth surface shader 现在保留更多夜侧地形/海洋细节，云层 shell 在夜侧不再过黑，shadow shell 不透明度降低，使它只作为柔和昼夜分界，而不是第二层重度压暗。
+- 护栏：这仍然是 `FocusedCelestialBody` 内的纯视觉调参；未修改手势逻辑、行星 focus controller 规则、返回按钮 hold 规则、状态机、`main.ts` 流程或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/focusedCelestialBody.ts`。
+- 剩余不明确项：还需要再做一次真实浏览器/摄像头预览，确认夜侧细节可读和城市灯可见之间的平衡。
+
+### 2026-06-25 — Earth focus 地表 shader 加深夜侧
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 14.34.40.mov` 后，加载成功的 Earth day base 现在会切换到昼夜地表 shader，在假夜侧直接压暗地形和海洋，而不是只依赖外层 shadow shell。
+- 视觉调优：夜侧云层的不透明度和颜色再次降低，同时暖色城市灯层继续以 additive 方式渲染在云层之上，让它能在更暗的地表上更清楚地读出来。
+- 护栏：如果 Earth day 贴图缺失或加载失败，现有程序 focus 材质仍然作为 fallback；未修改手势逻辑、行星 focus controller 规则、返回按钮 hold 规则、状态机、`main.ts` 流程或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/focusedCelestialBody.ts`。
+- 剩余不明确项：还需要再做一次真实浏览器/摄像头预览，确认更深的夜侧是否有电影感，同时不会丢失过多地球轮廓细节。
+
+### 2026-06-25 — 根据第二条录屏调优 Earth focus 夜侧灯光
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 14.28.36.mov` 后，Earth focus 的夜景灯光 shell 现在使用更暖的城市灯调色、更收紧的亮度 mask 和更强的假夜侧 mask；同时夜景灯层渲染在云层之上，以提高可读性。
+- 视觉调优：云层 shell 现在使用与昼夜分界一致的假光照方向，并在夜侧降低亮度和透明度，避免云层在暗面读成白色纹理噪点、盖住城市灯。
+- 护栏：改动仍局限在 `FocusedCelestialBody` 的 Earth shader/render-order 调优和 TODO 文档；未修改手势逻辑、行星 focus controller 规则、返回按钮 hold 规则、状态机、`main.ts` 流程或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md` 和 `src/solar/focusedCelestialBody.ts`。
+- 剩余不明确项：还需要再做一次真实浏览器/摄像头预览，确认新的城市灯暖色和夜侧云层压暗是否足够明显且不过于人工。
+
+### 2026-06-25 — 根据真实录屏调优 Earth focus 可读性
+
+- 视觉调优：复查 `~/Documents/录屏2026-06-25 14.22.21.mov` 后，Earth focus 现在有更柔和但可读的昼夜分界、只出现在假夜侧的城市灯、更亮的亮度抠像云层、更快的独立云层漂移，以及更薄的大气边缘光。
+- 护栏：改动仍局限在 `FocusedCelestialBody` 的 Earth 视觉和单元测试结构断言；未修改手势逻辑、行星 focus controller 规则、返回按钮 hold 规则、状态机、`main.ts` 流程或初始空场生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/focusedCelestialBody.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要再做一次真实浏览器/摄像头预览，确认昼夜分界方向、城市灯强度、云层透明度和大气厚度在镜头里是否合适。
+
+### 2026-06-25 — Earth focus 升级为多层电影感地球
+
+- 视觉更新：单颗行星 focus overlay 中的 Earth 现在使用多层结构，包括 day 地表基底、独立亮度抠像云层 shell、轻微 additive 夜景灯光 shell 和蓝色 Fresnel 大气 shell。
+- 护栏：变更仅作用于 `definition.id === 'earth'`；其他 focus 天体保持现有 focus 材质路径/fallback，`FocusedCelestialBody` public API 以及行星 focus、follow、放下和返回规则均未改变。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/focusedCelestialBody.ts`、`src/solar/textureAssets.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：后续应在真实浏览器/摄像头预览中，根据新的视觉方案微调云层 alpha 阈值、夜景灯光不透明度和大气强度。
+
+### 2026-06-25 — 新增 VFX 素材 manifest 和安全贴图加载器
+
+- 工程更新：新增 VFX 素材管线基础，包含默认 medium 的 NASA 运行时路径、FX PNG 路径、水星和天王星的显式 missing 标记，以及带缓存的 Three.js 贴图加载器。
+- 护栏：贴图缺失或加载失败时，loader warning 后返回 `null`，让现有程序材质继续作为 fallback；未改变 `CelestialBody` 画面、手势逻辑、状态机、`main.ts` 交互流或启动可见性生命周期。
+- 验证：`npm run typecheck`、`npm test` 和 `npm run build` 通过。
+- 影响文件：`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarAssetManifest.ts` 和 `src/solar/textureAssets.ts`。
+- 剩余不明确项：实际视觉风格，以及每个材质/特效具体接入哪些素材，等新的视觉特效方案提供后再确定。
+
+### 2026-06-25 — 视觉效果阶段保留已测试通过的交互逻辑
+
+- 需求澄清：从视觉效果工作开始，Codex 必须把已经测试通过的交互逻辑和既有展示控制逻辑视为锁定状态；除非用户明确要求修改逻辑或展示控制行为。
+- 工作流更新：视觉工作可以改进材质、程序纹理、光照、辉光、粒子、星云、尾迹、标签、UI 质感、录屏模式和渲染性能，但不得在未获明确许可时修改手势状态机、阈值、手部配对、新帧门闸、坐标映射、整体太阳系把手生命周期或行星激活/焦点/跟随/返回语义。
+- 计划更新：Milestone 10 已将这条保护规则加入任务、验收标准和建议提示词约束。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md` 和 `TODO.zh-CN.md`。
+- 剩余不明确项：无；如果后续某个视觉目标确实需要修改逻辑或展示控制，Codex 必须先暂停并询问。
 
 ### 2026-06-24 — M9 返回从开掌手势改为左上角食指按钮
 

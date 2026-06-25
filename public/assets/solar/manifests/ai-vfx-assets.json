@@ -1,0 +1,128 @@
+{
+  "mode": "built-in image_gen with local chroma-key background removal",
+  "transparent_background": true,
+  "chroma_key": "#00ff00",
+  "postprocessing": "remove_chroma_key.py, then resized/padded to target canvas",
+  "assets": [
+    {
+      "name": "white particle",
+      "file": "white-particle.png",
+      "size": "512x512",
+      "prompt": "A single white glowing particle sprite, centered on a transparent background, small bright core with soft radial falloff, delicate cosmic dust glow, clean alpha edges, high quality sci-fi VFX particle, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "cyan particle",
+      "file": "cyan-particle.png",
+      "size": "512x512",
+      "prompt": "A single cyan blue glowing particle sprite, centered on a transparent background, bright tiny core with soft blue aura, futuristic energy glow, smooth radial falloff, clean alpha edges, high quality sci-fi VFX particle, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "gold particle",
+      "file": "gold-particle.png",
+      "size": "512x512",
+      "prompt": "A single warm golden glowing particle sprite, centered on a transparent background, bright amber core with soft gold halo, elegant cosmic energy glow, smooth radial falloff, clean alpha edges, high quality VFX particle, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "stardust particles",
+      "file": "stardust-particles.png",
+      "size": "512x512",
+      "prompt": "A small cluster of delicate cosmic stardust particles, centered on a transparent background, tiny white, pale blue and faint gold specks with very soft glow, irregular natural distribution, elegant space VFX, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "micro flare",
+      "file": "micro-flare.png",
+      "size": "512x512",
+      "prompt": "A tiny cinematic lens flare sprite, centered on a transparent background, small bright white core with subtle cyan horizontal streak, soft glow, elegant sci-fi VFX style, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "blue gold energy rift",
+      "file": "blue-gold-energy-rift.png",
+      "size": "2048x2048",
+      "prompt": "A cinematic blue and gold energy rift sprite, transparent background, jagged glowing crack running horizontally across the center, electric filaments, plasma sparks, intense cyan core with warm golden edges, high-budget sci-fi cosmic VFX, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "thin space crack",
+      "file": "thin-space-crack.png",
+      "size": "2048x2048",
+      "prompt": "A thin horizontal cosmic space tear sprite, transparent background, narrow cyan-white glowing line with tiny branching cracks, subtle golden sparks, elegant high-energy sci-fi VFX, suitable for opening a miniature universe, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "burst rift",
+      "file": "burst-rift.png",
+      "size": "2048x2048",
+      "prompt": "A dramatic cosmic energy burst rift sprite, transparent background, bright center explosion with blue plasma cracks and golden particle sparks spreading outward, radial light shards, cinematic superhero sci-fi VFX, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "cyan shockwave ring",
+      "file": "cyan-shockwave-ring.png",
+      "size": "2048x2048",
+      "prompt": "A circular cyan blue energy shockwave ring sprite, centered on a transparent background, thin glowing ring with transparent center, soft radial fading, subtle plasma noise, elegant holographic sci-fi VFX, perfectly circular, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "blue gold shockwave ring",
+      "file": "blue-gold-shockwave-ring.png",
+      "size": "2048x2048",
+      "prompt": "A cinematic blue and gold circular shockwave ring sprite, centered on a transparent background, transparent center, glowing outer ring, tiny sparks along the circumference, high-budget cosmic sci-fi VFX, smooth alpha falloff, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "planet label HUD frame",
+      "file": "planet-label-hud-frame.png",
+      "size": "2048x2048",
+      "prompt": "A futuristic holographic glass HUD label frame, transparent background, thin cyan blue lines, subtle gold corner accents, rectangular sci-fi interface panel with empty center area, small scanning marks, minimal technical details, cinematic AR style, no readable text, no logo, PNG transparent background"
+    },
+    {
+      "name": "return button HUD frame",
+      "file": "return-button-hud-frame.png",
+      "size": "2048x1024",
+      "prompt": "A futuristic transparent glass return button frame, transparent background, rounded rectangle shape, thin cyan glowing border, subtle blue-gold gradient accents, simple left arrow icon only, cinematic sci-fi AR interface, clean alpha edges, no readable text, no logo, PNG transparent background"
+    },
+    {
+      "name": "target lock ring",
+      "file": "target-lock-ring.png",
+      "size": "2048x2048",
+      "prompt": "A futuristic holographic circular target lock HUD ring, transparent background, thin cyan blue circular lines, small rotating tick marks, subtle golden highlights, empty transparent center, elegant sci-fi scanning interface, clean alpha edges, no readable text, no logo, PNG transparent background"
+    },
+    {
+      "name": "deep space nebula layer",
+      "file": "deep-space-nebula-layer.png",
+      "size": "3840x2160",
+      "prompt": "A cinematic deep space nebula background layer, transparent background, dark blue black space feeling, subtle cyan and violet nebula mist, scattered tiny stars, elegant and not too bright, high-budget sci-fi movie atmosphere, wide 16:9 composition, no planets, no spaceship, no astronaut, no text, no logo, no watermark, ultra detailed, 4K"
+    },
+    {
+      "name": "transparent nebula mist",
+      "file": "transparent-nebula-mist.png",
+      "size": "3840x2160",
+      "prompt": "A soft transparent nebula mist overlay, isolated wisps of cyan blue and faint violet cosmic gas on transparent background, very subtle and airy, elegant space atmosphere, suitable for compositing over an AR space scene, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "blue horizontal lens flare",
+      "file": "blue-horizontal-lens-flare.png",
+      "size": "2048x512",
+      "prompt": "A cinematic anamorphic lens flare streak, transparent background, horizontal cyan blue light beam, bright center core, soft fading edges, subtle small flare dots along the line, high-budget sci-fi VFX, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "gold horizontal lens flare",
+      "file": "gold-horizontal-lens-flare.png",
+      "size": "2048x512",
+      "prompt": "A cinematic anamorphic lens flare streak, transparent background, horizontal warm golden light beam, bright amber center core, soft fading edges, subtle small flare reflections, elegant cosmic VFX, clean alpha edges, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "left hand blue anchor glow",
+      "file": "left-hand-blue-anchor-glow.png",
+      "size": "1024x1024",
+      "prompt": "A circular cyan blue hand anchor glow sprite, centered on a transparent background, soft holographic energy halo, subtle radial particles, gentle sci-fi aura, suitable for AR hand tracking interaction, clean alpha edges, no hand visible, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "right hand gold anchor glow",
+      "file": "right-hand-gold-anchor-glow.png",
+      "size": "1024x1024",
+      "prompt": "A circular warm golden hand anchor glow sprite, centered on a transparent background, soft energy halo, subtle radial sparks, elegant cosmic sci-fi aura, suitable for AR hand tracking interaction, clean alpha edges, no hand visible, no text, no logo, PNG transparent background"
+    },
+    {
+      "name": "saturn ring texture",
+      "file": "saturn-ring-texture.png",
+      "size": "4096x4096",
+      "prompt": "A realistic Saturn ring texture viewed from top, centered on a transparent background, thin circular planetary ring with multiple bands, semi-transparent icy dust texture, subtle beige gold and pale gray tones, clean alpha channel, suitable for 3D planet material, no planet sphere, no text, no logo, PNG transparent background"
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 import {
+  AdditiveBlending,
   AmbientLight,
   BufferGeometry,
   DoubleSide,
@@ -10,10 +11,13 @@ import {
   Quaternion,
   RingGeometry,
   SphereGeometry,
+  Sprite,
+  SpriteMaterial,
+  Texture,
   Vector3,
   type Camera,
 } from 'three';
-import { clamp01 } from '../utils/math';
+import { clamp01, lerp } from '../utils/math';
 import {
   CelestialBody,
   type CelestialBodyRenderState,
@@ -28,6 +32,7 @@ import {
   CELESTIAL_BODY_DEFINITIONS,
   INTERACTIVE_CELESTIAL_BODY_DEFINITIONS,
   SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X,
+  SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN,
   getCelestialBodyDefinition,
   getOriginalOrbitTransform,
   type CelestialBodyDefinition,
@@ -36,6 +41,10 @@ import {
   type InteractiveCelestialBodyId,
 } from './solarSystemData';
 import { FocusedCelestialBody } from './focusedCelestialBody';
+import { getTextureAssetPath } from './planetTextureMaterials';
+import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
+import { SolarParticleField } from './solarParticles';
+import { loadTexture } from './textureAssets';
 
 export interface CelestialBodyScreenTarget {
   id: InteractiveCelestialBodyId;
@@ -90,6 +99,24 @@ const LEFT_ENDPOINT_COLOR = 0x7dd3fc;
 const RIGHT_ENDPOINT_COLOR = 0xf6c177;
 const MIN_BODY_HIT_RADIUS_PX = 44;
 const SMALL_BODY_EXTRA_HIT_RADIUS_PX = 22;
+const OPENING_VFX_RENDER_ORDER = 24;
+const OPENING_VFX_RIFT_Z = 0.08;
+const OPENING_ANCHOR_Z = CONTROL_ENDPOINT_Z_OFFSET + 0.012;
+const OPENING_ANCHOR_GLOW_SIZE = 0.54;
+
+type OpeningVfxSpriteName =
+  | 'thinCrack'
+  | 'energyRift'
+  | 'burstRift'
+  | 'cyanShockwave'
+  | 'blueGoldShockwave'
+  | 'leftAnchorGlow'
+  | 'rightAnchorGlow';
+
+interface OpeningVfxSprite {
+  readonly sprite: Sprite;
+  readonly material: SpriteMaterial;
+}
 
 export class CodePlaceholderSolarSystem {
   readonly group = new Group();
@@ -97,6 +124,11 @@ export class CodePlaceholderSolarSystem {
   private readonly bodies = new Map<CelestialBodyId, CelestialBody>();
   private readonly focusedBodies = new Map<InteractiveCelestialBodyId, FocusedCelestialBody>();
   private readonly controlEndpoints: Group[] = [];
+  private readonly openingVfxGroup = new Group();
+  private readonly openingVfxSprites = new Map<OpeningVfxSpriteName, OpeningVfxSprite>();
+  private readonly openingVfxMaterials: Material[] = [];
+  private readonly openingVfxTextures: Texture[] = [];
+  private readonly particleField = new SolarParticleField(CELESTIAL_BODY_DEFINITIONS);
   private readonly endpointGeometries: BufferGeometry[] = [];
   private readonly endpointMaterials: Material[] = [];
   private readonly baseScale = new Vector3(DEFAULT_SCALE, DEFAULT_SCALE, DEFAULT_SCALE);
@@ -111,6 +143,8 @@ export class CodePlaceholderSolarSystem {
     this.addLights();
     this.createBodies();
     this.addControlEndpoints();
+    this.addOpeningVfx();
+    this.group.add(this.particleField.root);
     this.addFocusViewBodies();
     this.applyVisibility();
   }
@@ -121,6 +155,7 @@ export class CodePlaceholderSolarSystem {
     }
 
     this.bodies.forEach((body) => body.update(deltaSeconds));
+    this.particleField.update(deltaSeconds);
     if (this.focusedBody) {
       this.focusedBodies.get(this.focusedBody)?.update(deltaSeconds, this.group);
     }
@@ -373,6 +408,7 @@ export class CodePlaceholderSolarSystem {
       this.updateFocusedBodyLayout();
     }
     this.bodies.forEach((body) => body.setFocusBackgroundDimmed(focusActive));
+    this.applyParticleState();
 
     INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
       const body = this.getBodyById(definition.id as InteractiveCelestialBodyId);
@@ -394,8 +430,13 @@ export class CodePlaceholderSolarSystem {
     this.focusedBodies.clear();
     this.endpointGeometries.forEach((geometry) => geometry.dispose());
     this.endpointMaterials.forEach((material) => material.dispose());
+    this.openingVfxMaterials.forEach((material) => material.dispose());
+    this.openingVfxTextures.forEach((texture) => texture.dispose());
+    this.particleField.dispose();
     this.endpointGeometries.length = 0;
     this.endpointMaterials.length = 0;
+    this.openingVfxMaterials.length = 0;
+    this.openingVfxTextures.length = 0;
   }
 
   private addLights(): void {
@@ -439,6 +480,99 @@ export class CodePlaceholderSolarSystem {
         RIGHT_ENDPOINT_COLOR,
       ),
     );
+  }
+
+  private addOpeningVfx(): void {
+    this.openingVfxGroup.name = 'solar-opening-vfx';
+    this.openingVfxGroup.visible = false;
+    this.group.add(this.openingVfxGroup);
+
+    this.addOpeningVfxSprite(
+      'thinCrack',
+      'solar-opening-thin-space-crack',
+      SOLAR_FX_TEXTURES.thinSpaceCrack,
+      '#d7f7ff',
+    );
+    this.addOpeningVfxSprite(
+      'energyRift',
+      'solar-opening-blue-gold-energy-rift',
+      SOLAR_FX_TEXTURES.blueGoldEnergyRift,
+      '#ffffff',
+    );
+    this.addOpeningVfxSprite(
+      'burstRift',
+      'solar-opening-burst-rift',
+      SOLAR_FX_TEXTURES.burstRift,
+      '#ffe4a0',
+    );
+    this.addOpeningVfxSprite(
+      'cyanShockwave',
+      'solar-opening-cyan-shockwave-ring',
+      SOLAR_FX_TEXTURES.cyanShockwaveRing,
+      '#c8fbff',
+    );
+    this.addOpeningVfxSprite(
+      'blueGoldShockwave',
+      'solar-opening-blue-gold-shockwave-ring',
+      SOLAR_FX_TEXTURES.blueGoldShockwaveRing,
+      '#fff7d6',
+    );
+    this.addOpeningVfxSprite(
+      'leftAnchorGlow',
+      'solar-opening-left-hand-blue-anchor-glow',
+      SOLAR_FX_TEXTURES.leftHandBlueAnchorGlow,
+      '#a8ecff',
+    );
+    this.addOpeningVfxSprite(
+      'rightAnchorGlow',
+      'solar-opening-right-hand-gold-anchor-glow',
+      SOLAR_FX_TEXTURES.rightHandGoldAnchorGlow,
+      '#ffe2a8',
+    );
+  }
+
+  private addOpeningVfxSprite(
+    key: OpeningVfxSpriteName,
+    name: string,
+    textureAsset: TextureAsset,
+    color: string,
+  ): void {
+    const material = new SpriteMaterial({
+      color,
+      opacity: 0,
+      blending: AdditiveBlending,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const sprite = new Sprite(material);
+    sprite.name = name;
+    sprite.renderOrder = OPENING_VFX_RENDER_ORDER;
+    sprite.visible = false;
+    this.openingVfxGroup.add(sprite);
+    this.openingVfxSprites.set(key, { sprite, material });
+    this.openingVfxMaterials.push(material);
+    this.loadOpeningVfxTexture(textureAsset, material);
+  }
+
+  private loadOpeningVfxTexture(
+    textureAsset: TextureAsset,
+    material: SpriteMaterial,
+  ): void {
+    const texturePath = getTextureAssetPath(textureAsset);
+    if (!texturePath) {
+      return;
+    }
+
+    void loadTexture(texturePath).then((texture) => {
+      if (!texture) {
+        return;
+      }
+
+      this.openingVfxTextures.push(texture);
+      material.map = texture;
+      material.needsUpdate = true;
+    });
   }
 
   private createControlEndpoint(
@@ -514,7 +648,169 @@ export class CodePlaceholderSolarSystem {
     const openScale = MIN_OPEN_SCALE + (1 - MIN_OPEN_SCALE) * easedProgress;
     this.group.scale.copy(this.baseScale).multiplyScalar(openScale);
     this.group.visible = this.visibleRequested && this.openingProgress > 0.001;
+    this.applyOpeningVfx();
+    this.applyParticleState();
     this.updateFocusedBodyLayout();
+  }
+
+  private applyParticleState(): void {
+    this.particleField.setState({
+      visibleRequested: this.visibleRequested,
+      openingProgress: this.openingProgress,
+      focusDimmed: Boolean(this.focusedBody),
+    });
+  }
+
+  private applyOpeningVfx(): void {
+    const progress = this.openingProgress;
+    const visible = this.visibleRequested && progress > 0;
+    this.openingVfxGroup.visible = visible;
+
+    if (!visible) {
+      this.openingVfxSprites.forEach(({ sprite, material }) => {
+        sprite.visible = false;
+        material.opacity = 0;
+      });
+      return;
+    }
+
+    const riftScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.28);
+    const anchorScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.32);
+
+    this.applyOpeningVfxSprite('thinCrack', {
+      opacity:
+        smoothProgressRange(progress, 0.01, 0.25) *
+        (1 - smoothProgressRange(progress, 0.58, 0.78)) *
+        0.95,
+      scaleX:
+        lerp(
+          0.38,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.82,
+          smoothProgressRange(progress, 0.01, 0.28),
+        ) * riftScaleCompensation,
+      scaleY:
+        lerp(0.055, 0.2, smoothProgressRange(progress, 0.01, 0.28)) *
+        riftScaleCompensation,
+      z: OPENING_VFX_RIFT_Z,
+    });
+    this.applyOpeningVfxSprite('energyRift', {
+      opacity:
+        smoothProgressRange(progress, 0.14, 0.34) *
+        (1 - smoothProgressRange(progress, 0.82, 0.98)) *
+        0.88,
+      scaleX:
+        lerp(
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.34,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.92,
+          smoothProgressRange(progress, 0.14, 0.68),
+        ) * riftScaleCompensation,
+      scaleY:
+        lerp(0.18, 0.52, smoothProgressRange(progress, 0.14, 0.68)) *
+        riftScaleCompensation,
+      z: OPENING_VFX_RIFT_Z + 0.006,
+    });
+    this.applyOpeningVfxSprite('burstRift', {
+      opacity:
+        smoothProgressRange(progress, 0.62, 0.76) *
+        (1 - smoothProgressRange(progress, 0.84, 1)) *
+        0.42,
+      scaleX: lerp(
+        0.28,
+        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.46,
+        smoothProgressRange(progress, 0.62, 1),
+      ),
+      scaleY: lerp(0.16, 0.54, smoothProgressRange(progress, 0.62, 1)),
+      z: OPENING_VFX_RIFT_Z + 0.014,
+    });
+    this.applyOpeningVfxSprite('cyanShockwave', {
+      opacity:
+        smoothProgressRange(progress, 0.68, 0.8) *
+        (1 - smoothProgressRange(progress, 0.86, 1)) *
+        0.34,
+      scaleX: lerp(
+        0.24,
+        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
+        smoothProgressRange(progress, 0.68, 1),
+      ),
+      scaleY: lerp(
+        0.24,
+        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
+        smoothProgressRange(progress, 0.68, 1),
+      ),
+      z: OPENING_VFX_RIFT_Z + 0.018,
+    });
+    this.applyOpeningVfxSprite('blueGoldShockwave', {
+      opacity:
+        smoothProgressRange(progress, 0.74, 0.86) *
+        (1 - smoothProgressRange(progress, 0.92, 1)) *
+        0.3,
+      scaleX: lerp(
+        0.22,
+        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
+        smoothProgressRange(progress, 0.74, 1),
+      ),
+      scaleY: lerp(
+        0.22,
+        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
+        smoothProgressRange(progress, 0.74, 1),
+      ),
+      z: OPENING_VFX_RIFT_Z + 0.02,
+    });
+    this.applyOpeningAnchorVfx(
+      'leftAnchorGlow',
+      -SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X,
+      anchorScaleCompensation,
+    );
+    this.applyOpeningAnchorVfx(
+      'rightAnchorGlow',
+      SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X,
+      anchorScaleCompensation,
+    );
+  }
+
+  private applyOpeningVfxSprite(
+    key: OpeningVfxSpriteName,
+    state: {
+      opacity: number;
+      scaleX: number;
+      scaleY: number;
+      z: number;
+    },
+  ): void {
+    const entry = this.openingVfxSprites.get(key);
+    if (!entry) {
+      return;
+    }
+
+    const opacity = clamp01(state.opacity);
+    entry.sprite.visible = opacity > 0.01;
+    entry.sprite.position.set(0, 0, state.z);
+    entry.sprite.scale.set(state.scaleX, state.scaleY, 1);
+    entry.material.opacity = opacity;
+  }
+
+  private applyOpeningAnchorVfx(
+    key: OpeningVfxSpriteName,
+    localX: number,
+    scaleCompensation: number,
+  ): void {
+    const progress = this.openingProgress;
+    const opacity =
+      smoothProgressRange(progress, 0.01, 0.12) *
+      (1 - smoothProgressRange(progress, 0.94, 1));
+    const size =
+      OPENING_ANCHOR_GLOW_SIZE *
+      lerp(0.84, 1.24, smoothProgressRange(progress, 0.01, 0.72)) *
+      scaleCompensation;
+    const entry = this.openingVfxSprites.get(key);
+    if (!entry) {
+      return;
+    }
+
+    entry.sprite.visible = opacity > 0.01;
+    entry.sprite.position.set(localX, 0, OPENING_ANCHOR_Z);
+    entry.sprite.scale.set(size, size, 1);
+    entry.material.opacity = clamp01(opacity);
   }
 
   private updateFocusedBodyLayout(): void {
@@ -577,4 +873,24 @@ function shouldPauseBodyOrbit(
   }
 
   return activatedBody === 'moon' && id === 'earth';
+}
+
+function smoothProgressRange(
+  progress: number,
+  start: number,
+  end: number,
+): number {
+  const normalized = clamp01((progress - start) / Math.max(end - start, 0.0001));
+
+  return normalized * normalized * (3 - 2 * normalized);
+}
+
+function getOpeningVfxScaleCompensation(
+  progress: number,
+  minimumScale: number,
+): number {
+  const easedProgress = progress * progress;
+  const openingScale = MIN_OPEN_SCALE + (1 - MIN_OPEN_SCALE) * easedProgress;
+
+  return 1 / Math.max(openingScale, minimumScale);
 }

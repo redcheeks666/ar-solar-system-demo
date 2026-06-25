@@ -1,7 +1,7 @@
 # TODO.md
 
 Project: AR Solar System Webcam Gesture Demo
-Current planning baseline: PRD v0.7, 2026-06-24
+Current planning baseline: PRD v0.8, 2026-06-25
 Primary delivery target: Web Demo first
 
 ## How to Use This File
@@ -61,6 +61,7 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] The focused body keeps self-rotating during activation, focus, heat-zone follow, release-to-floating, and inspection; one-hand focus zoom/pan/reset is retired.
 - [ ] Single-hand heat-zone dwell follows the focused body, two-hand heat-zone dwell follows and scales it, and a following hand `PinchTap` releases follow-control into floating focus.
 - [ ] In single-planet focus states, a transparent glass-style button appears at the top-left; holding the tracked index fingertip on "长按返回太阳系" for 1 second fills its progress bar, returns the focused body to orbit, plays a 0.5 second position/scale adjustment animation, restores background opacity, unlocks solar interaction, and exits back to the solar-system view. Mouse/pointer clicking is not the product path, and palm-facing open-hand return is retired.
+- [ ] Visual-effects work preserves previously tested interaction logic and existing display-control logic unless the user explicitly requests a logic/display behavior change.
 - [ ] Documentation is updated when requirements or completed scope change, including `TODO.zh-CN.md` whenever `TODO.md` changes.
 - [ ] The private `agent-companion-repo` companion repo is updated whenever the main code repo is committed or agent workflow context changes.
 
@@ -857,6 +858,7 @@ Goal: Make the demo suitable for a 30-60 second recording.
 
 Tasks:
 
+- [ ] Preserve current tested interaction logic and existing object visibility/show-hide lifecycle while applying visual polish.
 - [ ] Improve solar glow, orbit materials, and body readability.
 - [ ] Add star dust and nebula effects only after opening begins.
 - [ ] Add hand-proximity feedback such as small light rings or particles.
@@ -870,6 +872,7 @@ Tasks:
 
 Acceptance criteria:
 
+- [ ] Visual polish does not modify previously tested interaction logic, gesture thresholds, state transitions, or object display-control lifecycle unless explicitly requested by the user.
 - [ ] A viewer can understand the solar system is pulled from between the hands.
 - [ ] A viewer can understand the solar system is a hand-controlled object that can free-hover where it is released.
 - [ ] Scaling and rotation look spatial.
@@ -890,6 +893,7 @@ Read @ar_solar_system_prd.md sections 8, 13, 15, 16, and 17.
 
 Constraints:
 - Do not break the core interaction loop.
+- Do not modify previously tested interaction logic, gesture thresholds, state transitions, or existing object show/hide control unless the user explicitly asks for that change.
 - Do not show 3D content in initial empty scene.
 - Tune performance before adding heavy effects.
 - Keep debug mode available but hidden for recording.
@@ -899,6 +903,66 @@ Done when:
 - npm run build passes.
 - TODO.md is updated.
 ```
+
+## VFX Asset Pipeline
+
+Status: `IN_PROGRESS`
+
+Goal: Add a stable asset path and texture-loading layer for upcoming solar-system materials, Earth focus visuals, HUD elements, and particle effects without changing the existing interaction or display-control lifecycle.
+
+Tasks:
+
+- [x] Define medium-quality NASA runtime texture paths in `src/solar/solarAssetManifest.ts`; high-resolution textures are present on disk but are not the default runtime source.
+- [x] Define Earth day/cloud/night-light texture paths from `/assets/solar/nasa/runtime/medium/earth/`.
+- [x] Define available planet albedo texture paths for Mercury, Venus, Moon, Mars, Jupiter, Saturn, Uranus, and Neptune.
+- [x] Import user-provided NASA Mercury and Uranus albedo sources into the NASA asset structure; Mercury has 2K and 4K runtime outputs, while Uranus is 2K-only because its source is 2048x1024.
+- [x] Import the user-provided NASA Saturn ring source into the NASA asset structure with 2K and 4K runtime strip outputs.
+- [x] Define the medium starfield texture path.
+- [x] Define all current `/assets/solar/fx/*.png` paths, including rift, shockwave, HUD, anchor glow, Saturn ring, lens flare, particle, and nebula assets.
+- [x] Add `src/solar/textureAssets.ts`, a cached `TextureLoader` wrapper that applies sRGB color space for color/albedo textures, sets safe anisotropy, and returns `null` with a warning when loading fails.
+- [x] Upgrade solar overview planet materials through the asset manifest: Earth, Mercury, Venus, Moon, Mars, Jupiter, Saturn, Uranus, and Neptune use NASA medium albedo textures when loading succeeds, while keeping the existing procedural materials as fallback.
+- [x] Tune solar overview texture readability: loaded NASA albedo textures also drive a modest per-body emissive map so small AR preview planets, especially Earth and Neptune, do not collapse into dark blobs under overview lighting.
+- [x] Upgrade the solar overview Saturn ring material priority: NASA runtime ring PNG first, AI `saturn-ring-texture.png` second, existing procedural ring last; PNG alpha remains transparent and depth write stays disabled.
+- [x] Upgrade Earth only in the single-planet focus overlay to a multi-layer visual: day base texture, luminance-keyed cloud shell, subtle additive night-light shell, and Fresnel blue atmosphere shell.
+- [x] Refine Earth focus after real recording review: add a soft terminator shadow shell, limit city lights to the fake night side, increase cloud readability, and tighten the atmosphere rim.
+- [x] Refine Earth focus after the second recording review: make night lights warmer and more legible, render them above the cloud shell, and dim night-side clouds so city lights are not washed out by white cloud texture.
+- [x] Revert Earth focus to the pre-surface-shader visual pass after review: restore the ordinary loaded day texture base while keeping the warm night-light shell, night-side cloud dimming, and soft shadow shell.
+- [x] Upgrade the Planet Focus View to a profile-driven multi-layer structure for Mercury, Venus, Earth, Moon, Mars, Jupiter, Saturn, Uranus, and Neptune while keeping Sun focus out of scope.
+- [x] Keep the existing focused-body public API and planet focus/return interaction rules unchanged while adding the profile-driven focus layers.
+- [x] Earth focus uses day base, luminance-keyed cloud shell, warm night-light shell, soft shadow, and blue Fresnel atmosphere.
+- [x] Venus focus uses NASA albedo plus a gold haze shell and warm thick-atmosphere rim.
+- [x] Mercury focus uses NASA albedo when available, otherwise rocky procedural fallback, with only a subtle cold rim.
+- [x] Moon focus uses crater albedo with a subtle cold rim and no thick atmosphere.
+- [x] Mars focus uses red albedo plus a thin procedural dust haze and orange-red rim.
+- [x] Jupiter focus uses gas-giant band albedo plus a light procedural band shell and pale rim.
+- [x] Saturn focus uses NASA albedo plus a transparent ring that prefers NASA ring PNG, then AI PNG, then procedural fallback.
+- [x] Uranus focus uses cyan albedo/fallback and a clean pale-blue rim without forcing a low-quality ring.
+- [x] Neptune focus uses deep-blue albedo plus a thin procedural wind shell and electric-blue rim.
+- [x] Upgrade the solar overview Sun to a material-only plasma VFX core: time-driven inner shader sphere, additive Fresnel corona shell, and optional FX lens-flare sprite.
+- [x] Keep the Sun VFX inside the existing `CelestialBody` visibility lifecycle so the initial empty scene still shows no solar-system 3D content before pull-open.
+- [x] Avoid full-screen postprocessing for the Sun pass; no `EffectComposer`, `UnrealBloomPass`, or camera-covering bloom layer was added.
+- [x] Upgrade solar overview hover/activated HUD visuals: target-lock sprite from `target-lock-ring.png` with procedural ring fallback, darker/thinner idle orbits, brighter hover/activated orbit opacity, and glass-style planet labels.
+- [x] Keep `setInteractionVisualState` unchanged while making hover, activated, label, orbit, and target-lock HUD visuals respect focus background dimming.
+- [x] Upgrade the solar opening visual pass with a progress-driven opening VFX group: thin crack at startup, blue/gold rift in the middle, burst/shockwave near completion, and left/right hand anchor glows near the control endpoints.
+- [x] Keep opening VFX fully driven by existing `openingProgress`; no timer, autoplay, controller threshold, state-machine, or `SolarOpeningController` behavior changed.
+- [x] Keep opening VFX hidden in the initial empty scene by showing the VFX group only when `visibleRequested` is true and `openingProgress > 0`, with all sprite opacity derived from progress.
+- [x] Add a lightweight `SolarParticleField` using 200 total `Points` particles for stardust, orbit-trail accents, and micro flares; particles appear only when the solar system is visible and `openingProgress > 0.25`.
+- [x] Keep particle opacity progress-driven during opening and dim it during planet focus so background stardust/trails do not compete with the focused body.
+- [ ] Wire the manifest and loader into remaining HUD frames and later approved visual systems after the new visual-effects scheme is approved.
+
+Acceptance criteria:
+
+- [x] No gesture logic, state machine, `main.ts` interaction flow, or object visibility lifecycle changed.
+- [x] Solar overview `CelestialBody` material upgrades do not change hover rings, labels, activation visuals, focus entry logic, hot zones, hit tests, background dimming, or object visibility lifecycle.
+- [x] Initial empty scene remains unchanged; no starfield, nebula, particles, opening rift, HUD decoration, bloom, sun plasma, or extra 3D content was added before pull-open.
+- [x] Missing or failed texture loads do not crash the page; the loader returns `null`, and callers can keep using the existing procedural fallback.
+- [x] Planet focus uses the existing focus root, placement, scale, intro, follow, floating, and return API; the new layers are visual children only.
+- [x] Focus layers are structurally covered by unit tests, including Earth cloud/night-light/terminator/atmosphere shells, per-planet profile shells, and Saturn focus ring.
+- [x] Sun plasma layers are structurally covered by unit tests, including the plasma core, corona shell, lens flare sprite, and time uniform update.
+- [x] Hover/activated HUD visuals are structurally covered by unit tests, including target-lock object creation, label visibility, orbit brightening, activation brightening, and focus dimming.
+- [x] Opening VFX is structurally covered by unit tests, including initial hidden state, progress-driven crack/rift/burst/shockwave visibility, endpoint anchor attachment, and fade-out at full progress.
+- [x] Solar particles are structurally covered by unit tests, including total point count, hidden initial state, opening-progress threshold, and focus dimming.
+- [x] `npm run typecheck`, `npm test`, and `npm run build` pass.
 
 ## Cross-Milestone Engineering Tasks
 
@@ -1075,6 +1139,164 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-06-25 — Solar particle pass tuned after recording
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 17.34.25.mov`, the first particle pass was correct in lifecycle and performance shape but read too much like colorful UI dots rather than subtle stardust.
+- Visual tuning: particle count was reduced from 264 to 200, particle sizes and opacities were cut down, micro flares were reduced to 4 very faint trail-attached points, and cyan/gold trail points were tightened closer to the orbit plane with less z/vertical scatter.
+- Focus tuning: focus dimming for particles was strengthened so background stardust/trails recede more aggressively during single-planet focus.
+- Guardrail: this remains a `SolarParticleField` visual-only change using five `Points` objects; no gesture recognition, state machine, controller, `main.ts`, opening progress source, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/solarParticles.ts`.
+- Remaining ambiguity: another real recording should confirm particles now read as fine atmosphere and trail dust instead of interactive UI markers.
+
+### 2026-06-25 — Lightweight stardust and planet trail particles added
+
+- Visual update: added `SolarParticleField`, a lightweight particle layer with 264 total `Points` particles across white stardust, soft stardust, cyan trail accents, gold trail accents, and micro flares using the existing FX particle textures.
+- Lifecycle update: particles are attached to the solar-system group as `solar-particles-root`, remain hidden in the initial empty scene, and only become visible when `visibleRequested` is true and `openingProgress > 0.25`.
+- Opacity update: particle opacity fades in from opening progress 0.25 to 0.72, stays low enough for AR readability, and is multiplied by a focus dim scale when a single-planet focus view is active.
+- Performance guardrail: this pass uses five `Points` objects instead of hundreds of meshes, no GPU simulation, no postprocessing, and no changes to gesture recognition, state machines, controllers, or `main.ts` interaction flow.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarParticles.ts`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real browser/camera preview should tune particle opacity/size if stardust competes with hands or planet labels.
+
+### 2026-06-25 — Solar opening VFX tuned after real recording
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 17.17.22.mov`, early crack/rift sprites were too hard to see because they inherited the small opening group scale, while the late shockwave read as a large circular portal in front of the face.
+- Visual tuning: opening crack and blue/gold rift sprites now use bounded scale compensation so the early hand-driven tear is readable; burst/shockwave sprites are delayed, smaller, and lower opacity; hand-anchor glows keep endpoint positions but have stronger compensated size.
+- Guardrail: the VFX is still derived only from `openingProgress`; no timer, autoplay, `SolarOpeningController`, state-machine, gesture threshold, endpoint-control, `main.ts`, focus/return, or initial empty-scene behavior changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/solarSystem.ts`.
+- Remaining ambiguity: another real recording should confirm the opening now reads as a horizontal hand-torn rift rather than a sudden circular portal.
+
+### 2026-06-25 — Solar opening rift VFX added
+
+- Visual update: `CodePlaceholderSolarSystem` now owns a `solar-opening-vfx` group that displays progress-driven opening sprites: `thin-space-crack.png` at early progress, `blue-gold-energy-rift.png` through the middle, `burst-rift.png` plus cyan/blue-gold shockwave rings near completion, and blue/gold hand-anchor glow sprites near the left/right control endpoints.
+- Progress update: sprite opacity and scale are mapped directly from `openingProgress`; the VFX does not run a timer and cannot auto-complete the opening.
+- Guardrail: the VFX group is visible only when `visibleRequested` is true and `openingProgress > 0`; at `openingProgress = 0` the solar-system group remains hidden, preserving the initial empty AR scene. By `openingProgress = 1`, opening crack/rift/burst/anchor sprites fade out.
+- Interaction guardrail: no `SolarOpeningController`, state machine, gesture thresholds, endpoint-control semantics, `main.ts` interaction flow, hover/activation/focus/return rules, or global postprocessing changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam preview should tune sprite scale/opacity against hand distance and camera exposure.
+
+### 2026-06-25 — Planet hover and activation HUD upgraded
+
+- Visual update: planet hover and activation now use a HUD-style target lock object. The preferred visual is `target-lock-ring.png` loaded through the asset manifest; until the PNG loads, or if it fails, the existing procedural ring remains as a fallback.
+- Visual update: orbit rings are thinner and darker at idle, brighter on hover, and brightest on activation. Planet labels keep the canvas text path but now render as darker glass HUD panels with cyan borders and gold corner marks.
+- Dimming update: `setFocusBackgroundDimmed` still controls the background pass; body opacity, target-lock/fallback hover ring, orbit, label, and planet ring opacity all dim when the focus view is active.
+- Guardrail: `setInteractionVisualState` API is unchanged, `planetActivationController` was not modified, and no gesture/state-machine/focus-entry/return-button logic changed. No startup-visible 3D content, global starfield, nebula, particles, bloom, or postprocessing was added.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/celestialBody.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: browser preview should confirm target-lock sprite scale and label readability against webcam exposure.
+
+### 2026-06-25 — Solar overview Sun upgraded to plasma core VFX
+
+- Visual update: the solar overview Sun now uses a dedicated material-only VFX structure with a time-driven inner plasma shader sphere, an additive Fresnel corona shell, and an optional horizontal FX lens-flare sprite loaded from the asset manifest.
+- Fallback update: the lens flare texture loads through the safe cached texture loader. If the FX PNG is missing or fails to load, the sprite remains hidden and the plasma/corona core still renders without throwing.
+- Guardrail: this is scoped to the existing `CelestialBody` Sun branch and does not add Sun focus, full-screen postprocessing, `EffectComposer`, `UnrealBloomPass`, global bloom, starfield, nebula, particles, opening rift, or HUD decoration. The initial empty scene remains controlled by the existing solar-system visibility lifecycle.
+- Interaction guardrail: no gesture logic, state machines, interaction controllers, `main.ts` flow, hover/activation/focus entry, return-button hold behavior, or planet focus rules changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/celestialBody.ts`, `src/solar/solarVfxMaterials.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real browser/camera preview should tune corona/lens flare strength against webcam exposure after manual recording review.
+
+### 2026-06-25 — All planet focus views upgraded to profile-driven layered visuals
+
+- Visual update: `FocusedCelestialBody` now builds the single-planet focus hero from a reusable focus profile: base sphere, optional texture/procedural overlay shell, optional shadow shell, optional Fresnel atmosphere shell, and optional ring mesh.
+- Planet update: Earth keeps day/cloud/night-light/blue-atmosphere layers; Venus adds gold haze; Mercury and Moon emphasize rocky/cratered albedo with subtle cold rim; Mars adds thin red dust; Jupiter adds gas-band overlay; Saturn adds NASA/AI/procedural transparent ring fallback; Uranus stays clean cyan with pale rim; Neptune adds thin wind overlay and deep-blue rim.
+- Fallback update: focus albedo, Earth overlay textures, and Saturn ring textures all go through the safe cached loader. Missing or failed loads warn and keep the existing procedural focus material or ring fallback without throwing or black-screening focus view.
+- Guardrail: no gesture logic, state machines, interaction controllers, `main.ts` flow, hover/activation/focus entry, return-button hold behavior, background dimming, or initial empty-scene lifecycle changed. No opening rift, global starfield, nebula, particles, bloom, HUD decoration, or Sun focus was added.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/focusPlanetProfiles.ts`, `src/solar/focusedCelestialBody.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real browser/camera preview should tune per-planet atmosphere/overlay intensity after each focus body is manually inspected.
+
+### 2026-06-25 — Solar overview planets upgraded to NASA textures
+
+- Visual update: solar overview body materials now read albedo texture paths from the asset manifest. Earth uses the NASA medium day texture; Mercury, Venus, Moon, Mars, Jupiter, Saturn, Uranus, and Neptune use their NASA medium planet albedo textures when loading succeeds.
+- Readability update: loaded NASA overview textures also feed a modest `emissiveMap` with per-body intensity, making small preview planets more readable under AR overview lighting without changing focus Earth or adding any new lights/effects.
+- Fallback update: each overview body still creates its existing procedural material first, then swaps in the NASA texture only after it loads successfully; missing or failed loads warn through `textureAssets.ts` and keep the procedural fallback without throwing.
+- Ring update: the solar overview Saturn ring now tries the NASA runtime ring PNG first, then AI `saturn-ring-texture.png`, then keeps the existing procedural ring material. The ring material remains transparent with PNG alpha enabled and `depthWrite` disabled.
+- Guardrail: no gesture logic, state machines, tracking, coordinate mapping, interaction controllers, `main.ts` interaction flow, focus/follow/return semantics, labels, hover rings, hit tests, background dimming, or initial empty-scene lifecycle changed. No starfield, nebula, particles, rift, HUD decoration, bloom, sun plasma, corona, or lens flare was added.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/celestialBody.ts`, and `src/solar/planetTextureMaterials.ts`.
+- Remaining ambiguity: real browser preview should verify final perceived brightness/orientation of each NASA texture and Saturn ring alpha in the AR view.
+
+### 2026-06-25 — Mercury, Uranus, and Saturn ring NASA assets imported
+
+- Asset update: copied user-provided NASA source files from `inbox/` into `public/assets/solar/nasa/masters/` and generated supported runtime files under `public/assets/solar/nasa/runtime/`.
+- Runtime update: Mercury now has 2048x1024 and 4096x2048 runtime albedo files; Uranus has a 2048x1024 runtime albedo only, with no 4K upscale generated; Saturn ring has 2048x125 and 4096x250 runtime strip textures.
+- Manifest update: `public/assets/solar/manifests/nasa-assets.json` replaces the Mercury, Uranus, and Saturn ring `missing` entries with concrete asset metadata; `src/solar/solarAssetManifest.ts` marks Mercury and Uranus as available medium runtime textures and adds `NASA_RING_TEXTURES.saturn`.
+- Guardrail: no gesture logic, state machines, tracking, coordinate mapping, controller behavior, `main.ts` interaction flow, or object visibility lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `public/assets/solar/manifests/nasa-assets.json`, `src/solar/solarAssetManifest.ts`, and new files under `public/assets/solar/nasa/masters/` and `public/assets/solar/nasa/runtime/`.
+- Remaining ambiguity: original NASA web URLs for the user-provided source files were not included, so the manifest records them as user-provided NASA source files from `inbox/`.
+
+### 2026-06-25 — Earth focus reverted to the pre-surface-shader pass
+
+- Visual correction: per user review, the Earth focus view has been restored to the version before the day/night surface shader experiment. The loaded day texture is again applied directly to the base material, while the existing shadow, cloud, night-light, and atmosphere layers remain.
+- Superseded tuning: this intentionally backs out the surface-shader darkening from the previous two entries because it made the globe read as too black in real camera preview.
+- Guardrail: this remains a visual-only tuning in `FocusedCelestialBody`; no gesture logic, planet focus controller rules, return-button hold rules, state machine, `main.ts` flow, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/focusedCelestialBody.ts`.
+- Remaining ambiguity: the next visual direction should improve night-side readability without reintroducing the over-dark surface-shader pass.
+
+### 2026-06-25 — Earth focus night side pulled back from over-dark
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 14.49.55.mov`, the previous Earth focus pass was too dark and read as a black disk rather than cinematic night side.
+- Visual tuning: the Earth surface shader now keeps more night-side terrain/ocean detail, the cloud shell is less black on the night side, and the shadow shell opacity is reduced so it acts as a soft terminator rather than a second heavy darkening pass.
+- Guardrail: this remains a visual-only tuning in `FocusedCelestialBody`; no gesture logic, planet focus controller rules, return-button hold rules, state machine, `main.ts` flow, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/focusedCelestialBody.ts`.
+- Remaining ambiguity: another real browser/camera preview should confirm the balance between readable night detail and visible city lights.
+
+### 2026-06-25 — Earth focus surface shader deepens the night side
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 14.34.40.mov`, the loaded Earth day base now switches to a day/night surface shader that darkens terrain and oceans on the fake night side instead of relying only on an external shadow shell.
+- Visual tuning: night-side cloud opacity and color were reduced again, while the warm city-light layer stays additive above the clouds so it can read more clearly against the darker surface.
+- Guardrail: if the Earth day texture is missing or fails to load, the existing procedural focus material remains the fallback; no gesture logic, planet focus controller rules, return-button hold rules, state machine, `main.ts` flow, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/focusedCelestialBody.ts`.
+- Remaining ambiguity: another real browser/camera preview should confirm whether the darker night side now feels cinematic without losing too much globe detail.
+
+### 2026-06-25 — Earth focus night-side lights tuned after second recording
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 14.28.36.mov`, the Earth focus night-light shell now uses a warmer city-light palette, tighter luminance masking, and a stronger fake-night-side mask; it also renders above the cloud shell for readability.
+- Visual tuning: the cloud shell now uses the same fake light direction as the terminator and dims/thins clouds on the night side so clouds do not read as white texture noise over city lights.
+- Guardrail: changes remain inside `FocusedCelestialBody` Earth shader/render-order tuning and TODO documentation; no gesture logic, planet focus controller rules, return-button hold rules, state machine, `main.ts` flow, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, and `src/solar/focusedCelestialBody.ts`.
+- Remaining ambiguity: another real browser/camera preview should confirm the new city-light warmth and night-side cloud dimming are strong enough without looking artificial.
+
+### 2026-06-25 — Earth focus readability tuned after real recording
+
+- Visual tuning: after reviewing `~/Documents/录屏2026-06-25 14.22.21.mov`, the Earth focus view now has a softer but readable day/night terminator, night lights limited to the fake night side, brighter luminance-keyed clouds, faster independent cloud drift, and a thinner atmosphere rim.
+- Guardrail: changes remain inside `FocusedCelestialBody` Earth visuals and a unit-test structure assertion; no gesture logic, planet focus controller rules, return-button hold rules, state machine, `main.ts` flow, or initial empty-scene lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/focusedCelestialBody.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: another real browser/camera preview should confirm the terminator direction, city-light intensity, cloud opacity, and atmosphere thickness feel right on camera.
+
+### 2026-06-25 — Earth focus upgraded to multi-layer cinematic globe
+
+- Visual update: Earth in the single-planet focus overlay now uses a layered structure with a day base sphere, independent luminance-keyed cloud shell, subtle additive night-light shell, and blue Fresnel atmosphere shell.
+- Guardrail: this is scoped to `definition.id === 'earth'`; other focused bodies keep the existing focus material path/fallback, and the `FocusedCelestialBody` public API plus planet focus, follow, place-down, and return rules are unchanged.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/focusedCelestialBody.ts`, `src/solar/textureAssets.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real browser/camera preview should tune cloud alpha thresholds, night-light opacity, and atmosphere intensity after the next visual scheme is reviewed.
+
+### 2026-06-25 — VFX asset manifest and safe texture loader added
+
+- Engineering update: added a VFX asset pipeline foundation with medium-default NASA runtime paths, FX PNG paths, explicit missing markers for Mercury and Uranus, and a cached Three.js texture loader.
+- Guardrail: the loader warns and returns `null` on missing/failed loads so the existing procedural materials can remain the fallback; no `CelestialBody` visuals, gesture logic, state machine, `main.ts` interaction flow, or startup visibility lifecycle changed.
+- Verification: `npm run typecheck`, `npm test`, and `npm run build` pass.
+- Affected files: `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarAssetManifest.ts`, and `src/solar/textureAssets.ts`.
+- Remaining ambiguity: the actual visual style and which assets wire into each material/effect are intentionally deferred until the new visual-effects scheme is provided.
+
+### 2026-06-25 — Visual-effects phase preserves tested interaction logic
+
+- Requirement clarification: starting with visual-effects work, Codex must treat previously tested interaction logic and existing display-control logic as locked unless the user explicitly asks for a logic or display-control change.
+- Workflow update: visual work may improve materials, procedural textures, lighting, glow, particles, nebula, trails, labels, UI polish, recording mode, and rendering performance, but must not alter gesture state machines, thresholds, hand pairing, fresh-frame gating, coordinate mapping, solar-system handle lifecycle, or planet activation/focus/follow/return semantics without explicit user approval.
+- Planning update: Milestone 10 now includes this preservation guardrail as a task, acceptance criterion, and suggested prompt constraint.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, and `TODO.zh-CN.md`.
+- Remaining ambiguity: none; if a future visual goal requires logic/display-control changes, Codex must pause and ask before editing those paths.
 
 ### 2026-06-24 — M9 return moved from open-palm gesture to top-left index-finger button
 

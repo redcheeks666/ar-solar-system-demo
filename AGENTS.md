@@ -433,6 +433,16 @@ Add a recording mode or presentation mode that hides debug UI and leaves only mi
 
 Work milestone by milestone. Do not attempt to implement the full product in one large change.
 
+## Visual Effects Phase Guardrail
+
+Starting with the visual-effects phase, treat previously tested interaction logic and existing display-control logic as locked unless the user explicitly asks to change them.
+
+Visual-effects work may improve appearance and presentation: materials, procedural textures, lighting, glow, particles, nebula, trails, labels, UI polish, recording mode, and rendering performance. These changes must sit on top of the current interaction behavior.
+
+Do not modify gesture state machines, gesture thresholds, hand pairing, fresh-frame gating, coordinate mapping, solar-system opening/release/re-grip/collapse semantics, planet activation/focus/follow/return semantics, or the existing object visibility lifecycle unless the user explicitly requests that logic/display behavior change.
+
+If a visual goal appears to require changing interaction logic or existing show/hide control flow, pause and state the exact proposed behavior change and risk before editing code. Do not use visual polish as a reason to clean up, refactor, or retune already validated interaction paths.
+
 For every task:
 
 1. Restate the target milestone.
@@ -580,12 +590,14 @@ When you deliberately choose custom over an available built-in, record the reaso
 - Saturn must have a recognizable ring.
 - The code-placeholder solar system should use procedural materials only, keep visuals data-driven, and allow future texture replacement through material/data sources without changing interaction logic.
 - Star dust, nebula, and glow effects appear only after the pull-open interaction begins.
+- Visual polish must preserve tested interaction logic and the existing object show/hide lifecycle unless the user explicitly asks for an interaction or display-control change.
 
 ## Do Not
 
 - Do not convert the project into a generic 3D solar system viewer.
 - Do not show a 3D singularity or decorative object in the initial empty scene.
 - Do not auto-play the opening animation independent of hand distance.
+- During visual-effects work, do not modify previously tested interaction logic or existing display-control logic unless the user explicitly requests it.
 - If implementing any approved rotation, do not implement it as only 2D screen rotation.
 - Do not make PinchTap place-down, ordinary pinch relaxation, or tracking loss return a body to orbit.
 - Do not make ordinary open-hand motion return a body to orbit; single-planet return is now UI-driven by holding the tracked index fingertip on the top-left "长按返回太阳系" button for 1 second, not by mouse-clicking the DOM button.

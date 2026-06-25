@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MeshBasicMaterial, Vector3 } from 'three';
+import { Mesh, MeshBasicMaterial, Points, ShaderMaterial, Sprite, Vector3 } from 'three';
 import { CAMERA_FOV, CAMERA_Z } from '../../src/rendering/scene';
 import {
   FOCUS_BODY_WORLD_Z,
@@ -7,6 +7,7 @@ import {
   FOCUS_RETURN_DURATION_SECONDS,
   getFocusedBodyScreenHeightFraction,
 } from '../../src/solar/focusedCelestialBody';
+import { SOLAR_PARTICLE_COUNT } from '../../src/solar/solarParticles';
 import { CodePlaceholderSolarSystem } from '../../src/solar/solarSystem';
 import type { InteractiveCelestialBodyId } from '../../src/solar/solarSystemData';
 
@@ -216,6 +217,178 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     }
   });
 
+  it('maps opening progress to rift and endpoint anchor VFX without auto-completing', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+
+    try {
+      const openingVfx = solarSystem.group.getObjectByName('solar-opening-vfx');
+      const thinCrack = solarSystem.group.getObjectByName(
+        'solar-opening-thin-space-crack',
+      );
+      const energyRift = solarSystem.group.getObjectByName(
+        'solar-opening-blue-gold-energy-rift',
+      );
+      const burstRift = solarSystem.group.getObjectByName(
+        'solar-opening-burst-rift',
+      );
+      const shockwave = solarSystem.group.getObjectByName(
+        'solar-opening-cyan-shockwave-ring',
+      );
+      const leftAnchor = solarSystem.group.getObjectByName(
+        'solar-opening-left-hand-blue-anchor-glow',
+      );
+      const rightAnchor = solarSystem.group.getObjectByName(
+        'solar-opening-right-hand-gold-anchor-glow',
+      );
+      const leftEndpoint = solarSystem.group.getObjectByName(
+        'visual-left-control-endpoint',
+      );
+      const rightEndpoint = solarSystem.group.getObjectByName(
+        'visual-right-control-endpoint',
+      );
+
+      expect(openingVfx?.visible).toBe(false);
+
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(0);
+      expect(solarSystem.group.visible).toBe(false);
+      expect(openingVfx?.visible).toBe(false);
+
+      solarSystem.setOpeningProgress(0.12);
+      expect(solarSystem.group.visible).toBe(true);
+      expect(openingVfx?.visible).toBe(true);
+      expect(thinCrack?.visible).toBe(true);
+      expect(leftAnchor?.visible).toBe(true);
+      expect(rightAnchor?.visible).toBe(true);
+      expect(leftAnchor?.position.x).toBeCloseTo(leftEndpoint?.position.x ?? 0, 5);
+      expect(rightAnchor?.position.x).toBeCloseTo(rightEndpoint?.position.x ?? 0, 5);
+
+      solarSystem.setOpeningProgress(0.48);
+      expect(energyRift?.visible).toBe(true);
+      expect(energyRift?.scale.x).toBeGreaterThan(0.5);
+
+      solarSystem.setOpeningProgress(0.72);
+      expect(burstRift?.visible).toBe(true);
+      expect(shockwave?.visible).toBe(true);
+
+      solarSystem.setOpeningProgress(1);
+      expect(thinCrack?.visible).toBe(false);
+      expect(energyRift?.visible).toBe(false);
+      expect(burstRift?.visible).toBe(false);
+      expect(shockwave?.visible).toBe(false);
+      expect(leftAnchor?.visible).toBe(false);
+      expect(rightAnchor?.visible).toBe(false);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('shows lightweight stardust and trail particles only after opening is underway', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+
+    try {
+      const particleRoot = solarSystem.group.getObjectByName(
+        'solar-particles-root',
+      );
+      const whiteStardust = solarSystem.group.getObjectByName(
+        'solar-stardust-white-points',
+      ) as Points;
+      const cyanTrails = solarSystem.group.getObjectByName(
+        'solar-cyan-trail-points',
+      ) as Points;
+
+      expect(particleRoot?.visible).toBe(false);
+      expect(whiteStardust).toBeDefined();
+      expect(cyanTrails).toBeDefined();
+      const particlePointCount = [
+        'solar-stardust-white-points',
+        'solar-stardust-field-points',
+        'solar-cyan-trail-points',
+        'solar-gold-trail-points',
+        'solar-micro-flare-points',
+      ].reduce((total, objectName) => {
+        const points = solarSystem.group.getObjectByName(objectName) as Points;
+        const position = points.geometry.getAttribute('position');
+
+        return total + position.count;
+      }, 0);
+      expect(particlePointCount).toBe(SOLAR_PARTICLE_COUNT);
+
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(0.24);
+      expect(particleRoot?.visible).toBe(false);
+
+      solarSystem.setOpeningProgress(0.5);
+      expect(particleRoot?.visible).toBe(true);
+      expect(whiteStardust.visible).toBe(true);
+      expect(cyanTrails.visible).toBe(true);
+      const openingOpacity = whiteStardust.material.opacity;
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'earth',
+        focusedBody: 'earth',
+      });
+      expect(whiteStardust.material.opacity).toBeLessThan(openingOpacity);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('uses HUD target-lock, label, and orbit opacity states for hover and activation', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const targetLockHud =
+        solarSystem.group.getObjectByName('mars-target-lock-hud');
+      const hoverRing = solarSystem.group.getObjectByName('mars-hover-ring');
+      const label = solarSystem.group.getObjectByName('mars-label');
+      const orbit = solarSystem.group.getObjectByName('mars-orbit-ring');
+
+      expect(targetLockHud).toBeDefined();
+      expect(hoverRing).toBeDefined();
+      expect(label).toBeDefined();
+      expect(orbit).toBeDefined();
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: 'mars',
+        activatedBody: null,
+      });
+
+      const hoverRingMaterial = (hoverRing as Mesh).material as MeshBasicMaterial;
+      const orbitMaterial = (orbit as Mesh).material as MeshBasicMaterial;
+      const labelMaterial = (label as Sprite).material;
+      const hoverRingOpacity = hoverRingMaterial.opacity;
+      const hoverOrbitOpacity = orbitMaterial.opacity;
+
+      expect(hoverRing.visible).toBe(true);
+      expect(label.visible).toBe(true);
+      expect(labelMaterial.opacity).toBe(1);
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'mars',
+      });
+
+      expect(hoverRingMaterial.opacity).toBeGreaterThan(hoverRingOpacity);
+      expect(orbitMaterial.opacity).toBeGreaterThan(hoverOrbitOpacity);
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'mars',
+        focusedBody: 'earth',
+      });
+
+      expect(hoverRingMaterial.opacity).toBeLessThan(hoverRingOpacity);
+      expect(orbitMaterial.opacity).toBeLessThan(hoverOrbitOpacity);
+      expect(labelMaterial.opacity).toBeLessThan(1);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
   it('shows a focused body overlay while lowering background body opacity', () => {
     const solarSystem = new CodePlaceholderSolarSystem();
     solarSystem.setVisible(true);
@@ -247,6 +420,18 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       const focusMesh = solarSystem.group.getObjectByName(
         'focus-earth-placeholder-sphere',
       );
+      const earthCloudShell = solarSystem.group.getObjectByName(
+        'focus-earth-cloud-shell',
+      );
+      const earthNightLightsShell = solarSystem.group.getObjectByName(
+        'focus-earth-night-lights-shell',
+      );
+      const earthTerminatorShadowShell = solarSystem.group.getObjectByName(
+        'focus-earth-terminator-shadow-shell',
+      );
+      const earthAtmosphereShell = solarSystem.group.getObjectByName(
+        'focus-earth-atmosphere-shell',
+      );
       const leftEndpoint = solarSystem.group.getObjectByName(
         'visual-left-control-endpoint',
       );
@@ -256,6 +441,10 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       expect(focusRoot?.visible).toBe(true);
       expect(leftEndpoint?.visible).toBe(false);
       expect(focusMesh).toBeDefined();
+      expect(earthCloudShell).toBeDefined();
+      expect(earthNightLightsShell).toBeDefined();
+      expect(earthTerminatorShadowShell).toBeDefined();
+      expect(earthAtmosphereShell).toBeDefined();
       expect(focusMesh).toHaveProperty('material');
       expect((focusMesh as { material: unknown }).material).toBeInstanceOf(
         MeshBasicMaterial,
@@ -547,8 +736,75 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         const focusRoot = solarSystem.group.getObjectByName(
           `focus-${definition.id}-root`,
         );
+        const focusMesh = focusRoot?.getObjectByName(
+          `focus-${definition.id}-placeholder-sphere`,
+        );
+        const atmosphere = focusRoot?.getObjectByName(
+          `focus-${definition.id}-atmosphere-shell`,
+        );
         expect(focusRoot?.visible).toBe(true);
+        expect(focusMesh).toBeDefined();
+        expect(atmosphere).toBeDefined();
+        if (definition.id !== 'earth') {
+          expect(
+            focusRoot?.getObjectByName(`focus-${definition.id}-cloud-shell`),
+          ).toBeUndefined();
+        }
+
+        const expectedOverlayByBody: Partial<Record<InteractiveCelestialBodyId, string>> = {
+          venus: 'haze',
+          mars: 'dust',
+          jupiter: 'bands',
+          neptune: 'winds',
+        };
+        const expectedOverlay = expectedOverlayByBody[definition.id];
+        if (expectedOverlay) {
+          expect(
+            focusRoot?.getObjectByName(
+              `focus-${definition.id}-${expectedOverlay}-shell`,
+            ),
+          ).toBeDefined();
+        }
+
+        if (definition.id === 'saturn') {
+          expect(
+            focusRoot?.getObjectByName('focus-saturn-saturn-ring'),
+          ).toBeDefined();
+        }
       });
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('creates a plasma sun core with time-driven shader layers', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const plasmaCore = solarSystem.group.getObjectByName('sun-plasma-core');
+      const coronaShell = solarSystem.group.getObjectByName('sun-corona-shell');
+      const lensFlare = solarSystem.group.getObjectByName(
+        'sun-lens-flare-sprite',
+      );
+
+      expect(plasmaCore).toBeDefined();
+      expect(coronaShell).toBeDefined();
+      expect(lensFlare).toBeDefined();
+      expect((plasmaCore as Mesh).material).toBeInstanceOf(ShaderMaterial);
+      expect((coronaShell as Mesh).material).toBeInstanceOf(ShaderMaterial);
+
+      const plasmaMaterial = (plasmaCore as Mesh).material as ShaderMaterial;
+      const coronaMaterial = (coronaShell as Mesh).material as ShaderMaterial;
+      const initialTime = plasmaMaterial.uniforms.time.value as number;
+
+      solarSystem.update(0.25);
+
+      expect(plasmaMaterial.uniforms.time.value).toBeGreaterThan(initialTime);
+      expect(coronaMaterial.uniforms.time.value).toBe(
+        plasmaMaterial.uniforms.time.value,
+      );
     } finally {
       solarSystem.dispose();
     }
