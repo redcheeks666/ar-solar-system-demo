@@ -50,6 +50,50 @@ export class DebugOverlay {
   private buildRows(snapshot: DebugSnapshot): HTMLElement[] {
     const rows: Array<[string, string]> = [
       ['FPS', snapshot.fps.toFixed(1)],
+      [
+        'Perf frame',
+        `${formatMs(snapshot.performance.renderDeltaMs)} / render ${formatMs(
+          snapshot.performance.renderMs,
+        )}`,
+      ],
+      [
+        'Perf tracking',
+        `update ${formatMs(snapshot.performance.trackingUpdateMs)} / detect ${formatMs(
+          snapshot.performance.detectMs,
+        )}`,
+      ],
+      [
+        'Perf hand/pose',
+        `${formatMs(snapshot.performance.handDetectMs)} / ${formatMs(
+          snapshot.performance.poseDetectMs,
+        )}`,
+      ],
+      [
+        'Tracking Hz',
+        `${formatNullable(snapshot.performance.trackingHz)} (${snapshot.performance.detectionFrameCount})`,
+      ],
+      [
+        'Frame freshness',
+        `${snapshot.performance.freshTrackingFrame ? 'fresh' : 'stale'} age=${formatMs(
+          snapshot.performance.freshFrameAgeMs,
+        )} fresh=${snapshot.performance.freshTrackingFrames} stale=${snapshot.performance.staleRenderFrames}`,
+      ],
+      [
+        'Video frame',
+        `dt=${formatMs(snapshot.performance.videoFrameDeltaMs)} repeated=${snapshot.performance.repeatedVideoFrameCount}`,
+      ],
+      [
+        'Perf controllers',
+        `gesture ${formatMs(snapshot.performance.controllerMs)} / recorder ${formatMs(
+          snapshot.performance.recorderMs,
+        )}`,
+      ],
+      [
+        'Perf solar/VFX',
+        `solar ${formatMs(snapshot.performance.solarUpdateMs)} / vfx ${formatMs(
+          snapshot.performance.vfxFrameUploadMs,
+        )} (${snapshot.performance.vfxFrameUploadCount})`,
+      ],
       ['Camera', snapshot.cameraStatus],
       ['Tracking', snapshot.trackingStatus],
       ['Tracking error', snapshot.trackingError ?? 'none'],
@@ -339,6 +383,10 @@ export class DebugOverlay {
 
 function formatNullable(value: number | null): string {
   return value === null ? 'n/a' : value.toFixed(3);
+}
+
+function formatMs(value: number | null): string {
+  return value === null ? 'n/a' : `${value.toFixed(1)}ms`;
 }
 
 function formatPair(x: number | null, y: number | null): string {

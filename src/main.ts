@@ -22,7 +22,6 @@ import {
 } from './interaction/wholeSystemIntent';
 import {
   SolarOpeningController,
-  getSolarOpeningRotation,
   type SolarOpeningSnapshot,
 } from './interaction/solarOpeningController';
 import {
@@ -68,6 +67,12 @@ const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
 const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
 const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
 const planetReturnButton = getElement<HTMLButtonElement>('planet-return-button');
+const planetFocusSwitchButton = getElement<HTMLButtonElement>(
+  'planet-focus-switch-button',
+);
+const planetFocusSwitchLabel = getElement<HTMLElement>(
+  'planet-focus-switch-label',
+);
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
@@ -87,15 +92,31 @@ const solarOpening = new SolarOpeningController();
 const planetActivation = new PlanetActivationController();
 const planetFocus = new PlanetFocusController();
 const PLANET_RETURN_HOLD_MS = 1000;
+const EARTH_MOON_SWITCH_HOLD_MS = 500;
 const PLANET_RETURN_FINGER_HIT_SLOP_PX = 12;
+type EarthMoonFocusBodyId = Extract<
+  InteractiveCelestialBodyId,
+  'earth' | 'moon'
+>;
 
 let activeStream: MediaStream | null = null;
 let cameraStatus: CameraPermissionStatus = 'idle';
 let latestTracking = tracking.getSnapshot();
 let returningFocusedBody: InteractiveCelestialBodyId | null = null;
+let latestPlanetActivationSnapshot: PlanetActivationSnapshot =
+  EMPTY_PLANET_ACTIVATION_SNAPSHOT;
 let returnButtonHold: PlanetReturnButtonHoldState = EMPTY_PLANET_RETURN_BUTTON_HOLD;
+let earthMoonFocusBody: EarthMoonFocusBodyId = 'earth';
+let earthMoonSwitchButtonHold: PlanetReturnButtonHoldState =
+  EMPTY_PLANET_RETURN_BUTTON_HOLD;
+let earthMoonSwitchNeedsClear = false;
 // Detection timestamp of the last tracking frame fed to the interaction controllers.
 let lastGestureInputAt: number | null = null;
+let perfFreshTrackingFrames = 0;
+let perfStaleRenderFrames = 0;
+let lastControllerMs: number | null = null;
+let lastRecorderMs: number | null = null;
+let lastSolarUpdateMs: number | null = null;
 
 renderer.addObject3D(placeholderSolarSystem.group);
 placeholderSolarSystem.setVisible(solarPreviewEnabled);
@@ -104,7 +125,6 @@ placeholderSolarSystem.setOpeningProgress(solarPreviewEnabled ? 1 : 0);
 if (solarPreviewEnabled) {
   placeholderSolarSystem.setTransform({
     position: { x: 0, y: 0, z: 0 },
-    rotation: { x: -0.58, y: 0.12, z: 0.08 },
     scale: 0.66,
   });
   introPanel.hidden = true;
@@ -113,6 +133,7 @@ if (solarPreviewEnabled) {
 
 const debugSnapshot: DebugSnapshot = {
   fps: 0,
+  performance: createEmptyPerformanceSnapshot(),
   cameraStatus,
   trackingStatus: latestTracking.status,
   trackingError: latestTracking.error,
@@ -192,30 +213,56 @@ debugOverlay.onVisibilityChange((visible) => {
   debugRecorderControls.hidden = !visible;
 });
 
-renderer.start(({ fps, canvasSize, deltaSeconds, timestampMs }) => {
+renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs }) => {
   const timestamp = timestampMs;
+  let trackingUpdateMs: number | null = null;
+  let freshTrackingFrame = false;
+  let recordGestureAt: number | null = null;
 
   if (cameraStatus === 'granted') {
+    const trackingUpdateStartedAt = performance.now();
     latestTracking = tracking.update(videoElement, timestamp);
+    trackingUpdateMs = performance.now() - trackingUpdateStartedAt;
 
     // P0: only advance the interaction state machines on a genuinely new detection frame, and
     // feed them the detection timestamp (not the render timestamp), so re-rendered stale frames
     // do not inject fake zero-velocity samples into the gesture velocity features.
     if (isFreshTrackingFrame(latestTracking.lastUpdatedAt, lastGestureInputAt)) {
+      freshTrackingFrame = true;
+      perfFreshTrackingFrames += 1;
       const trackingAt = latestTracking.lastUpdatedAt as number;
       lastGestureInputAt = trackingAt;
+      const controllerStartedAt = performance.now();
       updateGestureControllers(latestTracking, trackingAt, canvasSize);
-      gestureRecorder.record(trackingAt, latestTracking, debugSnapshot);
+      lastControllerMs = performance.now() - controllerStartedAt;
+      recordGestureAt = trackingAt;
+    } else if (latestTracking.status === 'ready') {
+      perfStaleRenderFrames += 1;
     }
   }
 
+  const solarUpdateStartedAt = performance.now();
   placeholderSolarSystem.update(deltaSeconds);
+  lastSolarUpdateMs = performance.now() - solarUpdateStartedAt;
   completeBodyReturnIfReady();
 
   debugSnapshot.fps = fps;
   debugSnapshot.cameraStatus = cameraStatus;
   debugSnapshot.interactionState = interaction.state;
   debugSnapshot.canvasSize = canvasSize;
+  updatePerformanceDebugMetrics({
+    deltaMs,
+    renderMs,
+    timestamp,
+    trackingUpdateMs,
+    freshTrackingFrame,
+  });
+  if (recordGestureAt !== null) {
+    const recorderStartedAt = performance.now();
+    gestureRecorder.record(recordGestureAt, latestTracking, debugSnapshot);
+    lastRecorderMs = performance.now() - recorderStartedAt;
+    debugSnapshot.performance.recorderMs = lastRecorderMs;
+  }
   updateTrackingDebugMetrics(latestTracking);
   if (debugOverlay.isVisible) {
     updatePreviewDebugMetrics();
@@ -230,6 +277,7 @@ renderer.start(({ fps, canvasSize, deltaSeconds, timestampMs }) => {
   statusSummary.update(debugSnapshot);
   debugOverlay.update(debugSnapshot);
   updatePlanetReturnButtonVisibility();
+  updatePlanetFocusSwitchButtonVisibility();
 });
 
 startButton.addEventListener('click', () => {
@@ -246,6 +294,7 @@ window.addEventListener('beforeunload', () => {
   planetActivation.reset();
   planetFocus.reset();
   cancelPlanetReturnHold();
+  cancelEarthMoonSwitchHold();
   renderer.removeObject3D(placeholderSolarSystem.group);
   placeholderSolarSystem.dispose();
   renderer.dispose();
@@ -360,6 +409,7 @@ function updateGestureControllers(
 
   if (interaction.state === 'BodyReturning') {
     cancelPlanetReturnHold();
+    cancelEarthMoonSwitchHold();
     return;
   }
 
@@ -381,8 +431,9 @@ function updateGestureControllers(
 
   applyPlanetActivationSnapshot(planetActivationUpdate.snapshot);
 
-  const focusedBody = planetActivationUpdate.snapshot.activatedBody;
-  if (isPlanetFocusState(interaction.state) && focusedBody) {
+  const activatedBody = planetActivationUpdate.snapshot.activatedBody;
+  const focusedBody = getFocusDisplayBody(activatedBody);
+  if (isPlanetFocusState(interaction.state) && activatedBody && focusedBody) {
     const planetFocusUpdate = planetFocus.update({
       tracking,
       interactionState: interaction.state,
@@ -407,10 +458,14 @@ function updateGestureControllers(
     applyPlanetFocusSnapshot(planetFocusUpdate.snapshot, camera, previewLayout);
     updatePlanetReturnButtonVisibility();
     updatePlanetReturnButtonHandHold(tracking, timestamp, previewLayout);
+    updatePlanetFocusSwitchButtonVisibility();
+    updateEarthMoonSwitchButtonHandHold(tracking, timestamp, previewLayout);
     return;
   }
 
   cancelPlanetReturnHold();
+  cancelEarthMoonSwitchHold();
+  resetEarthMoonFocusBody();
   planetFocus.reset();
   debugSnapshot.planetFocus = EMPTY_PLANET_FOCUS_SNAPSHOT;
 }
@@ -455,6 +510,61 @@ function createPreviewLayout(canvasSize: { width: number; height: number }) {
   };
 }
 
+function createEmptyPerformanceSnapshot(): DebugSnapshot['performance'] {
+  return {
+    renderDeltaMs: 0,
+    renderMs: null,
+    trackingUpdateMs: null,
+    detectMs: null,
+    handDetectMs: null,
+    poseDetectMs: null,
+    controllerMs: null,
+    recorderMs: null,
+    solarUpdateMs: null,
+    vfxFrameUploadMs: null,
+    vfxFrameUploadCount: 0,
+    trackingHz: null,
+    freshFrameAgeMs: null,
+    freshTrackingFrame: false,
+    freshTrackingFrames: 0,
+    staleRenderFrames: 0,
+    detectionFrameCount: 0,
+    repeatedVideoFrameCount: 0,
+    videoCurrentTimeMs: null,
+    videoFrameDeltaMs: null,
+  };
+}
+
+function updatePerformanceDebugMetrics(input: {
+  deltaMs: number;
+  renderMs: number | null;
+  timestamp: number;
+  trackingUpdateMs: number | null;
+  freshTrackingFrame: boolean;
+}): void {
+  const trackingPerf = tracking.getPerformanceSnapshot();
+  const solarPerf = placeholderSolarSystem.getPerformanceSnapshot();
+
+  debugSnapshot.performance = {
+    ...trackingPerf,
+    renderDeltaMs: input.deltaMs,
+    renderMs: input.renderMs,
+    trackingUpdateMs: input.trackingUpdateMs,
+    controllerMs: lastControllerMs,
+    recorderMs: lastRecorderMs,
+    solarUpdateMs: lastSolarUpdateMs,
+    vfxFrameUploadMs: solarPerf.vfxFrameUploadMs,
+    vfxFrameUploadCount: solarPerf.vfxFrameUploadCount,
+    freshFrameAgeMs:
+      latestTracking.lastUpdatedAt === null
+        ? null
+        : Math.max(input.timestamp - latestTracking.lastUpdatedAt, 0),
+    freshTrackingFrame: input.freshTrackingFrame,
+    freshTrackingFrames: perfFreshTrackingFrames,
+    staleRenderFrames: perfStaleRenderFrames,
+  };
+}
+
 function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
   debugSnapshot.openProgress = snapshot.progress;
   debugSnapshot.solarScale = snapshot.scale;
@@ -471,7 +581,6 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
 
   placeholderSolarSystem.setTransform({
     position: snapshot.midpointWorld,
-    rotation: getSolarOpeningRotation(snapshot),
     scale: snapshot.scale,
   });
 }
@@ -479,6 +588,7 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
 function applyPlanetActivationSnapshot(
   snapshot: PlanetActivationSnapshot,
 ): void {
+  latestPlanetActivationSnapshot = snapshot;
   debugSnapshot.hoveredBody = snapshot.hoveredBody;
   debugSnapshot.activatedBody = snapshot.activatedBody;
   debugSnapshot.pinchState = snapshot.pinchState;
@@ -487,7 +597,7 @@ function applyPlanetActivationSnapshot(
     hoveredBody: snapshot.hoveredBody,
     activatedBody: snapshot.activatedBody,
     focusedBody: isFocusVisualState(interaction.state)
-      ? snapshot.activatedBody
+      ? getFocusDisplayBody(snapshot.activatedBody)
       : null,
   });
 }
@@ -627,17 +737,17 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'PlanetFocusView') {
-    guidance.textContent = '已进入单个星球界面，等居中后离开热区，再重新碰触星球停留 1 秒可跟手；食指尖按住左上角按钮可返回';
+    guidance.textContent = '已进入单个星球界面，等居中后离开热区，再重新碰触星球停留 1 秒可跟手；地月界面可长按切换视角';
     return;
   }
 
   if (state === 'PlanetFocusControlled') {
-    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；食指尖按住左上角按钮可返回';
+    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；左上角按钮可返回或切换地月视角';
     return;
   }
 
   if (state === 'PlanetFocusFloating') {
-    guidance.textContent = '星球已放下悬浮；手先离开热区，再重新碰触停留 1 秒可跟手；食指尖按住左上角按钮可返回太阳系';
+    guidance.textContent = '星球已放下悬浮；手先离开热区，再重新碰触停留 1 秒可跟手；左上角按钮可返回或切换地月视角';
     return;
   }
 
@@ -664,6 +774,16 @@ function isPlanetFocusState(state: string): boolean {
 
 function isFocusVisualState(state: string): boolean {
   return isPlanetFocusState(state) || state === 'BodyReturning';
+}
+
+function getFocusDisplayBody(
+  activatedBody: InteractiveCelestialBodyId | null,
+): InteractiveCelestialBodyId | null {
+  if (activatedBody === 'earth') {
+    return earthMoonFocusBody;
+  }
+
+  return activatedBody;
 }
 
 function updatePlanetReturnButtonHandHold(
@@ -698,6 +818,57 @@ function updatePlanetReturnButtonHandHold(
 
   if (holdUpdate.triggered) {
     triggerPlanetReturnFromButton(holdUpdate.hold.handKey);
+  }
+}
+
+function updateEarthMoonSwitchButtonHandHold(
+  tracking: TrackingSnapshot,
+  timestamp: number,
+  layout: PreviewLayout,
+): void {
+  const active = isEarthMoonFocusSwitchActive();
+  const rect = getPlanetFocusSwitchButtonStageRect(layout);
+
+  if (earthMoonSwitchNeedsClear) {
+    const clearProbe = updatePlanetReturnButtonHold({
+      active,
+      hands: tracking.hands.hands,
+      layout,
+      rect,
+      previous: EMPTY_PLANET_RETURN_BUTTON_HOLD,
+      requiredMs: EARTH_MOON_SWITCH_HOLD_MS,
+      timestamp,
+      hitSlopPx: PLANET_RETURN_FINGER_HIT_SLOP_PX,
+    });
+
+    if (!active || clearProbe.hit === null) {
+      earthMoonSwitchNeedsClear = false;
+    }
+
+    cancelEarthMoonSwitchHold();
+    return;
+  }
+
+  const holdUpdate = updatePlanetReturnButtonHold({
+    active,
+    hands: tracking.hands.hands,
+    layout,
+    rect,
+    previous: earthMoonSwitchButtonHold,
+    requiredMs: EARTH_MOON_SWITCH_HOLD_MS,
+    timestamp,
+    hitSlopPx: PLANET_RETURN_FINGER_HIT_SLOP_PX,
+  });
+
+  earthMoonSwitchButtonHold = holdUpdate.hold;
+  setPlanetFocusSwitchButtonProgress(holdUpdate.progress);
+  planetFocusSwitchButton.classList.toggle(
+    'is-charging',
+    holdUpdate.hit !== null,
+  );
+
+  if (holdUpdate.triggered) {
+    triggerEarthMoonFocusSwitch();
   }
 }
 
@@ -743,7 +914,8 @@ function setPlanetReturnButtonProgress(progress: number): void {
 }
 
 function updatePlanetReturnButtonVisibility(): void {
-  const visible = isPlanetFocusState(interaction.state) && getActiveFocusedBody() !== null;
+  const visible =
+    isPlanetFocusState(interaction.state) && getActiveFocusedBody() !== null;
   planetReturnButton.hidden = !visible;
 
   if (!visible) {
@@ -751,14 +923,94 @@ function updatePlanetReturnButtonVisibility(): void {
   }
 }
 
+function triggerEarthMoonFocusSwitch(): void {
+  if (!isEarthMoonFocusSwitchActive()) {
+    cancelEarthMoonSwitchHold();
+    return;
+  }
+
+  earthMoonFocusBody = earthMoonFocusBody === 'earth' ? 'moon' : 'earth';
+  earthMoonSwitchNeedsClear = true;
+  cancelEarthMoonSwitchHold({ keepProgress: true });
+  cancelPlanetReturnHold();
+  updatePlanetFocusSwitchButtonLabel();
+  applyPlanetActivationSnapshot(latestPlanetActivationSnapshot);
+  debugSnapshot.planetFocus = {
+    ...debugSnapshot.planetFocus,
+    focusedBody: earthMoonFocusBody,
+    transitionReason: `earth-moon-switch-to-${earthMoonFocusBody}`,
+  };
+}
+
+function cancelEarthMoonSwitchHold(
+  options: { keepProgress?: boolean } = {},
+): void {
+  earthMoonSwitchButtonHold = EMPTY_PLANET_RETURN_BUTTON_HOLD;
+  planetFocusSwitchButton.classList.remove('is-charging');
+
+  if (!options.keepProgress) {
+    setPlanetFocusSwitchButtonProgress(0);
+  }
+}
+
+function setPlanetFocusSwitchButtonProgress(progress: number): void {
+  planetFocusSwitchButton.style.setProperty(
+    '--return-progress',
+    progress.toFixed(3),
+  );
+}
+
+function updatePlanetFocusSwitchButtonVisibility(): void {
+  const visible = isEarthMoonFocusSwitchActive();
+  planetFocusSwitchButton.hidden = !visible;
+  updatePlanetFocusSwitchButtonLabel();
+
+  if (!visible) {
+    cancelEarthMoonSwitchHold();
+  }
+}
+
+function updatePlanetFocusSwitchButtonLabel(): void {
+  const targetBody = earthMoonFocusBody === 'earth' ? '月球' : '地球';
+  const label = `长按切换${targetBody}视角`;
+  planetFocusSwitchLabel.textContent = label;
+  planetFocusSwitchButton.setAttribute('aria-label', label);
+}
+
+function isEarthMoonFocusSwitchActive(): boolean {
+  return (
+    isPlanetFocusState(interaction.state) &&
+    debugSnapshot.activatedBody === 'earth'
+  );
+}
+
+function resetEarthMoonFocusBody(): void {
+  earthMoonFocusBody = 'earth';
+  earthMoonSwitchNeedsClear = false;
+  updatePlanetFocusSwitchButtonLabel();
+}
+
 function getPlanetReturnButtonStageRect(
   layout: PreviewLayout,
 ): PlanetReturnButtonStageRect | null {
-  if (planetReturnButton.hidden) {
+  return getButtonStageRect(planetReturnButton, layout);
+}
+
+function getPlanetFocusSwitchButtonStageRect(
+  layout: PreviewLayout,
+): PlanetReturnButtonStageRect | null {
+  return getButtonStageRect(planetFocusSwitchButton, layout);
+}
+
+function getButtonStageRect(
+  button: HTMLElement,
+  layout: PreviewLayout,
+): PlanetReturnButtonStageRect | null {
+  if (button.hidden) {
     return null;
   }
 
-  const buttonRect = planetReturnButton.getBoundingClientRect();
+  const buttonRect = button.getBoundingClientRect();
   const canvasRect = canvasElement.getBoundingClientRect();
 
   if (buttonRect.width <= 0 || buttonRect.height <= 0) {
@@ -825,12 +1077,15 @@ function finishBodyReturn(): void {
   }
 
   returningFocusedBody = null;
+  resetEarthMoonFocusBody();
+  cancelEarthMoonSwitchHold();
   planetActivation.reset();
   planetFocus.reset();
   debugSnapshot.hoveredBody = null;
   debugSnapshot.activatedBody = null;
   debugSnapshot.pinchState = 'idle';
   debugSnapshot.planetActivation = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
+  latestPlanetActivationSnapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   debugSnapshot.planetFocus = EMPTY_PLANET_FOCUS_SNAPSHOT;
   debugSnapshot.throwVelocity = null;
   placeholderSolarSystem.applyBodyInteractionState({

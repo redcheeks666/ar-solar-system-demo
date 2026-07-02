@@ -373,7 +373,7 @@ export class CelestialBody {
     );
     const ring = new Mesh(geometry, material);
     ring.name = `${this.definition.id}-saturn-ring`;
-    ring.rotation.x = Math.PI * 0.38;
+    ring.rotation.x = Math.PI * 0.08;
     this.bodyAnchor.add(ring);
     this.planetRingMaterial = material;
     this.geometries.push(geometry);
@@ -624,17 +624,17 @@ function getOverviewTextureEmissiveIntensity(
   switch (bodyId) {
     case 'earth':
     case 'neptune':
-      return 0.34;
+      return 0.52;
     case 'uranus':
-      return 0.3;
+      return 0.48;
     case 'mercury':
     case 'mars':
     case 'moon':
     case 'venus':
-      return 0.24;
+      return 0.42;
     case 'jupiter':
     case 'saturn':
-      return 0.18;
+      return 0.36;
     case 'sun':
       return 0;
     default:

@@ -480,6 +480,57 @@ describe('PlanetFocusController', () => {
     expect(jitterSpike.snapshot.controlState).toBe('SingleHandFollow');
   });
 
+  it('requires a fresh close-open pinch tap after follow begins', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.12 })],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const follow = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.12 })],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(follow.nextState).toBe('PlanetFocusControlled');
+    expect(follow.snapshot.controlState).toBe('SingleHandFollow');
+    expect(follow.snapshot.pinchState).toBe('closed');
+
+    const openedAfterEngage = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.82 })],
+      target: target(640, 360),
+      timestamp: 1560,
+    });
+    expect(openedAfterEngage.nextState).toBeNull();
+    expect(openedAfterEngage.snapshot.controlState).toBe('SingleHandFollow');
+
+    step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.12 })],
+      target: target(640, 360),
+      timestamp: 1620,
+    });
+    const released = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [handAtPixel({ x: 640, y: 360, side: 'right', pinchRatio: 0.82 })],
+      target: target(640, 360),
+      timestamp: 1680,
+    });
+    expect(released.nextState).toBe('PlanetFocusFloating');
+    expect(released.snapshot.transitionReason).toBe('single-hand-pinch-tap-release');
+  });
+
   it('keeps single-hand follow when an off-hand appears outside the heat zone', () => {
     const controller = new PlanetFocusController();
 
@@ -560,6 +611,62 @@ describe('PlanetFocusController', () => {
     expect(downgraded.snapshot.controlState).toBe('SingleHandFollow');
     expect(downgraded.snapshot.controlMode).toBe('single');
     expect(downgraded.snapshot.transitionReason).toBe('two-hand-downgraded-to-single-follow');
+  });
+
+  it('does not keep two-hand follow stuck when both hands leave the heat zone', () => {
+    const controller = new PlanetFocusController();
+
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(520, 300), timestamp: 0 });
+    step({ controller, state: 'PlanetFocusView', hands: [], target: target(640, 360), timestamp: 450 });
+    step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 500,
+    });
+    const engaged = step({
+      controller,
+      state: 'PlanetFocusView',
+      hands: [
+        handAtPixel({ x: 580, y: 360, side: 'left' }),
+        handAtPixel({ x: 700, y: 360, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1500,
+    });
+    expect(engaged.snapshot.controlState).toBe('TwoHandFollow');
+
+    const briefLoss = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [
+        handAtPixel({ x: 80, y: 90, side: 'left' }),
+        handAtPixel({ x: 1200, y: 650, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1560,
+    });
+    expect(briefLoss.nextState).toBeNull();
+    expect(briefLoss.snapshot.controlState).toBe('TwoHandFollow');
+    expect(briefLoss.snapshot.transitionReason).toBe('holding-follow-during-brief-heat-zone-loss');
+
+    const released = step({
+      controller,
+      state: 'PlanetFocusControlled',
+      hands: [
+        handAtPixel({ x: 80, y: 90, side: 'left' }),
+        handAtPixel({ x: 1200, y: 650, side: 'right' }),
+      ],
+      target: target(640, 360),
+      timestamp: 1880,
+    });
+    expect(released.nextState).toBe('PlanetFocusFloating');
+    expect(released.snapshot.controlState).toBe('DeselectedWaitForClear');
+    expect(released.snapshot.transitionReason).toBe('follow-ended-after-heat-zone-loss');
   });
 
   it('keeps an in-progress dwell alive through a brief tracking gap', () => {

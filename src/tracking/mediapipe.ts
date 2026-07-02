@@ -1,5 +1,9 @@
 import { FilesetResolver } from '@mediapipe/tasks-vision';
-import type { PoseTrackingSnapshot, TrackingSnapshot } from '../utils/types';
+import type {
+  MediaPipePerformanceSnapshot,
+  PoseTrackingSnapshot,
+  TrackingSnapshot,
+} from '../utils/types';
 import { HandTracker } from './handTracker';
 import { PoseTracker } from './poseTracker';
 import {
@@ -20,14 +24,32 @@ const EMPTY_POSE_SNAPSHOT: PoseTrackingSnapshot = {
   lastUpdatedAt: null,
 };
 
+const EMPTY_PERFORMANCE_SNAPSHOT: MediaPipePerformanceSnapshot = {
+  detectMs: null,
+  handDetectMs: null,
+  poseDetectMs: null,
+  trackingHz: null,
+  detectionFrameCount: 0,
+  repeatedVideoFrameCount: 0,
+  videoCurrentTimeMs: null,
+  videoFrameDeltaMs: null,
+};
+
 export class MediaPipeTrackingController {
   private poseTracker: PoseTracker | null = null;
   private handTracker: HandTracker | null = null;
   private initializePromise: Promise<void> | null = null;
   private lastDetectionAt = 0;
+  private previousDetectionAt: number | null = null;
+  private smoothedTrackingHz: number | null = null;
+  private lastVideoCurrentTimeMs: number | null = null;
+  private detectionFrameCount = 0;
+  private repeatedVideoFrameCount = 0;
   private lastPoseAt = 0;
   private poseSnapshot: PoseTrackingSnapshot = EMPTY_POSE_SNAPSHOT;
   private snapshot: TrackingSnapshot = createEmptyTrackingSnapshot('idle');
+  private performanceSnapshot: MediaPipePerformanceSnapshot =
+    EMPTY_PERFORMANCE_SNAPSHOT;
 
   initialize(): Promise<void> {
     if (this.initializePromise) {
@@ -61,8 +83,40 @@ export class MediaPipeTrackingController {
     this.lastDetectionAt = timestamp;
 
     try {
+      const videoCurrentTimeMs = video.currentTime * 1000;
+      const videoFrameDeltaMs =
+        this.lastVideoCurrentTimeMs === null
+          ? null
+          : videoCurrentTimeMs - this.lastVideoCurrentTimeMs;
+      if (
+        this.lastVideoCurrentTimeMs !== null &&
+        Math.abs(videoCurrentTimeMs - this.lastVideoCurrentTimeMs) < 0.5
+      ) {
+        this.repeatedVideoFrameCount += 1;
+      }
+      this.lastVideoCurrentTimeMs = videoCurrentTimeMs;
+
+      const detectStartedAt = performance.now();
+      const handStartedAt = performance.now();
       const hands = this.handTracker.detect(video, timestamp);
+      const handDetectMs = performance.now() - handStartedAt;
+      const poseStartedAt = performance.now();
       const pose = this.detectPose(video, timestamp);
+      const poseDetectMs = performance.now() - poseStartedAt;
+      const detectMs = performance.now() - detectStartedAt;
+
+      this.detectionFrameCount += 1;
+      this.updateTrackingHz(timestamp);
+      this.performanceSnapshot = {
+        detectMs,
+        handDetectMs,
+        poseDetectMs,
+        trackingHz: this.smoothedTrackingHz,
+        detectionFrameCount: this.detectionFrameCount,
+        repeatedVideoFrameCount: this.repeatedVideoFrameCount,
+        videoCurrentTimeMs,
+        videoFrameDeltaMs,
+      };
 
       this.snapshot = {
         status: 'ready',
@@ -104,6 +158,10 @@ export class MediaPipeTrackingController {
     return this.snapshot;
   }
 
+  getPerformanceSnapshot(): MediaPipePerformanceSnapshot {
+    return { ...this.performanceSnapshot };
+  }
+
   dispose(): void {
     this.poseTracker?.close();
     this.handTracker?.close();
@@ -111,6 +169,12 @@ export class MediaPipeTrackingController {
     this.handTracker = null;
     this.initializePromise = null;
     this.snapshot = createEmptyTrackingSnapshot('idle');
+    this.performanceSnapshot = EMPTY_PERFORMANCE_SNAPSHOT;
+    this.previousDetectionAt = null;
+    this.smoothedTrackingHz = null;
+    this.lastVideoCurrentTimeMs = null;
+    this.detectionFrameCount = 0;
+    this.repeatedVideoFrameCount = 0;
   }
 
   private async loadTrackers(): Promise<void> {
@@ -124,6 +188,26 @@ export class MediaPipeTrackingController {
 
     this.poseSnapshot = EMPTY_POSE_SNAPSHOT;
     this.snapshot = createEmptyTrackingSnapshot('ready');
+  }
+
+  private updateTrackingHz(timestamp: number): void {
+    if (this.previousDetectionAt === null) {
+      this.previousDetectionAt = timestamp;
+      return;
+    }
+
+    const deltaMs = timestamp - this.previousDetectionAt;
+    this.previousDetectionAt = timestamp;
+
+    if (deltaMs <= 0) {
+      return;
+    }
+
+    const instantHz = 1000 / deltaMs;
+    this.smoothedTrackingHz =
+      this.smoothedTrackingHz === null
+        ? instantHz
+        : this.smoothedTrackingHz + (instantHz - this.smoothedTrackingHz) * 0.2;
   }
 }
 

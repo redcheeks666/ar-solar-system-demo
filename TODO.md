@@ -48,19 +48,21 @@ Use this checklist whenever requirements change during a Codex conversation.
 - [ ] Opening progress is driven by hand distance and should not auto-complete if hands stop.
 - [ ] Opening endpoints visually follow both hands.
 - [ ] Opened solar system may use body-relative placement for initial AR feel, but after release it can hover at any user-chosen position.
-- [ ] Releasing the whole-system two-hand handle leaves the solar system hovering at its last stable transform.
+- [ ] Releasing the whole-system two-hand handle leaves the solar system hovering at its last stable position and scale.
+- [ ] The whole-system overview uses the fixed AE-equivalent oblique visual angle; runtime control updates position and scale only, with no hand-driven whole-system rotation/quaternion transform.
 - [ ] Re-gripping the left and right endpoints lets the user continue whole-system handle control for placement, release, and collapse.
 - [ ] Moving gripped hands inward from the opened state collapses the solar system in reverse and returns to the empty camera view when fully closed.
 - [ ] Milestone 5.5 one-hand solar inspection controls are retired after `SolarFreeHover`: spread does not zoom in, contract does not shrink, fist-hold does not reset, and push does not pan.
 - [ ] Palm-forward "sliding glass" scaling and palms-up whole-system rotation are retired M5 gesture semantics; keep them only as legacy/debug protocol context unless the user explicitly reopens them.
-- [ ] Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon can be hovered and pinch-activated in MVP.
-- [ ] A pinch-activated body stops its original orbit but keeps natural self-rotation; when activation moves from A to B, A immediately resumes original orbiting and only the currently activated body may have orbit paused, except the Earth-Moon bound pair.
-- [ ] Earth-Moon activation is bound specially: activating Earth pauses Earth's solar orbit while Moon may continue orbiting Earth; activating Moon pauses both Earth's solar orbit and Moon's local orbit; both keep self-rotating.
+- [ ] Mercury, Venus, the Earth-Moon group, Mars, Jupiter, Saturn, Uranus, and Neptune can be hovered and pinch-activated in MVP; Moon is not a separate overview activation entry, and hitting Moon maps to the Earth-Moon group.
+- [ ] A pinch-activated entry stops its original orbit but keeps natural self-rotation; when activation moves from A to B, A immediately resumes original orbiting and only the currently activated entry may have orbit paused, except the Earth-Moon group.
+- [ ] Earth-Moon activation is bound specially: activating the Earth-Moon group pauses Earth's solar orbit while Moon may continue orbiting Earth; Earth-Moon focus defaults to Earth and can switch to Moon only through the 0.5 second top-left focus switch button.
 - [ ] Same activating hand thumb/index DoubleClose after pinch activation enters a single-planet focus view.
 - [x] In the first-stage single-planet focus view, the focused body is visible as a unified overlay and the background solar system is dimmed and interaction-locked while preserving basic motion.
 - [ ] The focused body keeps self-rotating during activation, focus, heat-zone follow, release-to-floating, and inspection; one-hand focus zoom/pan/reset is retired.
 - [ ] Single-hand heat-zone dwell follows the focused body, two-hand heat-zone dwell follows and scales it, and a following hand `PinchTap` releases follow-control into floating focus.
 - [ ] In single-planet focus states, a transparent glass-style button appears at the top-left; holding the tracked index fingertip on "长按返回太阳系" for 1 second fills its progress bar, returns the focused body to orbit, plays a 0.5 second position/scale adjustment animation, restores background opacity, unlocks solar interaction, and exits back to the solar-system view. Mouse/pointer clicking is not the product path, and palm-facing open-hand return is retired.
+- [ ] In Earth-Moon focus only, a second top-left glass button appears below the return button. Holding the tracked index fingertip on "长按切换月球视角" or "长按切换地球视角" for 0.5 seconds switches the focused overlay and heat zone without returning to the solar-system view; this button is hidden for all other focused bodies.
 - [ ] Visual-effects work preserves previously tested interaction logic and existing display-control logic unless the user explicitly requests a logic/display behavior change.
 - [ ] Documentation is updated when requirements or completed scope change, including `TODO.zh-CN.md` whenever `TODO.md` changes.
 - [ ] The private `agent-companion-repo` companion repo is updated whenever the main code repo is committed or agent workflow context changes.
@@ -333,7 +335,7 @@ Tasks:
 Acceptance Criteria:
 
 - [x] The documented state model distinguishes `SolarOpening`, `SolarFreeHover`, `SolarHandleControl`, and `SolarClosing`.
-- [x] Release means the future solar system will remain at the last stable position, scale, and orientation instead of snapping to chest anchor or screen center.
+- [x] Release means the future solar system will remain at the last stable position and scale with a fixed overview angle instead of snapping to chest anchor or screen center.
 - [x] Accepted open-hand release freezes the endpoints and prevents immediate re-grip while the user slowly pulls hands away.
 - [x] Palms-up cupped hold diagnostics keep `SolarHandleControl` instead of being mistaken for release.
 - [x] Re-grip can recover through a forgiving magnetic zone without requiring the user to precisely realign body/camera position.
@@ -474,7 +476,7 @@ Status: `IN_PROGRESS`
 
 Goal: Implement the first high-impact moment: the user pulls the solar system open from the empty scene using both hands.
 
-Implementation note (2026-06-23, updated 2026-06-24): M4-A/B/C/D code is in place. `PullArmed` now enters `SolarOpening`; the code placeholder solar system is driven by hand distance, midpoint, visual hand axis, and `openProgress`; and fully opening transitions to `SolarActive`. The opening affordance is two solar-system-local 3D control endpoints at the left and right edges, with no connecting rod-style control line. After opening completes, `SolarActive` now holds the last stable transform by default; arbitrary visible hands no longer move the model. Whole-system control resumes only when both hands stably hit the left/right endpoints, which transitions to `SolarHandleControl`. Releasing endpoint control transitions to `SolarFreeHover` and keeps the last stable transform; when the hands are not holding both endpoints, `SolarActive` itself settles into `SolarFreeHover` after a short grace. Retired M5.5 one-hand inspection controls no longer run in `SolarFreeHover`; the released system waits for endpoint re-grip or reverse collapse. Moving controlled endpoint hands inward enters `SolarClosing`; reaching the collapse threshold hides all solar content and returns to `EmptyIdle`. No hand-pose gate is required yet, so endpoint re-grip remains easy. Abrupt hand-geometry outliers during fast withdrawal or edge mis-tracking are rejected so they do not shrink or jump the model. This still needs real webcam verification.
+Implementation note (2026-06-23, updated 2026-06-30): M4-A/B/C/D code is in place. `PullArmed` now enters `SolarOpening`; the code placeholder solar system is driven by hand distance, midpoint, scale, and `openProgress`, while the whole-system 3D visual angle is fixed to the AE-equivalent oblique overview angle. Fully opening transitions to `SolarActive`. The opening affordance is two solar-system-local 3D control endpoints at the left and right edges, with no connecting rod-style control line. After opening completes, `SolarActive` now holds the last stable position and scale by default; arbitrary visible hands no longer move the model. Whole-system control resumes only when both hands stably hit the left/right endpoints, which transitions to `SolarHandleControl`. Releasing endpoint control transitions to `SolarFreeHover` and keeps the last stable position/scale; when the hands are not holding both endpoints, `SolarActive` itself settles into `SolarFreeHover` after a short grace. Retired M5.5 one-hand inspection controls no longer run in `SolarFreeHover`; the released system waits for endpoint re-grip or reverse collapse. Moving controlled endpoint hands inward enters `SolarClosing`; reaching the collapse threshold hides all solar content and returns to `EmptyIdle`. No hand-pose gate is required yet, so endpoint re-grip remains easy. Abrupt hand-geometry outliers during fast withdrawal or edge mis-tracking are rejected so they do not shrink or jump the model. Update (2026-06-26): place-down in `SolarHandleControl` is now a deliberate two-hand fist->open gesture (the armed clench freezes the transform, the reopen confirms) or an auto place-down once the two-hand screen-x span passes ~0.72 of the frame; leaving the endpoints no longer places down, and endpoint re-grip now needs ~0.5s of stable hold (see change log). Update (2026-06-30): whole-system rotation smoothing and externally supplied rotation/quaternion transforms are retired; runtime controllers update only position and scale. This still needs real webcam verification.
 
 Tasks:
 
@@ -484,20 +486,20 @@ Tasks:
 - [x] Clamp and smooth `openProgress`.
 - [x] Prevent auto-completion when hand distance stops increasing.
 - [x] Support reverse progress when opened endpoint hands move inward.
-- [x] Connect the reusable code placeholder solar-system group to `SolarOpening` progress and hand-driven transform.
+- [x] Connect the reusable code placeholder solar-system group to `SolarOpening` progress plus hand-driven position/scale.
 - [x] Keep all solar-system 3D objects invisible until opening begins.
 - [x] Keep `HandsClosed` visually static with no solar-system animation or 3D content.
 - [x] During opening, bind visual left/right endpoints to left/right hands.
 - [x] Render the opening controls as two independent 3D endpoints on the solar-system edges, not as a connected joystick/rod overlay.
-- [x] Reject abrupt hand-geometry outliers so fast hand withdrawal or edge mis-tracking holds the last stable solar-system transform instead of shrinking/jumping.
-- [x] After full opening, hold the last stable transform in `SolarActive`; both hands stably hitting the endpoints re-grip to `SolarHandleControl`, and not holding the endpoints settles into `SolarFreeHover` without enabling retired one-hand inspection controls.
+- [x] Reject abrupt hand-geometry outliers so fast hand withdrawal or edge mis-tracking holds the last stable solar-system position/scale instead of shrinking/jumping.
+- [x] After full opening, hold the last stable position/scale in `SolarActive`; both hands stably hitting the endpoints re-grip to `SolarHandleControl`, and not holding the endpoints settles into `SolarFreeHover` without enabling retired one-hand inspection controls.
 - [x] Use `SolarHandleControl` as the only state where post-opening two-hand endpoint movement can resume whole-system handle control, release, or reverse collapse.
 - [x] Keep endpoint re-grip hand-pose-free for now; open hands passing near the model should not control unless both endpoints are hit.
 - [x] Keep the user-facing status summary aligned with the latest M4 state machine; old `wholeSystemIntent` release/re-grip values stay debug-only.
 - [ ] Reveal sun, orbits, bodies, star dust, and nebula progressively based on `openProgress`.
 - [x] On completion, place the solar system between the opened hands, optionally biased by body-relative context for AR feel.
 - [x] When reverse collapse reaches the closed threshold, hide all solar-system content and return to `EmptyIdle`.
-- [x] On whole-system release, hold the last stable solar-system transform instead of recentering.
+- [x] On whole-system release, hold the last stable solar-system position/scale instead of recentering; the overview angle stays fixed.
 - [x] Add debug values for `openProgress`, start distance, target distance, and state.
 
 Acceptance criteria:
@@ -525,12 +527,12 @@ M4-A/B/C/D manual verification checklist:
 | Pull starts opening | From `HandsClosed`, pull both hands apart. | Preview, status summary, Debug `Startup state`, `openProgress`, and `Solar scale`. | State reaches `SolarOpening`; the placeholder solar system appears between the hands; `openProgress` rises from near `0` as hand distance increases. |
 | Edge endpoint controls | Continue the opening after the solar system appears. | Preview, especially the left/right edges of the placeholder solar system. | Two small control endpoints appear at the solar-system left/right edges and follow the opened hands. There is no connecting green rod/joystick line over the solar system. |
 | Opening follows hands | While in `SolarOpening`, pause hands, then continue pulling. | Preview and Debug `openProgress`. | Solar-system size/progress holds while hands pause and continues increasing only when hands pull farther apart. |
-| Midpoint and hand axis follow | Move the pulling hands slightly left/right/up/down or diagonally while continuing the opening. | Preview. | The solar-system center stays near the hand midpoint and the orbit plane rotates roughly with the left/right hand axis. |
-| Fully opened hold | Pull far enough to complete opening, then move both hands through or near the solar system without staying on both endpoints. | Status summary, Debug `Startup state` / `openProgress`, and preview. | Interaction state becomes `SolarActive` and then settles into `SolarFreeHover` once the hands are not on both endpoints; `openProgress` is `1.00`; the solar system holds the last stable transform instead of following arbitrary two-hand motion. |
-| Endpoint re-grip control | From `SolarActive`, place both hands near the left/right 3D control endpoints and hold briefly, then move both hands together. | Status summary and preview. | State transitions to `SolarHandleControl`; only then does the solar system follow the hand midpoint, distance, and visual hand axis. |
-| Endpoint release to free hover | While in `SolarHandleControl`, move one or both hands away from the endpoints or out of frame. | Status summary and preview. | State transitions to `SolarFreeHover`; the solar system freezes at the last stable transform. |
-| Fast hand withdrawal stability | After the model is mostly or fully opened, quickly move one or both hands out toward the screen edges/out of frame. | Preview and Debug `Solar scale`. | The model holds its last stable transform during brief tracking glitches; it must not suddenly jump to one side or collapse to a tiny scale. |
-| Free-hover after release | From `SolarHandleControl`, move one or both hands clearly away from the endpoints. | Status summary and preview. | Interaction state becomes `SolarFreeHover`; the solar system stays at the released position, scale, and orientation. |
+| Midpoint and scale follow | Move the pulling hands slightly left/right/up/down or diagonally while continuing the opening. | Preview. | The solar-system center stays near the hand midpoint and its size follows hand distance; the approved oblique overview angle stays fixed. |
+| Fully opened hold | Pull far enough to complete opening, then move both hands through or near the solar system without staying on both endpoints. | Status summary, Debug `Startup state` / `openProgress`, and preview. | Interaction state becomes `SolarActive` and then settles into `SolarFreeHover` once the hands are not on both endpoints; `openProgress` is `1.00`; the solar system holds the last stable position/scale instead of following arbitrary two-hand motion. |
+| Endpoint re-grip control | From `SolarActive`, place both hands near the left/right 3D control endpoints and hold briefly, then move both hands together. | Status summary and preview. | State transitions to `SolarHandleControl`; only then does the solar system follow the hand midpoint and distance while keeping the fixed overview angle. |
+| Endpoint release to free hover | While in `SolarHandleControl`, move one or both hands away from the endpoints or out of frame. | Status summary and preview. | State transitions to `SolarFreeHover`; the solar system freezes at the last stable position/scale. |
+| Fast hand withdrawal stability | After the model is mostly or fully opened, quickly move one or both hands out toward the screen edges/out of frame. | Preview and Debug `Solar scale`. | The model holds its last stable position/scale during brief tracking glitches; it must not suddenly jump to one side or collapse to a tiny scale. |
+| Free-hover after release | From `SolarHandleControl`, move one or both hands clearly away from the endpoints. | Status summary and preview. | Interaction state becomes `SolarFreeHover`; the solar system stays at the released position and scale with the fixed overview angle. |
 | Re-grip from free hover | From `SolarFreeHover`, return both hands near the left/right control endpoints and hold briefly. | Status summary and preview. | Interaction state returns to `SolarHandleControl`; moving the hands now controls the solar system again. |
 | Reverse collapse | From `SolarHandleControl`, move both endpoint hands inward toward each other. | Preview, status summary, and Debug `openProgress`. | Interaction state becomes `SolarClosing`; `openProgress` decreases as hand distance decreases. |
 | Collapse completes to empty | Continue moving both endpoint hands inward until they are close together. | Preview and status summary. | Interaction state returns to `EmptyIdle`; all 3D solar content disappears and the initial empty camera view is restored. |
@@ -583,7 +585,7 @@ Status: `DONE`
 
 Goal: Remove the retired M5.5 one-hand zoom, shrink, reset, and pan controls after the whole-system handle has been released into `SolarFreeHover`.
 
-Retirement note (2026-06-24): The user removed M5.5 one-hand spread zoom, one-hand contraction shrink, fist-hold reset, and one-hand push pan from the product. `SolarFreeHover` now keeps the last stable transform and waits for endpoint re-grip or reverse collapse.
+Retirement note (2026-06-24, updated 2026-06-30): The user removed M5.5 one-hand spread zoom, one-hand contraction shrink, fist-hold reset, and one-hand push pan from the product. `SolarFreeHover` now keeps the last stable position/scale with the fixed overview angle and waits for endpoint re-grip or reverse collapse.
 
 Tasks:
 
@@ -603,15 +605,15 @@ Acceptance criteria:
 - [x] `npm run build` passes.
 - [x] Runtime code path no longer imports or runs solar-inspection controller logic.
 
-## Milestone 6 — Celestial Body Data Model and Nine Interactive Targets
+## Milestone 6 — Celestial Body Data Model and Earth-Moon Group Entry
 
 Status: `DONE`
 
-Goal: Create a unified data-driven model for all MVP interactive celestial bodies, including hover, activation, focus, and return metadata.
+Goal: Create a unified data-driven model for all MVP celestial bodies, including hover, activation, focus, and return metadata, while treating Earth and Moon as one overview activation entry.
 
 Tasks:
 
-- [x] Define `CelestialBodyId` / `InteractiveCelestialBodyId` for Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
+- [x] Define `CelestialBodyId` / `InteractiveCelestialBodyId` for Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon, while treating Moon as part of the Earth-Moon overview entry.
 - [x] Define body metadata: name, label, approximate visual size, orbit radius, orbit speed, self-rotation speed, color/texture placeholder, activation hit radius, focus default transform, return/orbit target, parent body if any.
 - [x] Implement simplified visual models for each body.
 - [x] Add recognizable Saturn ring.
@@ -628,21 +630,21 @@ Acceptance criteria:
 - [x] Moon is visually distinguishable from Earth.
 - [x] Saturn has a clear ring.
 - [x] Original orbit position/layer data is available for return-to-orbit logic.
-- [x] Focus default size/position and activation hit radii are available for the later gesture pipeline.
+- [x] Focus default size/position and activation hit radii are available for the later gesture pipeline; Moon overview hits map to the Earth-Moon entry instead of an independent Moon activation.
 - [x] `npm run build` passes.
 
 Suggested Codex prompt:
 
 ```text
 Goal:
-Implement Milestone 6: data-driven celestial body model for nine MVP interactive bodies.
+Implement Milestone 6: data-driven celestial body model for nine rendered/focus-capable bodies and eight overview activation entries.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.7, 7.9-7.12, 8.2, and 17.
 
 Constraints:
 - Use one shared celestial body model and registry.
-- Include Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
+- Include Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon in the data model; expose Moon in the overview only as a hit point mapped to the Earth-Moon entry.
 - Include hover, activation, focus default, and return target metadata.
 - Keep visuals lightweight and MVP-friendly.
 - Do not implement the full planet focus gesture pipeline yet unless needed for data hooks.
@@ -658,13 +660,13 @@ Done when:
 
 Status: `NEEDS_MANUAL_VERIFY`
 
-Goal: Let the user's hand select and pinch-activate any of the nine MVP bodies without dragging the solar system or freezing self-rotation.
+Goal: Let the user's hand select and pinch-activate any of the eight MVP overview entries without dragging the solar system or freezing self-rotation.
 
 Tasks:
 
 - [x] Project each interactive body's 3D position to screen coordinates.
 - [x] Compute hand-to-body screen-space distance.
-- [x] Add expanded hit areas for Mercury and Moon.
+- [x] Add expanded hit areas for Mercury; keep a Moon overview hit point that maps to the Earth-Moon entry instead of a separate Moon activation.
 - [x] Select nearest valid body with hysteresis to avoid flickering.
 - [x] Add hover visual feedback: glow ring, label, and orbit highlight.
 - [x] Detect pinch start and pinch end using thumb/index distance and hand scale.
@@ -674,7 +676,7 @@ Tasks:
 - [x] On pinch activation, stop the selected body's original orbit while keeping natural self-rotation.
 - [x] Keep all non-selected bodies orbiting and self-rotating normally.
 - [x] Switch activation from A to B through the unified controller, clearing A so it resumes original orbiting.
-- [x] Add Earth-Moon bound orbit pause semantics: Earth activation freezes Earth's solar orbit but leaves Moon's local orbit running; Moon activation freezes both Earth's solar orbit and Moon's local orbit.
+- [x] Add Earth-Moon bound orbit pause semantics: Earth-Moon overview activation freezes Earth's solar orbit while leaving Moon's local orbit running; Moon focus is reached from the Earth-Moon focus switch button instead of an independent overview activation.
 - [x] Prevent body activation from dragging, re-scaling, panning, or otherwise transforming the whole solar system.
 - [x] Add clear activation feedback and preserve the original orbit target for return behavior.
 - [x] Add short tracking-loss tolerance while pinch activation is held.
@@ -689,7 +691,7 @@ Acceptance criteria:
 - [x] Switching from A to B leaves B as the only activated body and lets A resume its original orbit.
 - [x] Earth-Moon activation binding behaves as the special case while both bodies keep self-rotating.
 - [x] Activated body does not drag or scale the whole solar system.
-- [x] Each of the nine bodies can be highlighted and activated through the unified pipeline; needs real-camera verification.
+- [x] Each of the eight overview entries can be highlighted and activated through the unified pipeline; Moon has a projected hit point that maps to Earth-Moon, and needs real-camera verification.
 - [x] `npm run build` passes.
 - [x] Behavior is marked `NEEDS_MANUAL_VERIFY` for real webcam hover/pinch testing.
 
@@ -697,7 +699,7 @@ Suggested Codex prompt:
 
 ```text
 Goal:
-Implement Milestone 7: hover, highlight, and pinch activation for all nine MVP bodies.
+Implement Milestone 7: hover, highlight, and pinch activation for all eight MVP overview entries.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.7, 7.8, 7.9, and 12.4.
@@ -859,12 +861,20 @@ Goal: Make the demo suitable for a 30-60 second recording.
 Tasks:
 
 - [ ] Preserve current tested interaction logic and existing object visibility/show-hide lifecycle while applying visual polish.
-- [ ] Improve solar glow, orbit materials, and body readability.
-- [ ] Add star dust and nebula effects only after opening begins.
+- [x] Set the solar overview to the AE-equivalent strong oblique rift angle: X about `-79.58°`, about Y `5°`, and default Z `0°`.
+- [x] Lock the overview visual angle to the AE-equivalent fixed pitch/yaw/Z and keep endpoint hit/reference math aligned with the fixed horizontal left/right endpoints.
+- [x] Add the progress-driven elliptical universe-rift backdrop: 80% dark starfield interior, subtle blue/warm nebula tone, and an AE-exported animated gold/cyan/white boundary halo.
+- [x] Rebalance overview body/orbit scale for cinematic readability instead of realistic astronomy proportions; allow planets to visually break outside the rift boundary.
+- [x] Improve solar glow, orbit materials, and body readability.
+- [x] Add star dust and nebula effects only after opening begins.
 - [ ] Add hand-proximity feedback such as small light rings or particles.
 - [ ] Add optional return highlight or trail effect if the 0.5s adjustment needs stronger feedback.
-- [ ] Tune smoothing for body reference, hands, scale, rotation, pinch, and return animation.
+- [ ] Tune smoothing for body reference, hands, scale, pinch, and return animation.
 - [ ] Tune trigger thresholds for common laptop webcam framing.
+- [x] Add a low-latency performance diagnostics baseline to Debug and recorder export before changing tracking cadence, smoothing, or visual runtime format.
+- [x] Fix recorder session/export coverage so each new recording starts with empty frames and exported JSON includes `planetFocus` focus-controller diagnostics.
+- [x] Request a 30fps camera stream and prefer the MediaPipe hand GPU delegate with CPU fallback.
+- [x] Fix focus follow release edge cases: PinchTap must be a fresh close-open after follow begins, and two-hand follow no longer keeps controlling after both hands leave the heat zone past the loss window.
 - [ ] Reduce particle count or post-processing if FPS is unstable.
 - [ ] Add presentation/recording mode that hides debug UI.
 - [ ] Add fallback guidance for poor lighting, missing pose, or missing hands.
@@ -875,8 +885,11 @@ Acceptance criteria:
 - [ ] Visual polish does not modify previously tested interaction logic, gesture thresholds, state transitions, or object display-control lifecycle unless explicitly requested by the user.
 - [ ] A viewer can understand the solar system is pulled from between the hands.
 - [ ] A viewer can understand the solar system is a hand-controlled object that can free-hover where it is released.
-- [ ] Scaling and rotation look spatial.
+- [x] The overview solar-system disk reads as a strong oblique spatial plane, not a flat screen-parallel diagram.
+- [x] The opened solar system reads as an elliptical torn-open universe space: camera remains visible outside the ellipse, while the inside has a dark translucent galaxy field and sand-like edge.
+- [ ] Scaling and the fixed oblique overview angle look spatial.
 - [ ] Activation, planet focus, PinchTap release-to-floating, and top-left index-finger return are visually obvious.
+- [x] Debug exposes performance metrics for latency diagnosis: render delta/render cost, tracking update/detect cost, hand/pose detect cost, trackingHz, fresh/stale frame counts, repeated video frame count, controller/recorder cost, and solar/VFX update cost; recorder JSON exports the same structured data without raw camera video.
 - [ ] Demo runs at a usable frame rate on a normal laptop.
 - [ ] Recording mode hides debug clutter.
 - [ ] `npm run build` passes.
@@ -946,9 +959,23 @@ Tasks:
 - [x] Upgrade the solar opening visual pass with a progress-driven opening VFX group: thin crack at startup, blue/gold rift in the middle, burst/shockwave near completion, and left/right hand anchor glows near the control endpoints.
 - [x] Keep opening VFX fully driven by existing `openingProgress`; no timer, autoplay, controller threshold, state-machine, or `SolarOpeningController` behavior changed.
 - [x] Keep opening VFX hidden in the initial empty scene by showing the VFX group only when `visibleRequested` is true and `openingProgress > 0`, with all sprite opacity derived from progress.
-- [x] Add a lightweight `SolarParticleField` using 200 total `Points` particles for stardust, orbit-trail accents, and micro flares; particles appear only when the solar system is visible and `openingProgress > 0.25`.
+- [x] Add a lightweight `SolarParticleField` using 420 total `Points` particles for stardust, orbit-trail accents, and micro flares; particles appear only when the solar system is visible and `openingProgress > 0.25`.
 - [x] Keep particle opacity progress-driven during opening and dim it during planet focus so background stardust/trails do not compete with the focused body.
+- [x] Add `UniverseRiftBackdrop`, an elliptical rift layer with an 80% dark transparent code-generated starfield interior and the AE-exported gold/cyan/white boundary-halo PNG sequence.
+- [x] Keep the universe-rift backdrop hidden in the initial empty scene and reveal it only from existing `openingProgress`; no timer, autoplay, or new display-control lifecycle was added.
+- [x] Align the code-generated starfield interior to the same AE full-frame plane and baked angle as the PNG halo so the dark galaxy field sits inside the boundary instead of projecting as a separate old 3D ellipse.
+- [x] Inset the starfield interior inside the outer halo and render it as the bottom universe layer behind planets, not as a transparent mask over planets.
+- [x] Move the starfield interior to a dedicated background render layer; `TransparentSceneRenderer` now renders that layer first, clears depth, then renders the main solar system and AE halo.
+- [x] Centralize the approved overview tilt and rift dimensions in `src/solar/solarVisualConfig.ts`.
+- [x] Rebalance overview celestial body sizes, orbit positions, overview lighting, and Saturn overview ring tilt for cinematic readability.
+- [x] Add an After Effects look-dev generator at `scripts/after-effects/create-ar-solar-rift-vfx.jsx` for a loopable `rift_border_loop` boundary-halo comp, including a `Vertical Tilt Degrees` slider on `BREATH_CONTROL`; it intentionally does not export, save, or enqueue renders until the look is approved.
+- [x] Add a separate After Effects export helper at `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx` that leaves the look-dev generator untouched and exports/queues `rift_border_loop` as a transparent PNG sequence source asset for the project.
+- [x] Fix the AE boundary-halo generator so moving arc drift and Turbulent Displace evolution use periodic expressions rather than non-integer linear drift, making future exports truly seamless at the 4-second loop boundary.
+- [x] Register the approved AE PNG sequence in the solar asset manifest and render it as the current runtime boundary halo with one animated `CanvasTexture`.
+- [x] Render the AE boundary halo as two layers from the same animated `CanvasTexture`: a normal-blend dark support layer for real-camera readability plus the additive gold/cyan energy layer on top.
+- [x] Keep the runtime AE boundary halo limited to the approved two-layer stack; remove the extra runtime glow reinforcement because it did not coordinate with the current camera/composition look.
 - [ ] Wire the manifest and loader into remaining HUD frames and later approved visual systems after the new visual-effects scheme is approved.
+- [ ] Optionally convert the PNG-sequence master to transparent WebM VP9 later if Chrome/Three.js `VideoTexture` compatibility, alpha quality, and file size are acceptable.
 
 Acceptance criteria:
 
@@ -962,6 +989,14 @@ Acceptance criteria:
 - [x] Hover/activated HUD visuals are structurally covered by unit tests, including target-lock object creation, label visibility, orbit brightening, activation brightening, and focus dimming.
 - [x] Opening VFX is structurally covered by unit tests, including initial hidden state, progress-driven crack/rift/burst/shockwave visibility, endpoint anchor attachment, and fade-out at full progress.
 - [x] Solar particles are structurally covered by unit tests, including total point count, hidden initial state, opening-progress threshold, and focus dimming.
+- [x] Universe-rift backdrop is structurally covered by unit tests, including initial hidden state, opening-progress reveal, AE border visibility, and focus dimming.
+- [x] Universe-rift backdrop tests assert that the generated starfield interior and AE border share the same plane size and local orientation.
+- [x] Universe-rift backdrop tests assert the generated starfield interior is isolated to the background render layer so planets remain visually on top.
+- [x] Universe-rift backdrop tests assert that the AE halo has both a normal-blend dark support layer and an additive energy layer.
+- [x] Universe-rift backdrop tests assert that the extra runtime glow layers are absent and the current AE halo remains the approved two-layer stack.
+- [x] The AE generator is source/look-dev only: it creates a previewable looping boundary-halo comp with subtle breathing, tiny 2D angle drift, and an adjustable vertical tilt slider, but does not choose final export format or add Render Queue items.
+- [x] The AE export helper is a separate script that targets PNG sequence source frames under `public/assets/solar/fx/rift-border-loop/png-sequence/` and does not overwrite the look-dev generator.
+- [x] Future AE exports avoid loop-boundary pops by using periodic motion expressions for boundary arc drift and turbulence.
 - [x] `npm run typecheck`, `npm test`, and `npm run build` pass.
 
 ## Cross-Milestone Engineering Tasks
@@ -1139,6 +1174,147 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - [ ] Theme presets.
 
 ## Change Log
+
+### 2026-07-01 — Focus follow latency and release edge cases tightened
+
+- Requirement refinement: the focus-follow `PinchTap` release must be a fresh close-open after follow control begins; a hand that was already closed during dwell must not drop the body merely by opening on the first follow frame. During two-hand follow, if both active hands clearly leave the focused body's heat zone, the controller freezes briefly for tracking/edge tolerance and then releases to `PlanetFocusFloating` instead of continuing sticky two-hand control outside the heat zone.
+- Runtime latency update: camera startup now requests a 30fps stream, and the MediaPipe hand tracker tries the GPU delegate first with CPU fallback if GPU initialization is unavailable.
+- Focus update: added pinch-tap arming per active follow hand, preserved arming across active-hand rebinds, and added a heat-zone-loss path for two-hand follow.
+- Guardrail: this keeps the 1 second dwell, 1 second return hold, endpoint re-grip timing, focus scale limits, product state names, and visual assets unchanged.
+- Verification update: `tests/gesture/planetFocusController.test.ts` now covers fresh PinchTap arming after follow engage and two-hand heat-zone loss release; `npm run typecheck`, `npm test` (24 files / 150 tests), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/camera/camera.ts`, `src/tracking/handTracker.ts`, `src/interaction/planetFocusController.ts`, and `tests/gesture/planetFocusController.test.ts`.
+- Remaining ambiguity: real webcam testing should confirm whether the browser honors the 30fps request, whether GPU delegate is available on the target machine, and whether the two-hand heat-zone-loss window feels strict enough without cutting off intentional shrink gestures.
+
+### 2026-07-01 — Focus recorder export fixed
+
+- Requirement refinement: exported gesture JSON must include the `planetFocus` focus-controller snapshot so single-planet heat-zone dwell, single/two-hand follow, PinchTap place-down, focus position/scale, and return-button timing can be analyzed from user test logs.
+- Recorder update: starting a new recording now clears old in-memory frames, preventing separate test takes from being spliced into one exported JSON file. The export schema version is now `2`.
+- Guardrail: this changes only debug recording/export behavior. It does not change MediaPipe cadence, camera constraints, smoothing, gesture thresholds, state machines, re-grip/dwell/return hold times, object visibility lifecycle, or visual assets.
+- Verification update: added `tests/gesture/gestureDebugRecorder.test.ts`; `npm run typecheck`, `npm test` (24 files / 148 tests), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/interaction/gestureDebugRecorder.ts`, and `tests/gesture/gestureDebugRecorder.test.ts`.
+- Remaining ambiguity: after this fix, real webcam focus-follow tests should be re-recorded so the next latency/tuning pass can use clean `planetFocus` data.
+
+### 2026-07-01 — Low-latency performance diagnostics baseline added
+
+- Requirement refinement: before changing tracking cadence, smoothing, delegate selection, camera resolution, or the AE rift runtime format, add objective latency/performance diagnostics so real webcam testing can distinguish model cost, stale video frames, controller cost, render cost, and VFX upload cost.
+- Debug update: `DebugSnapshot.performance` now tracks render delta/render cost, tracking update/detect cost, hand/pose detect cost, trackingHz, fresh/stale tracking frame counts, repeated video frame count, controller/recorder cost, and solar/VFX update cost. The Debug panel shows these values near the top.
+- Recorder update: exported gesture JSON now includes the same `performance` snapshot for each recorded fresh tracking frame while still excluding raw webcam video.
+- Guardrail: this is instrumentation only. It does not change MediaPipe cadence, hand delegate, camera constraints, smoothing, gesture thresholds, state machines, re-grip/dwell/return hold times, object visibility lifecycle, or visual assets.
+- Verification update: `npm run typecheck`, `npm test` (23 files / 146 tests), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/utils/types.ts`, `src/tracking/mediapipe.ts`, `src/rendering/scene.ts`, `src/main.ts`, `src/rendering/debugOverlay.ts`, `src/interaction/gestureDebugRecorder.ts`, `src/solar/solarSystem.ts`, and `src/solar/universeRiftBackdrop.ts`.
+- Remaining ambiguity: real webcam testing should export a short recorder JSON for idle camera, pull-open, endpoint re-grip/control, and focus follow so the next optimization can be chosen from data rather than feel.
+
+### 2026-07-01 — Extra runtime AE rift glow removed
+
+- Requirement reversal: after preview review, the added runtime glow felt visually uncoordinated and should be removed; the prior two-layer AE PNG halo looked better for the current composition.
+- Visual update: removed the procedural soft elliptical glow mesh, the enlarged additive AE-texture glow mesh, their materials/textures, and their lifecycle opacity hooks from `UniverseRiftBackdrop`.
+- Test update: the universe-rift backdrop regression now asserts the extra glow meshes are absent while the existing normal-blend support layer and additive AE border layer remain.
+- Guardrail: no gesture logic, state machines, pinch/focus entry, solar opening/release/re-grip/collapse semantics, coordinate mapping, object visibility lifecycle, AE asset files, or global postprocessing changed.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/universeRiftBackdrop.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam preview should confirm the reverted two-layer halo feels better in the live scene.
+
+### 2026-07-01 — AE rift halo glow readability pass
+
+- Requirement refinement: the previously integrated AE rift halo read too much like faint dust on real camera footage, so the runtime halo should gain a clearer glow without replacing the approved AE PNG sequence or changing the rift angle/position.
+- Visual update: `UniverseRiftBackdrop` now renders the same rift lifecycle with extra lightweight glow reinforcement: a procedural soft elliptical glow texture below the border, a lightly enlarged additive AE-texture glow pass, the existing normal-blend dark support pass, and the original additive AE energy pass on top.
+- Guardrail: this is a material/layering change only. Gesture logic, state machines, pinch/focus entry, solar opening/release/re-grip/collapse semantics, coordinate mapping, object visibility lifecycle, and global postprocessing were not changed.
+- Verification update: `npm run typecheck` passes, and `npm test -- tests/unit/solarSystemInteraction.test.ts` passes with structural assertions for the new glow layers, their additive blending, shared orientation, reveal, and focus dimming.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/universeRiftBackdrop.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam preview should confirm the glow is strong enough against bright backgrounds without making the rift look like a solid painted oval.
+
+### 2026-06-30 — Earth-Moon focus becomes one overview entry with in-focus switching
+
+- Requirement update: Earth and Moon should no longer behave as two separate overview-selectable planets. The overview treats Earth and Moon as one Earth-Moon entry; hitting Moon maps to the Earth-Moon entry, and entering focus defaults to Earth.
+- Interaction update: only Earth-Moon focus shows a second top-left glass button below the return button. Holding the tracked index fingertip on it for 0.5 seconds switches between Earth and Moon focus overlays, and the user must leave the button before it can trigger again.
+- Implementation update: `CodePlaceholderSolarSystem.getInteractiveBodyScreenTargets()` now maps Moon's projected hit point to `earth`, `main.ts` keeps a small Earth/Moon focus-display state, and the existing index-finger hold helper drives both the 1 second return button and the 0.5 second Earth-Moon switch button.
+- Verification update: added regressions for Moon overview target remapping and the reusable 0.5 second hold threshold; focused-body follow/return controllers were reused rather than rewritten.
+- Affected files: `AGENTS.md`, `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `index.html`, `src/styles.css`, `src/main.ts`, `src/solar/solarSystem.ts`, `tests/gesture/planetReturnButton.test.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real-camera verification should confirm the second left-top button is reachable without conflicting with the return button and that switching from Earth to Moon feels natural in the demo framing.
+
+### 2026-06-30 — Overview body sizes compressed for camera readability
+
+- Requirement refinement: the overview solar-system bodies should not follow real astronomy scale. Small bodies that became hard to see in the rift overview should be enlarged, while large gas giants should still read larger without overwhelming the scene; only a modest size hierarchy is needed.
+- Implementation update: adjusted `CELESTIAL_BODY_DEFINITIONS` radii and matching activation hit radii in `solarSystemData.ts`: Mercury/Moon/Mars/Venus/Earth are enlarged, Uranus/Neptune are slightly enlarged, Jupiter/Saturn are gently compressed, Saturn ring radii were kept proportional, and the Moon local orbit was widened to avoid overlap.
+- Verification update: added a unit regression that asserts the compressed presentation-scale sizing keeps Mercury/Moon readable, keeps gas giants larger than Earth, and keeps the Jupiter/Earth ratio under 2.
+- Scope note: this is visual data tuning only. Gesture state machines, pull-open/re-grip/release/collapse semantics, fixed overview angle, focus-return flow, and texture/material systems were not changed.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarSystemData.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: browser/webcam preview should confirm the new sizes feel balanced against the AE halo and do not crowd the center when planets orbit behind the sun.
+
+### 2026-06-30 — Whole-system overview angle locked to fixed position/scale control
+
+- Requirement update: the user confirmed the current `?solarPreview=1` overview angle is the desired baseline and no longer wants whole-solar-system 3D manipulation. The visible solar-system controller should keep the AE-equivalent oblique overview angle fixed and update only position and scale.
+- Implementation update: removed `rotationZ` from `SolarOpeningSnapshot` / `SolarOpeningGeometry`, removed the unused whole-system Z-rotation smoothing path, and changed endpoint reference math to fixed horizontal left/right positions.
+- API simplification: `CodePlaceholderSolarSystem.setTransform()` no longer accepts external `rotation` or `quaternion`; the solar-system group owns its fixed visual rotation internally through `solarVisualConfig.ts`.
+- Scope note: planet self-rotation, orbital motion, Saturn ring tilt, focused-body compensation, particles, and the AE rift inverse-tilt compensation remain visual/simulation behavior and were not removed.
+- Verification: `npm run typecheck`, `npm test` (143), and `npm run build` pass; browser preview `http://127.0.0.1:5173/?solarPreview=1` reloads with no console warnings/errors and the fixed oblique overview still renders.
+- Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `src/interaction/solarOpeningController.ts`, `src/solar/solarSystem.ts`, `src/solar/solarVisualConfig.ts`, `src/main.ts`, `src/tracking/config.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam pull-open should confirm endpoint re-grip still feels natural with fixed horizontal endpoint reference math.
+
+### 2026-06-30 — AE PNG rift-border sequence wired into runtime
+
+- Requirement update: the AE-exported transparent PNG sequence is now the current runtime format for the solar-system rift boundary halo. Transparent WebM VP9 remains a future optimization option rather than a required step for this integration.
+- Implementation update: `UniverseRiftBackdrop` now keeps the code-generated 80% dark starfield interior but replaces the procedural border-dust layer with the AE PNG sequence from `public/assets/solar/fx/rift-border-loop/png-sequence/`, rendered through one animated `CanvasTexture` so the sequence uses one GPU texture instead of 120 texture objects.
+- Visual alignment fix: after user screenshot review, the generated dark starfield interior now uses the same AE full-frame plane, center, and baked-angle compensation as the PNG halo, and clips to the halo's visible-bound ellipse. This prevents the sky field from appearing as a separate large tilted oval outside the approved halo position.
+- Visual layering fix: the starfield interior is now inset inside the halo and isolated onto a dedicated background render layer. `TransparentSceneRenderer` renders that layer first, clears depth, then renders the main solar-system layer and AE halo, so the dark galaxy field remains a bottom-layer background instead of a semi-transparent mask over the sun and planets.
+- Real-camera readability fix: the AE halo now renders as two meshes sharing the same animated `CanvasTexture`: a normal-blend dark support pass below the energy lines, plus the existing additive gold/cyan halo pass. This keeps the approved AE motion/angle while making the outer rim less likely to disappear against bright camera footage.
+- Guardrail: the rift still reveals only from existing `openingProgress`, dims with existing planet-focus background dimming, and stays hidden in the initial empty scene. Gesture logic, state transitions, controller thresholds, coordinate mapping, and object show/hide lifecycle were not changed.
+- Verification: `npm run typecheck`, `npm test` (143), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarAssetManifest.ts`, `src/solar/universeRiftBackdrop.ts`, `src/solar/solarSystem.ts`, `tests/unit/solarSystemInteraction.test.ts`, and `public/assets/solar/fx/rift-border-loop/png-sequence/`.
+- Remaining ambiguity: a browser/webcam preview should confirm the AE halo's apparent width and baked angle feel aligned with the hand endpoints during live pull-open.
+
+### 2026-06-26 — Rift backdrop shares the solar-system transform (endpoint alignment fix)
+
+- Bug fix: the universe-rift backdrop ran two animations of its own that the control endpoints did not — a slow `root.rotation.z` spin and an independent `root.scale` reveal on a different easing curve than the group's open scale. So during opening (or any `openingProgress` change) the ellipse and the endpoints scaled/rotated out of sync: the endpoints sat sometimes inside and sometimes outside the rift edge, never exactly at the widest left/right points.
+- Fix: removed the rift's own spin and scale in `universeRiftBackdrop.ts`; it now shares the solar-system group's transform exactly like the endpoints and planets, so its widest left/right points stay locked on the control endpoints. The reveal is done purely by the existing opacity fade, and overall growth comes from the group's open scale. `solarSystem.ts` calls `riftBackdrop.update()` with no delta now.
+- Verification: `npm run typecheck`, `npm test` (143), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/universeRiftBackdrop.ts`, and `src/solar/solarSystem.ts`.
+- Remaining ambiguity: real webcam recording should confirm the endpoints now track the rift edge throughout open / control / collapse without drift.
+
+### 2026-06-26 — Control endpoints aligned to the universe-rift ellipse edge
+
+- Visual/interaction fix: the whole-system control endpoints sat at the outermost-body extent (~3.79 local), about 72% of the way out inside the rift ellipse. They now sit on the universe-rift backdrop's widest left/right points: `SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X = UNIVERSE_RIFT_WIDTH / 2` (5.25), so the visible handles land on the glowing elliptical edge.
+- Accepted consequence: because endpoints stay hand-attached, this makes the rift width equal the two-hand span, and the follow scale (`worldDistance / SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN`, span 7.58 -> 10.5) shrinks the whole opened system (planets + rift) ~28% in the interactive view. Per the user's choice, body data is NOT enlarged to compensate; planets keep more margin inside the ellipse.
+- `solarSystemData.ts` now imports `UNIVERSE_RIFT_WIDTH` from `solarVisualConfig.ts` (leaf module, no cycle); the old body-extent + `CONTROL_ENDPOINT_PADDING` derivation was removed.
+- Verification: `npm run typecheck`, `npm test` (143), and `npm run build` pass; `?solarPreview=1` browser preview confirms the rift renders with bodies inside it.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, and `src/solar/solarSystemData.ts`.
+- Remaining ambiguity: real webcam recording should confirm the smaller interactive-view scale still reads well against the camera background; if planets feel too small, enlarge body `orbitRadius`/`radius` together (~x1.385) to refill the ellipse.
+
+### 2026-06-26 — Solar handle place-down changed to two-hand fist->open + max-width
+
+- Requirement change: in `SolarHandleControl` the opened solar system is hand-attached, so leaving the endpoints is no longer a place-down. Place-down is now (a) a deliberate two-hand fist->open gesture, or (b) an auto place-down once the two-hand screen-x span (the hand-attached endpoints' visual width) passes `MAX_VISUAL_WIDTH_SCREEN_FRACTION` (~0.72) of the frame, frozen at the last stable transform. A sustained full loss of both hands stays as a fallback place-down; a one-frame gap does not.
+- Requirement change: endpoint re-grip dwell raised to ~0.5s (`ENDPOINT_ENTER_STABLE_MS` 140 -> 500), shared by `SolarActive`->`SolarHandleControl` and `SolarFreeHover` re-grip. The reverse-collapse (双手向内合拢) path is unchanged.
+- Behavior note: the legacy open-hand release / palms-up hold-protection / `wholeSystemIntent` release-re-grip confidences were debug-only and never drove the visible system; they remain debug-only and are not the product place-down/re-grip path.
+- Implementation: `solarOpeningController.ts` `updateHandleControl` now runs `updatePlaceDownGesture` (a fist->open state machine where the armed clench freezes the transform, the reopen confirms, and `PLACE_DOWN_ARMED_TIMEOUT_MS` resumes follow), an `isBeyondMaxVisualWidth` guard, and a `HANDLE_HAND_LOSS_RELEASE_MS` fallback; the old endpoint-exit release branch was removed. Place-down pose thresholds added to `intentTuning.ts` (`SOLAR_PLACE_DOWN_FIST_SCORE_MIN`, `SOLAR_PLACE_DOWN_OPEN_SCORE_MIN`, `SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS`).
+- Tests: added `tests/gesture/solarHandlePlaceDown.test.ts` (fist->open place-down, max-width auto place-down, keeps controlling without leaving-endpoint release, ~0.5s re-grip dwell). `npm run typecheck`, `npm test` (143 tests), and `npm run build` pass.
+- Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `src/interaction/solarOpeningController.ts`, `src/interaction/intentTuning.ts`, and `tests/gesture/solarHandlePlaceDown.test.ts`.
+- Remaining ambiguity: real webcam recording should tune `SOLAR_PLACE_DOWN_*` and `MAX_VISUAL_WIDTH_SCREEN_FRACTION`. The user asked for a ~half-frame max width, but the pull-open target width is already ~0.5 of the frame, so the auto place-down starts at ~0.72 to avoid tripping the instant opening completes; confirm the feel on camera and lower it only if the open target also shrinks.
+
+### 2026-06-25 — AE boundary-halo look-dev generator refined
+
+- Export decision: use transparent PNG sequence as the current AE rift-border master export because it preserves alpha reliably, can be inspected frame-by-frame, and fits the existing project asset structure; treat transparent WebM VP9 as the likely future runtime derivative rather than the AE source export.
+- Tooling update: added `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx`, a separate export helper that finds `rift_border_loop`, writes frames to `public/assets/solar/fx/rift-border-loop/png-sequence/`, and creates `rift_border_loop.sequence.json`; it does not overwrite or modify the look-dev generator.
+- Loop QA update: inspected the first exported PNG sequence and confirmed the format is correct RGBA PNG, but found the old generator's moving arc drift and Turbulent Displace evolution were not mathematically seamless; updated the generator to use periodic expressions for future exports.
+- Requirement update: the AE boundary-halo vertical tilt now has an approved look-dev value of `66.66°` on a pre-flattened `1500 x 600` ellipse; runtime solar overview pitch is synced to the equivalent Three.js value for the current `10.5 x 9.2` rift base size, about `-79.58°` / `-1.38893 rad`.
+- Correction: direct-copying the AE slider value to runtime `rotation.x = -66.66°` was wrong because it ignored the AE source ellipse aspect ratio; the runtime config now derives the equivalent pitch formula and has a unit test for it.
+- Coordinate clarification: screen-space position Y is still the vertical up/down axis, but the approved vertical disk pitch/ellipse compression is implemented as Three.js X rotation; Y rotation remains only a small yaw.
+- Requirement update: the AE source asset should be only the sand-like rift boundary halo, with subtle breathing and small 2D angle drift; blue/gold wisps and strong oblique angle previews are out of scope for this script.
+- Tooling update: refined `scripts/after-effects/create-ar-solar-rift-vfx.jsx` into a one-click AE JSX that creates only the loopable `rift_border_loop` boundary-halo comp plus a README guide comp; `BREATH_CONTROL` now has a `Vertical Tilt Degrees` Slider Control defaulting to `66.66` and wired to AE X Rotation, so it adjusts the halo's up/down tilt rather than horizontal swivel.
+- Performance update: optimized the AE generator for look-dev preview by disabling comp motion blur, reducing generated vector grain groups from about 1,140 to 326, removing per-grain opacity expressions, and removing Glow effects from the grain layers.
+- Scope clarification: per user direction, the AE script does not export files, save the project, or enqueue Render Queue items; runtime export format and Three.js integration are deferred until the AE look is approved.
+- Guardrail: this is source-asset tooling only and does not change app runtime code, gesture logic, display-control lifecycle, initial empty scene behavior, or existing visual reveal timing.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/solar/solarVisualConfig.ts`, `scripts/after-effects/create-ar-solar-rift-vfx.jsx`, and `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx`.
+- Remaining ambiguity: final runtime delivery format remains undecided until the boundary-halo comp look is reviewed.
+
+### 2026-06-25 — Elliptical universe-rift overview visual direction implemented
+
+- Requirement update: the solar-system overview should resemble the user reference image by using a strong oblique disk angle, default visual Z rotation `0°`, enlarged non-realistic body scale, and an elliptical torn-open universe space.
+- Visual update: added a generated `UniverseRiftBackdrop` with an 80% dark transparent starfield interior, subtle blue/warm nebula tones, sand-like gold/cyan/white border particles, and progress-driven reveal from existing `openingProgress`.
+- Visual update: centralized overview tilt/rift constants in `src/solar/solarVisualConfig.ts`, retuned overview celestial body radii/orbit phases/hit radii, increased overview lighting/readability, retuned Saturn overview ring tilt, and increased stardust/trail particles to 420 total points.
+- Display-control update: visual Z and endpoint reference math now both use the same default `0°` Z rotation so the visible horizontal rift/endpoints and re-grip reference stay aligned. This was explicitly requested as part of the visual angle change; no startup/release/re-grip/collapse thresholds or state transitions were changed.
+- Guardrail: the rift backdrop and particles remain hidden before pull-open and are only revealed from existing solar visibility and `openingProgress`; no timer, autoplay, gesture recognition, state machine, planet activation/focus/follow/return semantics, or initial empty-scene lifecycle changed.
+- Verification: `npm test` passes with 22 files / 138 tests; `npm run build` passes. Chrome preview at `http://127.0.0.1:5175/?solarPreview=1` was visually checked.
+- Affected files: `ar_solar_system_prd.md`, `TODO.md`, `TODO.zh-CN.md`, `src/main.ts`, `src/interaction/solarOpeningController.ts`, `src/solar/celestialBody.ts`, `src/solar/solarParticles.ts`, `src/solar/solarSystem.ts`, `src/solar/solarSystemData.ts`, `src/solar/solarVisualConfig.ts`, `src/solar/universeRiftBackdrop.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
+- Remaining ambiguity: real webcam pull-open recording should confirm whether the expanded rift width and enlarged planets feel correctly attached to the user's hands in live camera framing.
 
 ### 2026-06-25 — Solar particle pass tuned after recording
 
@@ -1427,6 +1603,7 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - Requirement clarification: Earth and Moon are a special bound pair for M7 activation. Activating Earth pauses Earth's solar orbit while Moon may keep orbiting Earth; activating Moon pauses both Earth's solar orbit and Moon's local orbit around Earth; Earth and Moon keep self-rotating in both cases.
 - Implementation update: moved the special pause rule into the solar-system motion layer so the pinch controller still reports one active body, while the renderer decides which orbit pivots pause.
 - Verification update: extended `tests/unit/solarSystemInteraction.test.ts` to cover Earth activation, Moon activation, and continued self-rotation for both bodies.
+- Superseded behavior note: as of 2026-06-30, Moon is no longer exposed as a separate overview activation entry; this historical Moon-activation path is retained only as internal/focus-capable coverage.
 - Affected files: `ar_solar_system_prd.md`, `AGENTS.md`, `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemInteraction.test.ts`.
 - Remaining ambiguity: M7 still needs real webcam confirmation that the visual behavior feels correct when selecting Earth and Moon in the browser.
 
@@ -1446,7 +1623,7 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 - Debug update: the Debug panel and recorder now include `pinchDistancePx` and `hoverPointKind`, so future recordings can distinguish palm-center hits from fingertip/pinch-midpoint hits.
 - Verification update: added a regression test where the palm center is far from Saturn but the pinch midpoint is on Saturn, and activation must enter `PlanetActivated`.
 - Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/interaction/planetActivationController.ts`, `src/rendering/debugOverlay.ts`, `src/solar/solarSystem.ts`, `src/utils/types.ts`, and `tests/gesture/planetActivationController.test.ts`.
-- Remaining ambiguity: the user should re-run the real webcam checklist to confirm the new thresholds and hit radii feel right across all nine bodies.
+- Remaining ambiguity: the user should re-run the real webcam checklist to confirm the new thresholds and hit radii feel right across the current overview entries.
 
 ### 2026-06-24 — Milestone 7 hover and pinch activation implemented
 
@@ -1459,7 +1636,7 @@ Do not implement these until the MVP loop works and the user explicitly asks.
 
 ### 2026-06-24 — Milestone 6 celestial body registry completed
 
-- Implementation update: completed M6 by tightening the celestial-body registry around the nine MVP interactive targets, adding explicit interactive body ids, body names, activation/focus metadata, original orbit transform helpers, and label sprites that can be shown later during hover/activation/focus.
+- Implementation update: completed M6 by tightening the celestial-body registry around the nine MVP rendered/focus-capable bodies, adding explicit body ids, body names, activation/focus metadata, original orbit transform helpers, and label sprites that can be shown later during hover/activation/focus. As of 2026-06-30, Moon remains in this registry but maps to the Earth-Moon overview entry.
 - Rendering/data update: the placeholder solar-system facade now exposes reusable body definitions, world positions, label visibility, and original orbit transforms for M7-M9 without adding one-off per-planet activation or focus code.
 - Verification: added `tests/unit/solarSystemData.test.ts` to cover registry uniqueness, the nine MVP targets, Moon parentage, Saturn ring metadata, and activation/focus/return metadata. `npm run typecheck`, `npm test`, `npm run build`, and `git diff --check` pass. Local Chrome CDP checks also confirmed `/` keeps the WebGL canvas transparent while `/?solarPreview=1` renders nonblank, moving solar content on desktop and mobile viewports.
 - Affected files: `TODO.md`, `TODO.zh-CN.md`, `docs/testing/testing-todo.md`, `src/solar/solarSystemData.ts`, `src/solar/celestialBody.ts`, `src/solar/solarSystem.ts`, and `tests/unit/solarSystemData.test.ts`.

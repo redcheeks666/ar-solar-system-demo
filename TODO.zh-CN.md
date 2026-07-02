@@ -48,19 +48,21 @@
 - [ ] 展开进度由手距驱动；如果手停住，不应自动展开完成。
 - [ ] 展开端点需要视觉上跟随双手。
 - [ ] 展开后的太阳系可以使用身体相对参考来增强 AR 感，但松手后可以悬停在用户选择的任意位置。
-- [ ] 松开整体双手控制后，太阳系保持悬浮在最后稳定 transform。
+- [ ] 松开整体双手控制后，太阳系保持悬浮在最后稳定位置和缩放。
+- [ ] 整体太阳系总览使用固定的 AE 等效强斜俯视角；运行时控制只更新位置和缩放，不再使用手势驱动整体旋转或 quaternion transform。
 - [ ] 双手重新扶住左右端点后，可以继续进行整体把手控制，用于放置、松手和收起。
 - [ ] 已展开状态下，双手扶住端点向内合拢会让太阳系反向收起，并在完全合拢后回到空摄像头画面。
 - [ ] Milestone 5.5 单手太阳系观察控制已退役：进入 `SolarFreeHover` 后，单手五指张开不放大、收拢不缩小、握拳保持不复位、推动不平移。
 - [ ] 掌心朝前“推拉玻璃窗”缩放和掌心朝上整体旋转属于已退役的 M5 旧手势语义；除非用户明确重新启用，否则只保留为历史/debug 协议上下文。
-- [ ] MVP 中水星、金星、地球、火星、木星、土星、天王星、海王星和月球均可 hover 并 pinch 激活。
-- [ ] 被 pinch 激活的天体停止原轨道公转但保持自然自转；当激活从 A 切换到 B 时，A 立即恢复原轨道公转，且只有当前激活天体可以暂停公转，地月绑定组除外。
-- [ ] 地月激活特殊绑定：激活地球时，地球绕太阳公转暂停，月球仍可继续绕地球公转；激活月球时，地球绕太阳公转和月球绕地球公转都暂停；两者都保持自转。
+- [ ] MVP 中水星、金星、地月整体、火星、木星、土星、天王星和海王星均可 hover 并 pinch 激活；月球不再是总览独立激活入口，命中月球会映射到地月整体。
+- [ ] 被 pinch 激活的入口停止原轨道公转但保持自然自转；当激活从 A 切换到 B 时，A 立即恢复原轨道公转，且只有当前激活入口可以暂停公转，地月整体除外。
+- [ ] 地月激活特殊绑定：激活地月整体时，地球绕太阳公转暂停，月球仍可继续绕地球公转；地月焦点默认显示地球，只能通过左上角 0.5 秒长按切换按钮进入月球视角。
 - [ ] Pinch 激活后，同一只激活手的拇指/食指 DoubleClose 进入单颗行星画面。
 - [x] 第一阶段单颗行星画面中，当前行星以统一 overlay 明确显示，背景太阳系弱化并锁定交互，但保留基础动效。
 - [ ] 当前行星在激活、焦点、热区跟手、放下悬浮和观赏期间都保持自转；单颗行星单手缩放/平移/复位已退役。
 - [ ] 单手热区停留可让当前星球跟手，双手热区停留可跟手并按手距缩放，跟随手 `PinchTap` 会解除跟手控制并让行星悬浮在单颗行星画面中。
 - [ ] 单颗行星焦点状态中，屏幕左上角显示透明玻璃质感按钮；用摄像头追踪到的食指尖按住“长按返回太阳系”1 秒填满进度条后，让当前行星回轨，播放 0.5 秒位置/大小调整动画，恢复背景不透明度、解锁太阳系交互，并退出回太阳系画面。鼠标/DOM pointer 点击不是产品路径，掌心朝屏幕开掌返回已退役。
+- [ ] 仅在地月焦点中，返回按钮下方出现第二个左上角玻璃按钮。追踪到的食指尖按住“长按切换月球视角”或“长按切换地球视角”0.5 秒会切换当前焦点 overlay 和热区，不回到太阳系画面；其他焦点天体隐藏该按钮。
 - [ ] 视觉效果工作必须保留已经测试通过的交互逻辑和既有展示控制逻辑；除非用户明确要求修改逻辑或展示控制行为。
 - [ ] 当需求或已完成范围变化时，文档必须更新；每当 `TODO.md` 变化时，也必须同步更新 `TODO.zh-CN.md`。
 - [ ] 每当主代码仓库提交，或 agent 工作流上下文变化时，私有 `agent-companion-repo` 伴生仓库也必须更新。
@@ -333,7 +335,7 @@ Done when:
 验收标准：
 
 - [x] 文档状态模型区分 `SolarOpening`、`SolarFreeHover`、`SolarHandleControl` 和 `SolarClosing`。
-- [x] 松手表示未来太阳系会保持最后稳定的位置、缩放和朝向，而不是吸回胸前锚点或屏幕中心。
+- [x] 松手表示未来太阳系会保持最后稳定的位置和缩放，并使用固定总览角度，而不是吸回胸前锚点或屏幕中心。
 - [x] 已接受的张开手松手会冻结端点，并防止用户慢慢撤手时立刻重新扶住。
 - [x] 掌心朝上的托举保持诊断会保持 `SolarHandleControl`，不会被误判为松手。
 - [x] 重新扶住可以通过更宽容的磁吸区恢复，不要求用户精确重新对齐身体或摄像头位置。
@@ -474,7 +476,7 @@ Done when:
 
 目标：实现第一个高光交互瞬间：用户从空场中用双手把太阳系拉开。
 
-实现备注（2026-06-23，2026-06-24 更新）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、视觉手轴和 `openProgress` 驱动；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定 transform；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定 transform；当双手没有扶住左右端点时，`SolarActive` 自身也会在短暂宽限后落到 `SolarFreeHover`。已退役的 M5.5 单手观察控制不再在 `SolarFreeHover` 中运行；释放后的太阳系等待端点重新扶住或反向收起。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。这仍需要真实摄像头验证。
+实现备注（2026-06-23，2026-06-30 更新）：M4-A/B/C/D 代码已接入。`PullArmed` 现在会进入 `SolarOpening`；代码占位太阳系由手距、中点、缩放和 `openProgress` 驱动，整体 3D 视觉角度固定为 AE 等效强斜俯视总览角度；完全拉开后进入 `SolarActive`。展开控制视觉是太阳系本地左右边缘的两个 3D 控制端点，不再使用中间连线式的操纵杆。展开完成后，`SolarActive` 默认保持最后稳定位置和缩放；任意可见双手不再移动模型。只有双手稳定命中左右端点后，才会进入 `SolarHandleControl` 并恢复整体控制。松开端点控制会进入 `SolarFreeHover` 并保持最后稳定位置/缩放；当双手没有扶住左右端点时，`SolarActive` 自身也会在短暂宽限后落到 `SolarFreeHover`。已退役的 M5.5 单手观察控制不再在 `SolarFreeHover` 中运行；释放后的太阳系等待端点重新扶住或反向收起。控制态下双手向内合拢会进入 `SolarClosing`；达到收起阈值后隐藏全部太阳系内容并回到 `EmptyIdle`。当前暂不加入手型门槛，保证端点容易重新扶住。快速撤手或画面边缘误检造成的突变双手几何会被拒绝，避免模型突然缩小或跳位。2026-06-30 更新：整体旋转平滑和外部传入的 rotation/quaternion transform 已退役，运行时控制器只更新位置和缩放。这仍需要真实摄像头验证。
 
 任务：
 
@@ -484,20 +486,20 @@ Done when:
 - [x] 限制并平滑 `openProgress`。
 - [x] 防止手距停止增加后自动展开完成。
 - [x] 支持已展开端点双手向内移动时的反向进度。
-- [x] 将可复用的代码占位太阳系 group 接到 `SolarOpening` 进度和手势驱动 transform。
+- [x] 将可复用的代码占位太阳系 group 接到 `SolarOpening` 进度和手势驱动的位置/缩放。
 - [x] 在展开开始前，让所有太阳系 3D 物体保持不可见。
 - [x] `HandsClosed` 保持视觉静止，不播放太阳系动画，也不显示 3D 内容。
 - [x] 展开期间，将视觉左右端点绑定到左右手。
 - [x] 将展开控制表现为太阳系边缘两个独立 3D 端点，而不是连接式操纵杆/杆状 overlay。
-- [x] 拒绝突变的双手几何异常帧，使快速撤手或边缘误检时保持最后稳定的太阳系 transform，而不是突然缩小/跳位。
-- [x] 完全展开后，`SolarActive` 保持最后稳定 transform；双手稳定命中端点会 re-grip 进入 `SolarHandleControl`，不扶住端点则落到 `SolarFreeHover`，但不会启用已退役的单手观察控制。
+- [x] 拒绝突变的双手几何异常帧，使快速撤手或边缘误检时保持最后稳定的太阳系位置/缩放，而不是突然缩小/跳位。
+- [x] 完全展开后，`SolarActive` 保持最后稳定位置/缩放；双手稳定命中端点会 re-grip 进入 `SolarHandleControl`，不扶住端点则落到 `SolarFreeHover`，但不会启用已退役的单手观察控制。
 - [x] 使用 `SolarHandleControl` 作为展开后唯一可以恢复整体端点把手控制、松手或反向收起的状态。
 - [x] 当前暂不要求手型门槛；张开的手从模型附近经过时，除非双手同时命中端点，否则不应获得控制。
 - [x] 让用户可见状态说明与最新 M4 状态机保持一致；旧 `wholeSystemIntent` 松手/重新扶住数值只保留在 Debug 面板。
 - [ ] 根据 `openProgress` 渐进显示太阳、轨道、天体、星尘和星云。
 - [x] 展开完成后，将太阳系放置在双手拉开的当前位置，可选使用身体相对参考增强 AR 感。
 - [x] 当反向收起达到闭合阈值时，隐藏全部太阳系内容并回到 `EmptyIdle`。
-- [x] 整体双手控制松开后，保持最后稳定的太阳系 transform，不重新居中。
+- [x] 整体双手控制松开后，保持最后稳定的太阳系位置/缩放，不重新居中；总览角度固定不变。
 - [x] 添加 `openProgress`、起始距离、目标距离和状态的调试值。
 
 验收标准：
@@ -525,12 +527,12 @@ M4-A/B/C/D 人工验证清单：
 | 拉开开始展开 | 从 `HandsClosed` 开始，把双手向两侧拉开。 | 预览、右上角状态说明、Debug 的 `Startup state`、`openProgress` 和 `Solar scale`。 | 状态进入 `SolarOpening`；占位太阳系出现在双手之间；手距增加时 `openProgress` 从接近 `0` 上升。 |
 | 边缘控制端点 | 太阳系出现后继续拉开。 | 预览画面，尤其是占位太阳系的左右边缘。 | 太阳系左右边缘出现两个小控制端点，并随拉开的双手移动。太阳系上不再出现绿色连线/操纵杆。 |
 | 展开跟随手距 | 在 `SolarOpening` 中暂停双手，再继续拉开。 | 预览和 Debug `openProgress`。 | 双手暂停时太阳系大小/进度保持；继续拉开时才继续增加。 |
-| 中点和手轴跟随 | 拉开过程中，让双手整体向左/右/上/下或斜向移动。 | 预览。 | 太阳系中心接近双手中点，轨道平面大致跟随左右手轴方向旋转。 |
-| 完全展开后保持 | 继续拉开到足够远，然后双手从太阳系附近或上方经过，但不要同时停在左右端点上。 | 状态说明、Debug 的 `Startup state` / `openProgress` 和预览画面。 | 交互状态进入 `SolarActive`，随后在双手不在左右端点上时落到 `SolarFreeHover`；`openProgress` 为 `1.00`；太阳系保持最后稳定 transform，不跟随任意双手移动。 |
-| 端点重新扶住控制 | 在 `SolarActive` 下，让双手分别靠近左右 3D 控制端点并短暂保持，然后一起移动双手。 | 状态说明和预览画面。 | 状态进入 `SolarHandleControl`；只有这时太阳系才跟随双手中点、距离和视觉手轴。 |
-| 离开端点后进入自由悬浮 | 在 `SolarHandleControl` 中，把一只手或双手离开端点/移出画面。 | 状态说明和预览画面。 | 状态进入 `SolarFreeHover`；太阳系冻结在最后稳定 transform。 |
-| 快速撤手稳定性 | 模型大部分展开或完全展开后，快速把一只手或双手向屏幕边缘/画面外撤出。 | 预览和 Debug 的 `Solar scale`。 | 短暂追踪异常时模型保持最后稳定 transform；不得突然跳到一侧或缩成很小。 |
-| 松手后自由悬浮 | 在 `SolarHandleControl` 中，让一只手或双手明显离开端点。 | 状态说明和预览画面。 | 交互状态进入 `SolarFreeHover`；太阳系停留在松手时的位置、大小和方向。 |
+| 中点和缩放跟随 | 拉开过程中，让双手整体向左/右/上/下或斜向移动。 | 预览。 | 太阳系中心接近双手中点，大小跟随手距变化；已确认的斜俯视总览角度保持固定。 |
+| 完全展开后保持 | 继续拉开到足够远，然后双手从太阳系附近或上方经过，但不要同时停在左右端点上。 | 状态说明、Debug 的 `Startup state` / `openProgress` 和预览画面。 | 交互状态进入 `SolarActive`，随后在双手不在左右端点上时落到 `SolarFreeHover`；`openProgress` 为 `1.00`；太阳系保持最后稳定位置/缩放，不跟随任意双手移动。 |
+| 端点重新扶住控制 | 在 `SolarActive` 下，让双手分别靠近左右 3D 控制端点并短暂保持，然后一起移动双手。 | 状态说明和预览画面。 | 状态进入 `SolarHandleControl`；只有这时太阳系才跟随双手中点和距离，固定总览角度不变。 |
+| 离开端点后进入自由悬浮 | 在 `SolarHandleControl` 中，把一只手或双手离开端点/移出画面。 | 状态说明和预览画面。 | 状态进入 `SolarFreeHover`；太阳系冻结在最后稳定位置/缩放。 |
+| 快速撤手稳定性 | 模型大部分展开或完全展开后，快速把一只手或双手向屏幕边缘/画面外撤出。 | 预览和 Debug 的 `Solar scale`。 | 短暂追踪异常时模型保持最后稳定位置/缩放；不得突然跳到一侧或缩成很小。 |
+| 松手后自由悬浮 | 在 `SolarHandleControl` 中，让一只手或双手明显离开端点。 | 状态说明和预览画面。 | 交互状态进入 `SolarFreeHover`；太阳系停留在松手时的位置和大小，固定总览角度不变。 |
 | 从自由悬浮重新扶住 | 在 `SolarFreeHover` 中，把双手重新靠近左右控制端点并短暂停住。 | 状态说明和预览画面。 | 交互状态回到 `SolarHandleControl`；此时移动双手会再次控制太阳系。 |
 | 反向收起 | 在 `SolarHandleControl` 中，把双手端点向内合拢。 | 预览、状态说明和 Debug 的 `openProgress`。 | 交互状态进入 `SolarClosing`；`openProgress` 随手距减小而下降。 |
 | 收起完成回空场 | 继续把两个端点向内合拢到双手接近。 | 预览和状态说明。 | 交互状态回到 `EmptyIdle`；所有 3D 太阳系内容消失，恢复初始空摄像头画面。 |
@@ -583,7 +585,7 @@ Done when:
 
 目标：删除太阳系释放到 `SolarFreeHover` 后的单手放大、缩小、恢复默认和平移控制。
 
-退役说明（2026-06-24）：用户移除了 M5.5 单手五指张开放大、单手收拢缩小、握拳保持复位和单手推动平移。`SolarFreeHover` 现在保持最后稳定 transform，并等待端点重新扶住或反向收起。
+退役说明（2026-06-24，2026-06-30 更新）：用户移除了 M5.5 单手五指张开放大、单手收拢缩小、握拳保持复位和单手推动平移。`SolarFreeHover` 现在保持最后稳定位置/缩放和固定总览角度，并等待端点重新扶住或反向收起。
 
 任务：
 
@@ -603,15 +605,15 @@ Done when:
 - [x] `npm run build` 通过。
 - [x] 运行时代码路径不再 import 或运行 solar-inspection controller 逻辑。
 
-## Milestone 6 — 天体数据模型和九个可交互目标
+## Milestone 6 — 天体数据模型和地月整体入口
 
 状态：`DONE`
 
-目标：为所有 MVP 可交互天体创建统一的数据驱动模型，包含 hover、激活、焦点画面和回轨元数据。
+目标：为所有 MVP 天体创建统一的数据驱动模型，包含 hover、激活、焦点画面和回轨元数据，同时把地球和月球作为一个总览激活入口。
 
 任务：
 
-- [x] 为水星、金星、地球、火星、木星、土星、天王星、海王星和月球定义 `CelestialBodyId` / `InteractiveCelestialBodyId`。
+- [x] 为水星、金星、地球、火星、木星、土星、天王星、海王星和月球定义 `CelestialBodyId` / `InteractiveCelestialBodyId`，并把月球作为地月总览入口的一部分处理。
 - [x] 定义天体元数据：名称、标签、近似视觉尺寸、轨道半径、轨道速度、自转速度、颜色/占位纹理、激活命中半径、焦点默认 transform、回轨/原轨道目标、父级天体（如有）。
 - [x] 为每个天体实现简化视觉模型。
 - [x] 添加可识别的土星环。
@@ -628,21 +630,21 @@ Done when:
 - [x] 月球与地球视觉上可区分。
 - [x] 土星有明确的环。
 - [x] 返回轨道逻辑可获取原始轨道位置/层级数据。
-- [x] 后续手势管线可获取焦点默认大小/位置和激活热区半径。
+- [x] 后续手势管线可获取焦点默认大小/位置和激活热区半径；月球总览命中映射到地月整体入口，而不是独立月球激活。
 - [x] `npm run build` 通过。
 
 建议 Codex 提示词：
 
 ```text
 Goal:
-Implement Milestone 6: data-driven celestial body model for nine MVP interactive bodies.
+Implement Milestone 6: data-driven celestial body model for nine rendered/focus-capable bodies and eight overview activation entries.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.7, 8.2, and 17.
 
 Constraints:
 - Use one shared celestial body model and registry.
-- Include Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
+- Include Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon in the data model; expose Moon in the overview only as a hit point mapped to the Earth-Moon entry.
 - Keep visuals lightweight and MVP-friendly.
 - Do not implement the full planet focus gesture pipeline yet unless needed for data hooks.
 
@@ -656,13 +658,13 @@ Done when:
 
 状态：`NEEDS_MANUAL_VERIFY`
 
-目标：让用户可以 hover 并 pinch 激活九个 MVP 天体中的任意一个，同时避免拖动太阳系，并确保激活不会冻结自转。
+目标：让用户可以 hover 并 pinch 激活八个 MVP 总览入口，同时避免拖动太阳系，并确保激活不会冻结自转。
 
 任务：
 
 - [x] 将每个可交互天体的 3D 位置投影到屏幕坐标。
 - [x] 计算手到天体的屏幕空间距离。
-- [x] 为水星和月球添加更大的命中区域。
+- [x] 为水星添加更大的命中区域；月球保留总览命中点，但映射到地月整体入口，而不是独立月球激活。
 - [x] 使用迟滞选择最近的有效天体，避免闪烁。
 - [x] 添加 hover 视觉反馈：光环、标签和轨道高亮。
 - [x] 使用拇指/食指距离和手掌尺度检测 pinch start 与 pinch end。
@@ -672,7 +674,7 @@ Done when:
 - [x] pinch 激活时，停止选中天体的原轨道公转，但保持自然自转。
 - [x] 所有未选中天体继续正常公转和自转。
 - [x] 通过统一 controller 支持从 A 激活切换到 B，并清除 A 的激活状态，使 A 恢复原轨道公转。
-- [x] 添加地月绑定暂停语义：激活地球时冻结地球绕太阳公转但保留月球绕地运行；激活月球时冻结地球绕太阳公转和月球绕地公转。
+- [x] 添加地月绑定暂停语义：总览激活地月整体时冻结地球绕太阳公转但保留月球绕地运行；月球焦点通过地月焦点切换按钮进入，而不是总览独立激活。
 - [x] 天体 pinch 激活期间，禁止误触发太阳系拖动、缩放、平移或其他整体 transform。
 - [x] 添加清楚的激活反馈，并保留原轨道目标供回轨使用。
 - [x] pinch 激活保持期间，添加短暂追踪丢失容忍。
@@ -687,7 +689,7 @@ Done when:
 - [x] 从 A 切换到 B 时，B 是唯一激活天体，A 恢复原轨道公转。
 - [x] 地月激活绑定作为特殊情况生效，同时地球和月球都保持自转。
 - [x] 激活天体不会拖动或缩放整个太阳系。
-- [x] 九个天体都通过统一管线支持高亮和激活；仍需真实摄像头验证。
+- [x] 八个总览入口都通过统一管线支持高亮和激活；月球有投影命中点并映射到地月整体，仍需真实摄像头验证。
 - [x] `npm run build` 通过。
 - [x] 行为已标记为 `NEEDS_MANUAL_VERIFY`，等待真实摄像头 hover/pinch 测试。
 
@@ -695,7 +697,7 @@ Done when:
 
 ```text
 Goal:
-Implement Milestone 7: hover, highlight, and pinch activation for all nine MVP bodies.
+Implement Milestone 7: hover, highlight, and pinch activation for all eight MVP overview entries.
 
 Context:
 Read @ar_solar_system_prd.md sections 7.7, 7.8, 7.9, and 12.4.
@@ -858,12 +860,20 @@ Done when:
 任务：
 
 - [ ] 在视觉打磨过程中保留当前已测试通过的交互逻辑，以及既有对象可见/隐藏生命周期。
-- [ ] 改进太阳光晕、轨道材质和天体可读性。
-- [ ] 只在展开开始后添加星尘和星云效果。
+- [x] 将太阳系总览调整到 AE 等效的强斜俯视裂口角度：X 约 `-79.58°`、约 Y `5°`，默认 Z `0°`。
+- [x] 锁定太阳系总览为 AE 等效固定 pitch/yaw/Z，并让端点命中/参考计算对齐固定的水平左右端点。
+- [x] 添加由 progress 驱动的椭圆宇宙裂口背景：80% 暗色星空内部、轻微蓝色/暖色星云层，以及 AE 导出的金/青/白动态边界光环。
+- [x] 为电影感可读性重新平衡太阳系总览天体/轨道比例，不再按真实天文学比例；允许星球视觉上突破裂口边界。
+- [x] 改进太阳光晕、轨道材质和天体可读性。
+- [x] 只在展开开始后添加星尘和星云效果。
 - [ ] 添加手部接近反馈，例如小型光环或粒子。
 - [ ] 如果 0.5 秒返回调整需要更强反馈，添加可选返回高亮或尾迹效果。
-- [ ] 调整身体参考、手、缩放、旋转、pinch 和返回动画的平滑参数。
+- [ ] 调整身体参考、手、缩放、pinch 和返回动画的平滑参数。
 - [ ] 针对常见笔记本摄像头构图调整触发阈值。
+- [x] 在修改 tracking 节奏、平滑或视觉运行时格式之前，先把低延迟性能诊断基线接入 Debug 和 recorder 导出。
+- [x] 修复 recorder session/export 覆盖范围：每次新录制从空帧开始，导出的 JSON 包含 `planetFocus` 焦点控制诊断。
+- [x] 请求 30fps 摄像头流，并让 MediaPipe 手部追踪优先使用 GPU delegate，GPU 不可用时回退 CPU。
+- [x] 修复 focus 跟随放下边界：PinchTap 必须是跟随开始后的新 close-open，且双手跟随在两只手都离开热区并超过保护窗口后不再继续粘连控制。
 - [ ] 如果 FPS 不稳定，减少粒子数量或后处理。
 - [ ] 添加隐藏调试 UI 的 presentation/recording mode。
 - [ ] 添加弱光、姿态缺失或手部缺失时的 fallback 引导。
@@ -874,8 +884,11 @@ Done when:
 - [ ] 除非用户明确要求，否则视觉打磨不修改已测试通过的交互逻辑、手势阈值、状态流转或对象展示控制生命周期。
 - [ ] 观众能理解太阳系是从双手之间被拉出来的。
 - [ ] 观众能理解太阳系是一个可由双手控制并停在松手位置的自由悬浮物体。
-- [ ] 缩放和旋转看起来具有空间感。
+- [x] 太阳系总览盘面读起来是强斜俯视的空间平面，而不是平行屏幕的平面图。
+- [x] 展开后的太阳系读起来像椭圆形撕开的宇宙空间：椭圆外仍可见摄像头画面，内部是暗色半透明星系场和沙粒感边界。
+- [ ] 缩放和固定斜俯视总览角度看起来具有空间感。
 - [ ] 激活、单颗行星画面、PinchTap 放下悬浮和左上角食指按钮返回都在视觉上清楚。
+- [x] Debug 暴露用于延迟诊断的性能指标：render delta/render cost、tracking update/detect cost、hand/pose detect cost、trackingHz、fresh/stale frame 计数、重复视频帧计数、controller/recorder cost、solar/VFX update cost；recorder JSON 导出同样的结构化数据且不包含原始摄像头视频。
 - [ ] Demo 在普通笔记本上以可用帧率运行。
 - [ ] 录制模式隐藏调试杂物。
 - [ ] `npm run build` 通过。
@@ -945,9 +958,23 @@ Done when:
 - [x] 升级太阳系 opening 视觉：新增 progress-driven opening VFX group，开始阶段显示 thin crack，中段显示 blue/gold rift，接近完成时显示 burst/shockwave，并在左右 control endpoint 附近显示蓝/金 hand anchor glow。
 - [x] Opening VFX 完全由现有 `openingProgress` 驱动；未新增 timer、自动播放完成、controller 阈值、状态机或 `SolarOpeningController` 行为变化。
 - [x] Opening VFX 只在 `visibleRequested` 为 true 且 `openingProgress > 0` 时显示，且所有 sprite opacity 都从 progress 派生，从而保持初始空场不显示特效。
-- [x] 新增轻量 `SolarParticleField`，使用总计 200 个 `Points` 粒子表现星尘、轨道拖尾点缀和 micro flare；粒子只在太阳系可见且 `openingProgress > 0.25` 时出现。
+- [x] 新增轻量 `SolarParticleField`，使用总计 420 个 `Points` 粒子表现星尘、轨道拖尾点缀和 micro flare；粒子只在太阳系可见且 `openingProgress > 0.25` 时出现。
 - [x] 粒子 opacity 在 opening 期间由 progress 驱动淡入，并在 planet focus 中压暗，避免背景星尘/拖尾抢主角。
+- [x] 新增 `UniverseRiftBackdrop`：椭圆裂口层包含代码生成的 80% 暗色透明星空内部，以及 AE 导出的金/青/白边界光环 PNG 序列。
+- [x] 宇宙裂口背景在初始空场保持隐藏，只从既有 `openingProgress` 显示；未添加 timer、自动播放或新的展示控制生命周期。
+- [x] 将代码生成的星空内部对齐到和 PNG 光环相同的 AE 全帧平面及烘焙角度，让暗色星系场嵌在边界内，而不是按旧 3D 盘面投影成另一个椭圆。
+- [x] 将星空内部缩进到外层光环内侧，并作为星球后方的底层宇宙背景渲染，而不是盖在星球上的半透明蒙版。
+- [x] 将星空内部移到专用 background render layer；`TransparentSceneRenderer` 现在先渲染该 layer，清除深度，再渲染主太阳系和 AE 光环。
+- [x] 在 `src/solar/solarVisualConfig.ts` 中集中管理已确认的总览倾角和裂口尺寸。
+- [x] 为电影感可读性重新平衡总览天体尺寸、轨道位置、总览光照和 Saturn 总览环倾角。
+- [x] 新增 After Effects look-dev 生成脚本 `scripts/after-effects/create-ar-solar-rift-vfx.jsx`，用于生成可循环的 `rift_border_loop` 边界光环合成，并在 `BREATH_CONTROL` 上提供 `Vertical Tilt Degrees` 滑块；脚本在效果确认前不自动导出、不保存工程、不加入渲染队列。
+- [x] 新增独立 After Effects 导出 helper `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx`，不覆盖 look-dev 生成脚本，并将 `rift_border_loop` 导出/排队为适合项目使用的透明 PNG 序列母版。
+- [x] 修正 AE 边界光环生成脚本：移动弧线漂移和 Turbulent Displace evolution 改用周期表达式，不再使用非整数线性漂移，确保未来导出的 4 秒循环首尾闭合。
+- [x] 将已确认的 AE PNG 序列注册到太阳系素材 manifest，并用单个动态 `CanvasTexture` 作为当前运行时边界光环渲染。
+- [x] 将 AE 边界光环用同一个动态 `CanvasTexture` 渲染成双层：底层普通透明混合的暗色支撑层提升真实摄像头可读性，顶层保留 additive 金/青能量线。
+- [x] 运行时 AE 边界光环保持已确认的双层结构；移除额外 runtime glow 强化，因为它和当前摄像头/构图观感不协调。
 - [ ] 等新的视觉特效方案确认后，再把 manifest 和 loader 接入剩余 HUD frame 和后续获批的视觉系统。
+- [ ] 如果之后 Chrome/Three.js `VideoTexture` 兼容性、alpha 质量和文件体积都可接受，再把 PNG 序列母版转成透明 WebM VP9。
 
 验收标准：
 
@@ -961,6 +988,14 @@ Done when:
 - [x] Hover/activated HUD 视觉已有单元测试结构断言覆盖，包括 target-lock 对象创建、label 可见性、orbit 变亮、activation 变亮和 focus dimming。
 - [x] Opening VFX 已有单元测试结构断言覆盖，包括初始隐藏状态、由 progress 驱动的 crack/rift/burst/shockwave 可见性、endpoint anchor 附着和 full progress fade-out。
 - [x] Solar particles 已有单元测试结构断言覆盖，包括总 point count、初始隐藏状态、opening-progress 阈值和 focus dimming。
+- [x] Universe-rift backdrop 已有单元测试结构断言覆盖，包括初始隐藏状态、opening-progress 显示、AE 边界可见性和 focus dimming。
+- [x] Universe-rift backdrop 测试会断言生成的星空内部和 AE 边界共用同一平面尺寸和本地姿态。
+- [x] Universe-rift backdrop 测试会断言生成的星空内部被隔离到 background render layer，确保星球视觉上仍显示在上层。
+- [x] Universe-rift backdrop 测试会断言 AE 光环同时具备 normal-blend 暗色支撑层和 additive 能量层。
+- [x] Universe-rift backdrop 测试会断言额外 runtime glow 层不存在，当前 AE 光环保持已确认的双层结构。
+- [x] AE 生成脚本仅用于源合成/look-dev：它创建带轻微呼吸、小幅 2D 角度漂移和可调垂直俯仰滑块的可预览循环边界光环合成，但不决定最终导出格式，也不添加 Render Queue 项。
+- [x] AE 导出 helper 是独立脚本，目标是 `public/assets/solar/fx/rift-border-loop/png-sequence/` 下的 PNG 序列源帧，不覆盖 look-dev 生成脚本。
+- [x] 后续 AE 导出通过周期运动表达式避免边界弧线漂移和扰动在循环首尾产生跳变。
 - [x] `npm run typecheck`、`npm test` 和 `npm run build` 通过。
 
 ## 跨里程碑工程任务
@@ -1138,6 +1173,147 @@ Done when:
 - [ ] 主题预设。
 
 ## 变更日志
+
+### 2026-07-01 — 收紧 focus 跟随延迟与放下边界
+
+- 需求细化：focus 跟随的 `PinchTap` 放下必须是跟随控制开始后的新 close-open；如果手在 dwell 阶段已经闭合，进入跟随后第一次张开不能直接放下星球。双手跟随中，如果两只 active 手都明显离开焦点星球热区，控制器会先短暂冻结以容忍追踪/边缘误差，随后释放到 `PlanetFocusFloating`，而不是在热区外继续粘连双手控制。
+- 运行时延迟更新：摄像头启动现在请求 30fps 视频流，MediaPipe 手部追踪优先尝试 GPU delegate；如果 GPU 初始化不可用，则回退 CPU。
+- Focus 更新：为每只 active 跟随手加入 PinchTap arming，在 active hand rebind 时保留 arming，并为双手跟随加入热区丢失路径。
+- 保护边界：保持 1 秒 dwell、1 秒返回长按、端点重新扶住时间、focus 缩放限制、产品状态名和视觉资产不变。
+- 验证更新：`tests/gesture/planetFocusController.test.ts` 现在覆盖跟随进入后的新 PinchTap arming，以及双手热区丢失后的释放；`npm run typecheck`、`npm test`（24 个文件 / 150 个测试）和 `npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/camera/camera.ts`、`src/tracking/handTracker.ts`、`src/interaction/planetFocusController.ts` 和 `tests/gesture/planetFocusController.test.ts`。
+- 剩余不明确项：真实摄像头测试仍需确认浏览器是否实际满足 30fps 请求、目标机器是否可用 GPU delegate，以及双手热区丢失窗口是否足够严格但不误切有意缩小动作。
+
+### 2026-07-01 — 修复焦点 recorder 导出
+
+- 需求细化：导出的手势 JSON 必须包含 `planetFocus` 焦点控制快照，使单颗行星热区 dwell、单/双手跟随、PinchTap 放下、焦点位置/缩放和返回按钮计时都能从用户测试日志中分析。
+- Recorder 更新：开始一次新录制时现在会清空旧的内存帧，避免多个测试片段被拼接进同一个导出 JSON。导出 schema version 现在为 `2`。
+- 保护边界：本次只改变 debug recording/export 行为。未修改 MediaPipe 节奏、摄像头 constraints、平滑、手势阈值、状态机、重新扶住/dwell/返回长按时间、对象可见性生命周期或视觉素材。
+- 验证更新：新增 `tests/gesture/gestureDebugRecorder.test.ts`；`npm run typecheck`、`npm test`（24 个文件 / 148 个测试）和 `npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/interaction/gestureDebugRecorder.ts` 和 `tests/gesture/gestureDebugRecorder.test.ts`。
+- 剩余不明确项：修复后需要重新录制真实摄像头 focus-follow 测试，使下一轮延迟/调参分析可以使用干净的 `planetFocus` 数据。
+
+### 2026-07-01 — 新增低延迟性能诊断基线
+
+- 需求细化：在修改 tracking 节奏、平滑、delegate 选择、摄像头分辨率或 AE 裂口运行时格式之前，先新增客观延迟/性能诊断，使真实摄像头测试能区分模型耗时、重复视频帧、controller 耗时、render 耗时和 VFX 上传耗时。
+- Debug 更新：`DebugSnapshot.performance` 现在记录 render delta/render cost、tracking update/detect cost、hand/pose detect cost、trackingHz、fresh/stale tracking frame 计数、重复视频帧计数、controller/recorder cost、solar/VFX update cost。Debug 面板会把这些值显示在靠前位置。
+- Recorder 更新：导出的手势 JSON 现在为每个 fresh tracking frame 带上同样的 `performance` 快照，同时仍不包含原始摄像头视频。
+- 保护边界：本次只是 instrumentation。未修改 MediaPipe 节奏、手部 delegate、摄像头 constraints、平滑、手势阈值、状态机、重新扶住/dwell/返回长按时间、对象可见性生命周期或视觉素材。
+- 验证更新：`npm run typecheck`、`npm test`（23 个文件 / 146 个测试）和 `npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/utils/types.ts`、`src/tracking/mediapipe.ts`、`src/rendering/scene.ts`、`src/main.ts`、`src/rendering/debugOverlay.ts`、`src/interaction/gestureDebugRecorder.ts`、`src/solar/solarSystem.ts` 和 `src/solar/universeRiftBackdrop.ts`。
+- 剩余不明确项：需要真实摄像头测试分别导出 idle camera、pull-open、端点重新扶住/控制、focus follow 的短 recorder JSON，下一步优化才能基于数据而不是体感选择。
+
+### 2026-07-01 — 移除额外 runtime AE 裂口 glow
+
+- 需求反转：预览后确认新增 runtime glow 视觉不协调，应移除；当前构图里之前的双层 AE PNG 光环更合适。
+- 视觉更新：从 `UniverseRiftBackdrop` 移除程序化柔和椭圆 glow mesh、放大的 additive AE 纹理 glow mesh、对应材质/贴图和生命周期透明度逻辑。
+- 测试更新：Universe-rift backdrop 回归测试现在断言额外 glow mesh 不存在，同时保留已有 normal-blend 暗色支撑层和 additive AE 边界层。
+- 保护边界：未修改手势逻辑、状态机、pinch/focus 入口、太阳系展开/释放/重抓/收起语义、坐标映射、对象显隐生命周期、AE 素材文件或全局后期处理。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/universeRiftBackdrop.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：还需要真实摄像头预览确认回到双层光环后，现场画面观感更好。
+
+### 2026-07-01 — AE 裂口光环发光可读性增强
+
+- 需求细化：之前接入的 AE 裂口光环在真实摄像头画面里偏像淡淡灰尘，因此运行时需要补更明确的发光感，但不替换已确认的 AE PNG 序列，也不改变裂口角度和位置。
+- 视觉更新：`UniverseRiftBackdrop` 现在在同一个裂口生命周期下增加轻量 glow 强化：底部程序化柔和椭圆 glow 贴图、轻微放大的 additive AE 纹理 glow pass、已有普通透明混合暗色支撑层，以及最上方原始 additive AE 能量层。
+- 保护边界：这只是材质/层级变化。未修改手势逻辑、状态机、pinch/focus 入口、太阳系展开/释放/重抓/收起语义、坐标映射、对象显隐生命周期或全局后期处理。
+- 验证更新：`npm run typecheck` 通过，`npm test -- tests/unit/solarSystemInteraction.test.ts` 通过，并新增结构断言覆盖 glow 层、additive blending、共享姿态、随 opening reveal 和 focus dimming。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/universeRiftBackdrop.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：还需要真实摄像头预览确认 glow 在明亮背景下足够明显，同时不会把裂口边界变成一圈实心涂抹。
+
+### 2026-06-30 — 地月焦点改为一个总览入口并支持焦点内切换
+
+- 需求更新：地球和月球不再作为两个总览可独立选择的星球。总览将地球和月球视为一个地月整体入口；命中月球会映射到地月整体，进入焦点后默认显示地球。
+- 交互更新：只有地月焦点显示第二个左上角玻璃按钮，位于返回按钮下方。追踪食指尖按住该按钮 0.5 秒可在地球和月球 focus overlay 之间切换；触发后必须先离开按钮区域，才能再次触发，避免持续按住导致来回跳变。
+- 实现更新：`CodePlaceholderSolarSystem.getInteractiveBodyScreenTargets()` 现在把月球投影命中点映射为 `earth`，`main.ts` 保留一个轻量的地球/月球当前焦点显示状态，现有食指长按 helper 同时驱动 1 秒返回按钮和 0.5 秒地月切换按钮。
+- 验证更新：新增月球总览目标映射和 0.5 秒长按阈值复用的回归测试；focus 跟随/返回 controller 复用现有逻辑，没有重写。
+- 影响文件：`AGENTS.md`、`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`index.html`、`src/styles.css`、`src/main.ts`、`src/solar/solarSystem.ts`、`tests/gesture/planetReturnButton.test.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：仍需真实摄像头验证第二个左上角按钮是否容易触达、是否和返回按钮冲突，以及从地球切到月球的画面节奏是否自然。
+
+### 2026-06-30 — 太阳系总览天体尺寸压缩为摄像头可读比例
+
+- 需求细化：太阳系总览天体不遵守真实天文学比例。裂口总览里过小、难以看清的天体需要适当放大；气态巨行星仍然读起来更大，但不按真实比例压倒其他星球，只保留适度的大小层级。
+- 实现更新：在 `solarSystemData.ts` 中调整 `CELESTIAL_BODY_DEFINITIONS` 的半径和匹配的激活命中半径：水星、月球、火星、金星、地球放大，天王星/海王星略微放大，木星/土星轻微收敛，土星环半径保持比例，月球本地轨道加宽以避免和地球重叠。
+- 验证更新：新增单元回归，确认压缩后的演示比例让水星/月球可读、气态巨行星仍大于地球，并将木星/地球比例控制在 2 倍以内。
+- 范围说明：这只是视觉数据调优。没有修改手势状态机、拉开/重抓/松手/收起语义、固定总览角度、focus 返回流程或贴图/材质系统。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarSystemData.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：还需要浏览器/摄像头预览确认新尺寸与 AE 光环整体平衡，行星绕到太阳后方时不会让中心区域过挤。
+
+### 2026-06-30 — 整体太阳系总览角度锁定为固定位置/缩放控制
+
+- 需求更新：用户确认当前 `?solarPreview=1` 的太阳系总览角度就是目标基线，不再需要整体太阳系 3D 操控。可见太阳系控制器应保持 AE 等效斜俯视总览角度固定，只更新位置和缩放。
+- 实现更新：从 `SolarOpeningSnapshot` / `SolarOpeningGeometry` 移除 `rotationZ`，删除未再使用的整体 Z 旋转平滑路径，并将端点参考计算改为固定水平左右位置。
+- API 简化：`CodePlaceholderSolarSystem.setTransform()` 不再接受外部 `rotation` 或 `quaternion`；太阳系 group 通过 `solarVisualConfig.ts` 在视觉层内部持有固定旋转。
+- 范围说明：行星自转、公转、土星环倾角、焦点星球补偿、粒子，以及 AE 裂口反倾角补偿仍属于视觉/模拟行为，本次没有移除。
+- 验证：`npm run typecheck`、`npm test`（143 个）和 `npm run build` 通过；浏览器预览 `http://127.0.0.1:5173/?solarPreview=1` 重新加载后没有 console warning/error，固定斜俯视总览仍正常渲染。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`src/interaction/solarOpeningController.ts`、`src/solar/solarSystem.ts`、`src/solar/solarVisualConfig.ts`、`src/main.ts`、`src/tracking/config.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不确定性：真实摄像头 pull-open 仍需确认固定水平端点参考下，端点重新扶住手感是否自然。
+
+### 2026-06-30 — AE PNG 裂口边界序列接入运行时
+
+- 需求更新：AE 导出的透明 PNG 序列现在就是太阳系裂口边界光环的当前运行时格式。透明 WebM VP9 仍保留为未来优化项，不再是本次接入必须完成的步骤。
+- 实现更新：`UniverseRiftBackdrop` 继续保留代码生成的 80% 暗色星空内部，但把程序化边界粒子层替换为 `public/assets/solar/fx/rift-border-loop/png-sequence/` 下的 AE PNG 序列，并通过单个动态 `CanvasTexture` 渲染，避免为 120 帧创建 120 个 GPU texture。
+- 视觉对齐修复：根据用户截图复查后，生成的暗色星空内部现在使用和 PNG 光环相同的 AE 全帧平面、中心点和烘焙角度补偿，并裁剪到光环可见边界椭圆内。这样星空不会再像另一个大号倾斜椭圆一样跑到已确认的光环位置之外。
+- 视觉层级修复：星空内部现在缩进到光环内侧，并隔离到专用 background render layer。`TransparentSceneRenderer` 会先渲染该 layer，清除深度，再渲染主太阳系 layer 和 AE 光环，使暗色星系场作为底层背景存在，而不是像半透明蒙版一样盖住太阳和行星。
+- 真实摄像头可读性修复：AE 光环现在用两个 mesh 共用同一个动态 `CanvasTexture` 渲染：下方是普通透明混合的暗色支撑 pass，上方保留原有 additive 金/青能量光环 pass。这样不改变 AE 动作和角度，但外圈不容易在明亮摄像头画面里消失。
+- 护栏：裂口仍只从既有 `openingProgress` 淡入，并继续响应已有 planet-focus 背景 dimming；初始空场仍隐藏。未修改手势逻辑、状态流转、controller 阈值、坐标映射或对象显示/隐藏生命周期。
+- 验证：`npm run typecheck`、`npm test`（143）和 `npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarAssetManifest.ts`、`src/solar/universeRiftBackdrop.ts`、`src/solar/solarSystem.ts`、`tests/unit/solarSystemInteraction.test.ts` 和 `public/assets/solar/fx/rift-border-loop/png-sequence/`。
+- 剩余不确定性：还需要浏览器/摄像头预览确认 AE 光环在真实 pull-open 中的可见宽度和烘焙角度是否仍与双手端点贴合。
+
+### 2026-06-26 — 裂口背景共用太阳系变换（端点对齐修复）
+
+- Bug 修复：宇宙裂口背景自己跑了两套控制端点没有的动画——缓慢的 `root.rotation.z` 自转，和独立的 `root.scale` 揭示缩放（缓动曲线还和太阳系组的 open scale 不一样）。所以展开（或任何 `openingProgress` 变化）时，椭圆和端点各缩放各自转、步调不一致：端点一会儿在椭圆里、一会儿在椭圆外，从来不在左右最宽点。
+- 修复：在 `universeRiftBackdrop.ts` 去掉裂口自己的自转和缩放；它现在和端点、行星完全一样共用太阳系组的 transform，左右最宽点永远锁在控制端点上。出现改由原有的透明度淡入完成，整体变大由太阳系组的 open scale 带动。`solarSystem.ts` 现在调用无参的 `riftBackdrop.update()`。
+- 验证：`npm run typecheck`、`npm test`（143）、`npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/universeRiftBackdrop.ts`、`src/solar/solarSystem.ts`。
+- 遗留模糊：真机录屏需确认端点在展开/控制/收起全程都跟住椭圆边缘、不再漂移。
+
+### 2026-06-26 — 控制端点对齐到宇宙裂口椭圆边缘
+
+- 视觉/交互修复：整体控制端点之前在最外天体范围（约 3.79 local），落在裂口椭圆内约 72% 处。现在端点位于宇宙裂口背景的左右最宽点：`SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X = UNIVERSE_RIFT_WIDTH / 2`（5.25），可见把手落在发光椭圆边缘。
+- 接受的连带影响：因为端点吸附双手，这让椭圆宽度等于双手跨度；follow scale（`worldDistance / SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN`，跨距 7.58 → 10.5）会让展开后的整体（行星+椭圆）在交互态缩小约 28%。按用户选择，不放大行星数据补偿，行星在椭圆内留更多边距。
+- `solarSystemData.ts` 现在从 `solarVisualConfig.ts`（叶子模块，无循环）import `UNIVERSE_RIFT_WIDTH`；删除了旧的"最外天体范围 + `CONTROL_ENDPOINT_PADDING`"推导。
+- 验证：`npm run typecheck`、`npm test`（143）、`npm run build` 通过；`?solarPreview=1` 浏览器预览确认裂口正常渲染、天体在椭圆内。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarSystemData.ts`。
+- 遗留模糊：真机录屏需确认缩小后的交互态在摄像头背景下仍清晰；若行星太小，可同比放大天体 `orbitRadius`/`radius`（约 ×1.385）重新填满椭圆。
+
+### 2026-06-26 — 太阳系把手放下改为双手握拳→张开 + 超宽自动
+
+- 需求变更：`SolarHandleControl` 中太阳系吸附双手，离开端点不再表示放下。放下改为：(a) 双手明确"握拳→再张开一次"手势；或 (b) 双手屏幕 x 跨距（吸附端点的视觉宽度）超过 `MAX_VISUAL_WIDTH_SCREEN_FRACTION`（约 0.72 屏宽）时自动放下，冻结在放下前的稳定 transform。双手长时间完全丢失仍作为兜底放下，偶发单帧丢手不放下。
+- 需求变更：重新扶住端点的稳定停留时间提高到约 0.5 秒（`ENDPOINT_ENTER_STABLE_MS` 140 → 500），`SolarActive`→`SolarHandleControl` 与 `SolarFreeHover` 重新扶住共用；双手向内合拢的反向收起路径不变。
+- 说明：旧的张开手松手 / 掌心朝上握持保护 / `wholeSystemIntent` 释放-重抓置信度本来就是 debug-only、没有驱动可见太阳系，它们仍只作诊断，不是当前放下/重抓路径。
+- 实现：`solarOpeningController.ts` 的 `updateHandleControl` 现在跑 `updatePlaceDownGesture`（握拳→张开状态机：握拳 armed 时冻结 transform，张开确认，`PLACE_DOWN_ARMED_TIMEOUT_MS` 超时恢复跟手）、`isBeyondMaxVisualWidth` 超宽判定和 `HANDLE_HAND_LOSS_RELEASE_MS` 兜底；删除了旧的"离开端点 exit 半径放下"分支。放下手型阈值加到 `intentTuning.ts`（`SOLAR_PLACE_DOWN_*`）。
+- 测试：新增 `tests/gesture/solarHandlePlaceDown.test.ts`（握拳→张开放下、超宽自动放下、持续控制不误放下、约 0.5 秒重新扶住）。`npm run typecheck`、`npm test`（143 个）、`npm run build` 通过。
+- 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`src/interaction/solarOpeningController.ts`、`src/interaction/intentTuning.ts`、`tests/gesture/solarHandlePlaceDown.test.ts`。
+- 遗留模糊：真机录屏需微调 `SOLAR_PLACE_DOWN_*` 和 `MAX_VISUAL_WIDTH_SCREEN_FRACTION`。用户要"最大宽度约半屏"，但开启目标宽度本身已约 0.5 屏，所以自动放下设在约 0.72 屏宽以免一展开就触发；真机确认手感，若同时缩小开启目标再调低。
+
+### 2026-06-25 — 收敛 AE 边界光环 look-dev 生成脚本
+
+- 导出决策：当前 AE 裂口边界母版导出采用透明 PNG 序列，因为它能稳定保留 alpha、便于逐帧检查，并且符合当前项目静态资源结构；透明 WebM VP9 作为未来运行时派生格式，而不是 AE 源导出格式。
+- 工具更新：新增 `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx` 独立导出 helper，用于查找 `rift_border_loop`、写入 `public/assets/solar/fx/rift-border-loop/png-sequence/` 帧序列，并生成 `rift_border_loop.sequence.json`；它不覆盖也不修改 look-dev 生成脚本。
+- 循环质检更新：检查第一版导出的 PNG 序列后确认格式是正确的 RGBA PNG，但发现旧生成脚本里的移动弧线漂移和 Turbulent Displace evolution 不是数学无缝循环；已将生成脚本改为周期表达式，供后续重新导出使用。
+- 需求更新：AE 边界光环的垂直俯仰已确认 look-dev 数值为 `66.66°`，但该角度作用在已预先压扁的 `1500 x 600` 椭圆上；运行时太阳系总览盘面同步为当前 `10.5 x 9.2` 裂口基础尺寸下的等效 Three.js `-79.58°` / `-1.38893 rad`。
+- 修正说明：直接把 AE 滑块值照抄为运行时 `rotation.x = -66.66°` 是错的，因为漏算了 AE 源椭圆的宽高比；现在运行时配置按公式推导等效 pitch，并用单元测试锁住。
+- 坐标澄清：屏幕空间的位置 Y 仍然是上下轴，但已确认的圆盘垂直俯仰/椭圆压扁效果在 Three.js 中实现为 X 旋转；Y 旋转只保留很小的左右 yaw。
+- 需求更新：AE 源素材只需要沙粒感裂口边界光环，并带轻微呼吸和小幅 2D 角度漂移；蓝金能量丝和强透视角度预览不属于这个脚本范围。
+- 工具更新：将 `scripts/after-effects/create-ar-solar-rift-vfx.jsx` 收敛为一键 AE JSX，只创建可循环的 `rift_border_loop` 边界光环合成和 README 指引合成；`BREATH_CONTROL` 现在带有默认值为 `66.66` 的 `Vertical Tilt Degrees` Slider Control，并接到 AE 的 X Rotation，用于调节光环上下方向的俯仰，而不是左右水平旋转。
+- 性能更新：为 AE look-dev 预览优化生成脚本，关闭 comp motion blur，将生成的矢量沙粒 group 从约 1,140 个降到 326 个，移除逐粒 opacity 表达式，并移除沙粒层上的 Glow 效果。
+- 范围澄清：根据用户要求，AE 脚本不导出文件、不保存工程、不加入 Render Queue；运行时导出格式和 Three.js 接入等 AE 效果确认后再决定。
+- 护栏：这是源素材工具，不改变 app 运行时代码、手势逻辑、展示控制生命周期、初始空场行为或已有视觉显示时机。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/solar/solarVisualConfig.ts`、`scripts/after-effects/create-ar-solar-rift-vfx.jsx` 和 `scripts/after-effects/export-ar-solar-rift-border-png-sequence.jsx`。
+- 剩余不确定性：最终运行时交付格式需要等边界光环合成效果看过后再定。
+
+### 2026-06-25 — 实现椭圆宇宙裂口总览视觉方向
+
+- 需求更新：太阳系总览应接近用户参考图，采用强斜俯视盘面角度、默认视觉 Z 旋转 `0°`、放大的非真实天体比例，以及椭圆形撕裂宇宙空间。
+- 视觉更新：新增生成式 `UniverseRiftBackdrop`，包含 80% 暗色透明的星空内部、轻微蓝色/暖色星云层、沙粒感金/青/白边界粒子，并由既有 `openingProgress` 驱动显示。
+- 视觉更新：在 `src/solar/solarVisualConfig.ts` 中集中管理总览倾角/裂口常量；调优总览天体半径、轨道相位、命中半径、整体光照可读性、Saturn 总览环倾角，并把星尘/拖尾粒子增加到总计 420 个 points。
+- 展示控制更新：视觉 Z 和端点参考计算都使用相同的默认 `0°` Z 旋转，使可见水平裂口/端点与重新扶住参考保持一致。这是本次视觉角度调整中用户明确要求的改动；未修改启动、松手、重新扶住、收起阈值或状态流转。
+- 护栏：裂口背景和粒子在 pull-open 前保持隐藏，只从既有太阳系可见性和 `openingProgress` 显示；未新增 timer、自动播放，也未修改手势识别、状态机、行星激活/focus/follow/return 语义或初始空场生命周期。
+- 验证：`npm test` 通过，22 个文件 / 138 个测试；`npm run build` 通过。已在 Chrome 预览 `http://127.0.0.1:5175/?solarPreview=1` 做视觉检查。
+- 影响文件：`ar_solar_system_prd.md`、`TODO.md`、`TODO.zh-CN.md`、`src/main.ts`、`src/interaction/solarOpeningController.ts`、`src/solar/celestialBody.ts`、`src/solar/solarParticles.ts`、`src/solar/solarSystem.ts`、`src/solar/solarSystemData.ts`、`src/solar/solarVisualConfig.ts`、`src/solar/universeRiftBackdrop.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
+- 剩余不明确项：还需要真实摄像头拉开录屏确认扩大后的裂口宽度和放大星球在实时摄像头构图中是否仍然贴合双手。
 
 ### 2026-06-25 — 根据录屏调优 Solar particle pass
 
@@ -1426,6 +1602,7 @@ Done when:
 - 需求澄清：M7 激活中，地球和月球是特殊绑定组。激活地球时，地球绕太阳公转暂停，月球仍可继续绕地球公转；激活月球时，地球绕太阳公转和月球绕地球公转都暂停；两种情况下地球和月球都保持自转。
 - 实现更新：将特殊暂停规则放在太阳系运动层，pinch controller 仍然只报告一个 active body，由渲染/运动层决定哪些 orbit pivot 暂停。
 - 验证更新：扩展 `tests/unit/solarSystemInteraction.test.ts`，覆盖激活地球、激活月球，以及两者自转持续。
+- 已被后续行为取代说明：截至 2026-06-30，月球不再作为总览独立激活入口；这里的历史月球激活路径只保留为内部/焦点能力覆盖。
 - 影响文件：`ar_solar_system_prd.md`、`AGENTS.md`、`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemInteraction.test.ts`。
 - 剩余不明确项：M7 仍需真实摄像头确认浏览器中选中地球和月球时的视觉行为符合预期。
 
@@ -1445,7 +1622,7 @@ Done when:
 - 调试更新：Debug 面板和 recorder 现在包含 `pinchDistancePx` 和 `hoverPointKind`，后续录制可以区分手掌中心命中和指尖/捏合中点命中。
 - 验证更新：新增回归测试，覆盖“手掌中心远离土星，但 pinch 中点落在土星上时必须进入 `PlanetActivated`”。
 - 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/interaction/planetActivationController.ts`、`src/rendering/debugOverlay.ts`、`src/solar/solarSystem.ts`、`src/utils/types.ts` 和 `tests/gesture/planetActivationController.test.ts`。
-- 剩余不明确项：需要用户重新跑真实摄像头 checklist，确认新阈值和热区在九个天体上的手感是否合适。
+- 剩余不明确项：需要用户重新跑真实摄像头 checklist，确认新阈值和热区在当前总览入口上的手感是否合适。
 
 ### 2026-06-24 — Milestone 7 hover 和 pinch 激活已实现
 
@@ -1458,7 +1635,7 @@ Done when:
 
 ### 2026-06-24 — Milestone 6 天体 registry 完成
 
-- 实现更新：完成 M6，将天体 registry 收紧到九个 MVP 可交互目标，新增明确的 interactive body id、天体名称、激活/焦点元数据、原始轨道 transform helper，以及后续 hover/激活/焦点可显示的 label sprite。
+- 实现更新：完成 M6，将天体 registry 收紧到九个 MVP 渲染/焦点能力天体，新增明确的 body id、天体名称、激活/焦点元数据、原始轨道 transform helper，以及后续 hover/激活/焦点可显示的 label sprite。截至 2026-06-30，月球仍保留在 registry 中，但总览命中会映射到地月整体入口。
 - 渲染/数据更新：placeholder 太阳系 facade 现在暴露可复用的天体定义、world position、label 显隐和原始轨道 transform，供 M7-M9 使用，同时没有添加按行星分叉的一次性激活或焦点逻辑。
 - 验证：新增 `tests/unit/solarSystemData.test.ts`，覆盖 registry 唯一性、九个 MVP 目标、月球父级、土星环元数据，以及激活/焦点/回轨元数据。`npm run typecheck`、`npm test`、`npm run build` 和 `git diff --check` 通过。本地 Chrome CDP 检查也确认 `/` 的 WebGL canvas 保持透明空场，而 `/?solarPreview=1` 在桌面和移动视口都会渲染非空且持续运动的太阳系内容。
 - 影响文件：`TODO.md`、`TODO.zh-CN.md`、`docs/testing/testing-todo.md`、`src/solar/solarSystemData.ts`、`src/solar/celestialBody.ts`、`src/solar/solarSystem.ts` 和 `tests/unit/solarSystemData.test.ts`。

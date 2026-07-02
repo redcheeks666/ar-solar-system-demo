@@ -19,6 +19,8 @@ import type { VisionFileset } from './mediapipe';
 const MIN_HAND_DETECTION_CONFIDENCE = 0.35;
 const MIN_HAND_PRESENCE_CONFIDENCE = 0.35;
 const MIN_HAND_TRACKING_CONFIDENCE = 0.4;
+const PREFERRED_HAND_DELEGATE = 'GPU';
+const FALLBACK_HAND_DELEGATE = 'CPU';
 
 const EMPTY_HANDS_SNAPSHOT: HandTrackingSnapshot = {
   detectedHands: 0,
@@ -34,17 +36,17 @@ export class HandTracker {
   private constructor(private readonly landmarker: HandLandmarker) {}
 
   static async create(fileset: VisionFileset): Promise<HandTracker> {
-    const landmarker = await HandLandmarker.createFromOptions(fileset, {
-      baseOptions: {
-        modelAssetPath: HAND_LANDMARKER_MODEL_URL,
-        delegate: 'CPU',
-      },
-      runningMode: 'VIDEO',
-      numHands: 2,
-      minHandDetectionConfidence: MIN_HAND_DETECTION_CONFIDENCE,
-      minHandPresenceConfidence: MIN_HAND_PRESENCE_CONFIDENCE,
-      minTrackingConfidence: MIN_HAND_TRACKING_CONFIDENCE,
-    });
+    let landmarker: HandLandmarker;
+
+    try {
+      landmarker = await createHandLandmarker(fileset, PREFERRED_HAND_DELEGATE);
+    } catch (error) {
+      console.warn(
+        '[hand-tracker] GPU delegate unavailable; falling back to CPU.',
+        error,
+      );
+      landmarker = await createHandLandmarker(fileset, FALLBACK_HAND_DELEGATE);
+    }
 
     return new HandTracker(landmarker);
   }
@@ -99,6 +101,23 @@ export class HandTracker {
   }
 }
 
+async function createHandLandmarker(
+  fileset: VisionFileset,
+  delegate: 'CPU' | 'GPU',
+): Promise<HandLandmarker> {
+  return HandLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: HAND_LANDMARKER_MODEL_URL,
+      delegate,
+    },
+    runningMode: 'VIDEO',
+    numHands: 2,
+    minHandDetectionConfidence: MIN_HAND_DETECTION_CONFIDENCE,
+    minHandPresenceConfidence: MIN_HAND_PRESENCE_CONFIDENCE,
+    minTrackingConfidence: MIN_HAND_TRACKING_CONFIDENCE,
+  });
+}
+
 function normalizeHandSide(category: Category | undefined): TrackedHandSide {
   const name = category?.categoryName.toLowerCase();
 
@@ -126,4 +145,3 @@ function toNormalizedPoint(landmark: NormalizedLandmark): NormalizedPoint {
     visibility: landmark.visibility,
   };
 }
-

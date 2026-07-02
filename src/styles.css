@@ -194,6 +194,10 @@ button {
   touch-action: none;
 }
 
+.planet-focus-switch-button {
+  top: 66px;
+}
+
 .planet-return-button::before {
   position: absolute;
   inset: 1px 1px auto;

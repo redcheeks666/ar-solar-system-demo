@@ -1,18 +1,25 @@
 import type { Camera } from 'three';
 import type {
   GestureThresholds,
+  HandPoseIntentSnapshot,
   InteractionState,
   NormalizedPoint,
   TrackingSnapshot,
 } from '../utils/types';
-import { clamp, clamp01, inverseLerp, unwrapAngle } from '../utils/math';
+import { clamp, clamp01, inverseLerp } from '../utils/math';
 import {
   type PreviewLayout,
   type Vec3,
   mapNormalizedToWorld,
 } from './coordinateMapping';
 import { getVisualTrackedHandPair } from './handPairing';
+import { computeHandPoseIntent } from './handPose';
 import { SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN } from '../solar/solarSystemData';
+import {
+  SOLAR_PLACE_DOWN_FIST_SCORE_MIN,
+  SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS,
+  SOLAR_PLACE_DOWN_OPEN_SCORE_MIN,
+} from './intentTuning';
 import { LowPassNumberFilter, LowPassPointFilter } from '../tracking/smoothing';
 
 export interface SolarOpeningSnapshot {
@@ -27,7 +34,6 @@ export interface SolarOpeningSnapshot {
   normalizedDistance: number | null;
   startDistance: number | null;
   targetDistance: number | null;
-  rotationZ: number | null;
 }
 
 export interface SolarOpeningUpdate {
@@ -53,7 +59,6 @@ interface SolarOpeningGeometry {
   midpointWorld: Vec3;
   normalizedDistance: number;
   worldDistance: number;
-  rotationZ: number;
 }
 
 interface EndpointHit {
@@ -76,7 +81,6 @@ const EMPTY_SOLAR_OPENING_SNAPSHOT: SolarOpeningSnapshot = {
   normalizedDistance: null,
   startDistance: null,
   targetDistance: null,
-  rotationZ: null,
 };
 
 const MISSING_HAND_HOLD_MS = 360;
@@ -86,8 +90,6 @@ const OPEN_TARGET_MIN_DISTANCE = 0.5;
 const OPEN_TARGET_MAX_DISTANCE = 0.78;
 const MIN_FOLLOW_SCALE = 0.12;
 const MAX_FOLLOW_SCALE = 1.08;
-const PREVIEW_TILT_X = -0.58;
-const PREVIEW_TILT_Y = 0.12;
 const MAX_OPENING_PROGRESS_DROP = 0.04;
 // Low-pass factor pulling displayed openProgress toward the raw hand-driven value (PRD §13: 0.15-0.3).
 const OPENING_PROGRESS_SMOOTHING = 0.22;
@@ -100,8 +102,24 @@ const SUSPICIOUS_SCALE_DROP_RATIO = 0.68;
 const SUSPICIOUS_MIN_SCALE_AFTER_OPEN = 0.2;
 const MIN_PREVIOUS_SCALE_FOR_OUTLIER_CHECK = 0.32;
 const TARGET_FRAME_MS = 33.33;
-const ENDPOINT_ENTER_STABLE_MS = 140;
+// Re-grip dwell: both hands must hold the endpoints stably for ~0.5s before
+// SolarActive / SolarFreeHover hands re-acquire SolarHandleControl.
+const ENDPOINT_ENTER_STABLE_MS = 500;
 const ENDPOINT_EXIT_GRACE_MS = 180;
+// In SolarHandleControl the opened solar system is hand-attached, so a place-down
+// no longer comes from leaving the endpoints. It comes from a deliberate two-hand
+// fist->open gesture, an auto place-down when the visual width exceeds half the
+// frame, or a fallback when both hands are fully lost for this long.
+const HANDLE_HAND_LOSS_RELEASE_MS = 320;
+// Once both hands close into a fist (armed), wait at most this long for them to
+// reopen before discarding the place-down attempt and resuming hand-follow.
+const PLACE_DOWN_ARMED_TIMEOUT_MS = 1600;
+// Auto place-down once the two hands span at least this fraction of the frame
+// width. The control endpoints are hand-attached, so the two-hand screen-x span
+// IS the opened solar system's on-screen visual width. Kept above the pull-open
+// target width (~0.5 of the frame) so completing the opening does not instantly
+// trip the max-width place-down; tune toward 0.5 only if the open target shrinks.
+const MAX_VISUAL_WIDTH_SCREEN_FRACTION = 0.72;
 // After opening completes (SolarActive), if the hands are not holding the endpoints for this long
 // (released or dropped), fall through to SolarFreeHover so the solar system can hover while waiting
 // for endpoint re-grip or reverse collapse.
@@ -110,14 +128,9 @@ const ENDPOINT_RADIUS_WORLD_SCALE = 0.72;
 const MIN_ENDPOINT_RADIUS_WORLD = 0.32;
 const MAX_ENDPOINT_RADIUS_WORLD = 1;
 // Frame-to-frame low-pass on the geometry-driven transform while the system is held / collapsing,
-// so scale, midpoint and rotation stop jittering with raw hand-landmark noise (PRD §13).
+// so scale and midpoint stop jittering with raw hand-landmark noise (PRD §13).
 const SCALE_SMOOTHING_ALPHA = 0.25;
 const MIDPOINT_SMOOTHING_ALPHA = 0.3;
-const ROTATION_SMOOTHING_ALPHA = 0.28;
-// Rotation responsiveness fades to zero between these two-hand screen spans: atan2 angle noise
-// blows up as the hands close, so freeze the angle near collapse instead of letting it spin.
-const ROTATION_FREEZE_DISTANCE = 0.12;
-const ROTATION_FULL_RESPONSE_DISTANCE = 0.3;
 
 export class SolarOpeningController {
   private previousPair: { left: NormalizedPoint; right: NormalizedPoint } | null =
@@ -130,11 +143,13 @@ export class SolarOpeningController {
   private endpointHitSince: number | null = null;
   private endpointMissSince: number | null = null;
   private activeReleaseSince: number | null = null;
+  // Non-null once both hands have closed into a fist during SolarHandleControl,
+  // holding the place-down "armed" until they reopen (confirm) or it times out.
+  private placeDownArmedSince: number | null = null;
   private smoothedOpenProgress = 0;
   private lastRawOpenProgress = 0;
   private readonly scaleFilter = new LowPassNumberFilter(SCALE_SMOOTHING_ALPHA);
   private readonly midpointFilter = new LowPassPointFilter(MIDPOINT_SMOOTHING_ALPHA);
-  private smoothedRotationZ: number | null = null;
 
   update(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
     if (input.interactionState === 'PullArmed') {
@@ -186,11 +201,11 @@ export class SolarOpeningController {
     this.endpointHitSince = null;
     this.endpointMissSince = null;
     this.activeReleaseSince = null;
+    this.placeDownArmedSince = null;
     this.smoothedOpenProgress = 0;
     this.lastRawOpenProgress = 0;
     this.scaleFilter.reset();
     this.midpointFilter.reset();
-    this.smoothedRotationZ = null;
     this.lastSnapshot = EMPTY_SOLAR_OPENING_SNAPSHOT;
   }
 
@@ -484,9 +499,12 @@ export class SolarOpeningController {
     const geometry = this.computeGeometry(input);
 
     if (!geometry) {
+      // Fallback place-down: only a sustained full loss of both hands drops to
+      // free hover. A one-frame tracking gap keeps the handle.
+      this.placeDownArmedSince = null;
       this.endpointMissSince ??= input.timestamp;
 
-      if (input.timestamp - this.endpointMissSince >= ENDPOINT_EXIT_GRACE_MS) {
+      if (input.timestamp - this.endpointMissSince >= HANDLE_HAND_LOSS_RELEASE_MS) {
         this.endpointMissSince = null;
         return {
           snapshot: {
@@ -512,40 +530,45 @@ export class SolarOpeningController {
       };
     }
 
-    const endpointHit = this.computeEndpointHit(geometry, input, 'exit');
+    this.endpointMissSince = null;
+    this.missingSince = null;
 
-    if (!endpointHit?.withinExitRadius) {
-      this.endpointMissSince ??= input.timestamp;
+    // Deliberate place-down: both hands make a fist, then reopen once. The opened
+    // system is hand-attached, so simply leaving the endpoints is no longer a
+    // release; the fist->open gesture (or the max-width guard below) is.
+    const placeDown = this.updatePlaceDownGesture(input);
 
-      if (input.timestamp - this.endpointMissSince >= ENDPOINT_EXIT_GRACE_MS) {
-        this.endpointMissSince = null;
-        return {
-          snapshot: {
-            ...this.lastSnapshot,
-            active: true,
-            visible: true,
-            progress: 1,
-            reason: endpointHit
-              ? 'solar-handle-released-away-from-endpoints'
-              : 'solar-handle-released-missing-endpoint-reference',
-          },
-          nextState: 'SolarFreeHover',
-        };
-      }
-
+    if (placeDown === 'released') {
       return {
         snapshot: {
           ...this.lastSnapshot,
           active: true,
           visible: true,
           progress: 1,
-          reason: 'solar-handle-release-stabilizing',
+          reason: 'solar-handle-placed-down-by-fist-open',
         },
-        nextState: null,
+        nextState: 'SolarFreeHover',
+      };
+    }
+
+    // Auto place-down: pulled wider than half the frame. Freeze at the last
+    // stable transform so it hovers at the width it had when released.
+    if (this.isBeyondMaxVisualWidth(geometry)) {
+      this.placeDownArmedSince = null;
+      return {
+        snapshot: {
+          ...this.lastSnapshot,
+          active: true,
+          visible: true,
+          progress: 1,
+          reason: 'solar-handle-placed-down-beyond-max-width',
+        },
+        nextState: 'SolarFreeHover',
       };
     }
 
     if (geometry.normalizedDistance <= input.thresholds.collapseStartDistance) {
+      this.placeDownArmedSince = null;
       const snapshot = this.smoothTransform(
         this.createClosingSnapshot(
           geometry,
@@ -573,8 +596,22 @@ export class SolarOpeningController {
       };
     }
 
-    this.endpointMissSince = null;
-    this.missingSince = null;
+    // Both hands are fisted (armed) but have not reopened yet: freeze the
+    // transform so the clench itself does not drag or rescale the system while
+    // we wait for the confirming reopen.
+    if (placeDown === 'armed') {
+      return {
+        snapshot: {
+          ...this.lastSnapshot,
+          active: true,
+          visible: true,
+          progress: 1,
+          reason: 'solar-handle-place-down-armed',
+        },
+        nextState: null,
+      };
+    }
+
     const rawSnapshot = {
       ...this.createSnapshot(geometry, 'solar-handle-control-follows-endpoints'),
       active: true,
@@ -609,6 +646,69 @@ export class SolarOpeningController {
       snapshot,
       nextState: null,
     };
+  }
+
+  /**
+   * Two-hand fist->open place-down detector for SolarHandleControl. Returns
+   * 'armed' while both hands stay clenched after the initial fist, 'released' on
+   * the confirming reopen, and 'idle' otherwise. Stateful via placeDownArmedSince;
+   * times out so a stray clench does not leave the handle frozen.
+   */
+  private updatePlaceDownGesture(
+    input: SolarOpeningUpdateInput,
+  ): 'idle' | 'armed' | 'released' {
+    const poses = this.computeBothHandsPose(input);
+
+    if (!poses) {
+      this.placeDownArmedSince = null;
+      return 'idle';
+    }
+
+    if (this.placeDownArmedSince === null) {
+      if (isTwoHandFist(poses.left, poses.right)) {
+        this.placeDownArmedSince = input.timestamp;
+        return 'armed';
+      }
+      return 'idle';
+    }
+
+    if (input.timestamp - this.placeDownArmedSince > PLACE_DOWN_ARMED_TIMEOUT_MS) {
+      this.placeDownArmedSince = null;
+      return 'idle';
+    }
+
+    if (isTwoHandOpen(poses.left, poses.right)) {
+      this.placeDownArmedSince = null;
+      return 'released';
+    }
+
+    return 'armed';
+  }
+
+  private computeBothHandsPose(
+    input: SolarOpeningUpdateInput,
+  ): { left: HandPoseIntentSnapshot; right: HandPoseIntentSnapshot } | null {
+    const pair = getVisualTrackedHandPair(input.tracking, this.previousPair);
+
+    if (!pair) {
+      return null;
+    }
+
+    return {
+      left: computeHandPoseIntent(pair.left),
+      right: computeHandPoseIntent(pair.right),
+    };
+  }
+
+  /**
+   * The opened system's on-screen visual width is the two-hand screen-x span,
+   * because the left/right control endpoints stay hand-attached. Auto place-down
+   * triggers once that span reaches MAX_VISUAL_WIDTH_SCREEN_FRACTION of the frame.
+   */
+  private isBeyondMaxVisualWidth(geometry: SolarOpeningGeometry): boolean {
+    const screenXSpan = Math.abs(geometry.rightCenter.x - geometry.leftCenter.x);
+
+    return screenXSpan >= MAX_VISUAL_WIDTH_SCREEN_FRACTION;
   }
 
   private updateClosing(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
@@ -709,10 +809,7 @@ export class SolarOpeningController {
       return null;
     }
 
-    const deltaX = rightWorld.x - leftWorld.x;
-    const deltaY = rightWorld.y - leftWorld.y;
-    const deltaZ = rightWorld.z - leftWorld.z;
-    const worldDistance = Math.hypot(deltaX, deltaY, deltaZ);
+    const worldDistance = distance3d(leftWorld, rightWorld);
     // 2D screen distance for opening progress / collapse; image-landmark z is noisy depth.
     const normalizedDistance = Math.hypot(
       pair.right.center.x - pair.left.center.x,
@@ -731,7 +828,6 @@ export class SolarOpeningController {
       },
       normalizedDistance,
       worldDistance,
-      rotationZ: Math.atan2(deltaY, deltaX),
     };
   }
 
@@ -763,7 +859,6 @@ export class SolarOpeningController {
       normalizedDistance: geometry.normalizedDistance,
       startDistance,
       targetDistance,
-      rotationZ: geometry.rotationZ,
     };
   }
 
@@ -827,60 +922,28 @@ export class SolarOpeningController {
   }
 
   /**
-   * Frame-to-frame low-pass on the geometry-driven transform (scale, midpoint, rotationZ) so the
-   * held / collapsing solar system stops jittering with raw hand-landmark noise. Must be called
-   * ONLY on accepted (non-outlier) frames — it advances stateful filters, so a rejected glitch
-   * frame must never reach it. Progress and other fields pass through untouched.
+   * Frame-to-frame low-pass on the geometry-driven transform (scale, midpoint)
+   * so the held / collapsing solar system stops jittering with raw hand-landmark
+   * noise. Must be called ONLY on accepted (non-outlier) frames — it advances
+   * stateful filters, so a rejected glitch frame must never reach it. Progress
+   * and other fields pass through untouched.
    */
   private smoothTransform(snapshot: SolarOpeningSnapshot): SolarOpeningSnapshot {
     if (
       !snapshot.midpointWorld ||
-      snapshot.normalizedDistance === null ||
-      snapshot.rotationZ === null
+      snapshot.normalizedDistance === null
     ) {
       return snapshot;
     }
 
     const scale = this.scaleFilter.smooth(snapshot.scale);
     const midpoint = this.midpointFilter.smooth(snapshot.midpointWorld);
-    const rotationZ = this.smoothRotationZ(
-      snapshot.rotationZ,
-      snapshot.normalizedDistance,
-    );
 
     return {
       ...snapshot,
       scale,
       midpointWorld: { x: midpoint.x, y: midpoint.y, z: midpoint.z },
-      rotationZ,
     };
-  }
-
-  /**
-   * Low-pass the hand-axis angle, unwrapped against the current smoothed value so a ±π wrap does
-   * not snap. Responsiveness fades to zero as the two-hand span shrinks because atan2 angle noise
-   * grows without bound when the hands are close — this is what stops the system spinning during
-   * collapse.
-   */
-  private smoothRotationZ(rawRotation: number, normalizedDistance: number): number {
-    if (this.smoothedRotationZ === null) {
-      this.smoothedRotationZ = rawRotation;
-      return rawRotation;
-    }
-
-    const responsiveness = clamp01(
-      inverseLerp(
-        ROTATION_FREEZE_DISTANCE,
-        ROTATION_FULL_RESPONSE_DISTANCE,
-        normalizedDistance,
-      ),
-    );
-    const alpha = ROTATION_SMOOTHING_ALPHA * responsiveness;
-    const target =
-      this.smoothedRotationZ + unwrapAngle(rawRotation - this.smoothedRotationZ);
-
-    this.smoothedRotationZ += (target - this.smoothedRotationZ) * alpha;
-    return this.smoothedRotationZ;
   }
 
   private getUnstableGeometryReason(
@@ -988,25 +1051,23 @@ export class SolarOpeningController {
   private getCurrentEndpointWorldPositions():
     | { left: Vec3; right: Vec3 }
     | null {
-    if (!this.lastSnapshot.midpointWorld || this.lastSnapshot.rotationZ === null) {
+    if (!this.lastSnapshot.midpointWorld) {
       return null;
     }
 
     const halfSpan =
       (SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * this.lastSnapshot.scale) / 2;
-    const x = Math.cos(this.lastSnapshot.rotationZ) * halfSpan;
-    const y = Math.sin(this.lastSnapshot.rotationZ) * halfSpan;
     const { midpointWorld } = this.lastSnapshot;
 
     return {
       left: {
-        x: midpointWorld.x - x,
-        y: midpointWorld.y - y,
+        x: midpointWorld.x - halfSpan,
+        y: midpointWorld.y,
         z: midpointWorld.z,
       },
       right: {
-        x: midpointWorld.x + x,
-        y: midpointWorld.y + y,
+        x: midpointWorld.x + halfSpan,
+        y: midpointWorld.y,
         z: midpointWorld.z,
       },
     };
@@ -1029,6 +1090,28 @@ export class SolarOpeningController {
   }
 }
 
+function isTwoHandFist(
+  left: HandPoseIntentSnapshot,
+  right: HandPoseIntentSnapshot,
+): boolean {
+  return (
+    (left.gripPoseScore ?? 0) >= SOLAR_PLACE_DOWN_FIST_SCORE_MIN &&
+    (right.gripPoseScore ?? 0) >= SOLAR_PLACE_DOWN_FIST_SCORE_MIN
+  );
+}
+
+function isTwoHandOpen(
+  left: HandPoseIntentSnapshot,
+  right: HandPoseIntentSnapshot,
+): boolean {
+  return (
+    (left.openHandScore ?? 0) >= SOLAR_PLACE_DOWN_OPEN_SCORE_MIN &&
+    (right.openHandScore ?? 0) >= SOLAR_PLACE_DOWN_OPEN_SCORE_MIN &&
+    left.openFingerCount >= SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS &&
+    right.openFingerCount >= SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS
+  );
+}
+
 function isBodyInteractionState(state: InteractionState): boolean {
   return (
     state === 'BodyHover' ||
@@ -1046,16 +1129,4 @@ function distance3d(first: Vec3, second: Vec3): number {
     first.y - second.y,
     first.z - second.z,
   );
-}
-
-export function getSolarOpeningRotation(snapshot: SolarOpeningSnapshot): {
-  x: number;
-  y: number;
-  z: number;
-} {
-  return {
-    x: PREVIEW_TILT_X,
-    y: PREVIEW_TILT_Y,
-    z: snapshot.rotationZ ?? 0,
-  };
 }

@@ -173,6 +173,7 @@ export class PlanetFocusController {
   private trackingLostSince: number | null = null;
   private heatZoneClearRequired: 'intro' | 'release' | null = null;
   private pinchPhases = new Map<string, PinchPhase>();
+  private pinchTapReadyHands = new Set<string>();
   private returnGestureMs = 0;
   private returnGestureScore = 0;
   private returnGestureHandKey: string | null = null;
@@ -246,6 +247,7 @@ export class PlanetFocusController {
     this.trackingLostSince = null;
     this.heatZoneClearRequired = null;
     this.pinchPhases.clear();
+    this.pinchTapReadyHands.clear();
     this.clearReturnGesture();
     this.snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
   }
@@ -265,6 +267,7 @@ export class PlanetFocusController {
     this.trackingLostSince = null;
     this.heatZoneClearRequired = 'intro';
     this.pinchPhases.clear();
+    this.pinchTapReadyHands.clear();
     this.clearReturnGesture();
   }
 
@@ -283,6 +286,7 @@ export class PlanetFocusController {
     this.activeAnchorKinds = [];
     this.trackingLostSince = null;
     this.pinchPhases.clear();
+    this.pinchTapReadyHands.clear();
 
     if (
       this.heatZoneClearRequired === 'intro' &&
@@ -624,6 +628,10 @@ export class PlanetFocusController {
     const leaving = pair.filter(
       (sample) => sample.normalizedDistance > TWO_HAND_WITHDRAW_NORMALIZED,
     );
+    if (staying.length === 0) {
+      return this.handleFollowHeatZoneLoss(input, touchCandidates);
+    }
+
     if (staying.length === 1 && leaving.length === 1) {
       return this.downgradeToSingleFollow(
         staying[0],
@@ -716,6 +724,30 @@ export class PlanetFocusController {
     });
   }
 
+  private handleFollowHeatZoneLoss(
+    input: PlanetFocusUpdateInput,
+    touchCandidates: FocusHandSample[],
+  ): PlanetFocusUpdate {
+    this.trackingLostSince ??= input.timestamp;
+    const lostMs = input.timestamp - this.trackingLostSince;
+
+    if (lostMs < TRACKING_LOSS_HOLD_MS) {
+      const snapshot = this.createSnapshot({
+        touchCandidates,
+        reason: 'holding-follow-during-brief-heat-zone-loss',
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    return this.releaseToFloating({
+      touchCandidates,
+      pinchMetrics: null,
+      pinchTapHandKey: null,
+      reason: 'follow-ended-after-heat-zone-loss',
+    });
+  }
+
   private enterSingleFollow(
     dwell: SingleDwellCandidate,
     samples: FocusHandSample[],
@@ -770,6 +802,7 @@ export class PlanetFocusController {
     handKeys: string[],
   ): void {
     this.pinchPhases.clear();
+    this.pinchTapReadyHands.clear();
     handKeys.forEach((handKey) => {
       const metrics = samples.find((sample) => sample.handKey === handKey)
         ?.pinchMetrics;
@@ -829,6 +862,10 @@ export class PlanetFocusController {
     const phase = this.pinchPhases.get(oldHandKey) ?? 'open';
     this.pinchPhases.delete(oldHandKey);
     this.pinchPhases.set(newHandKey, phase);
+    if (this.pinchTapReadyHands.has(oldHandKey)) {
+      this.pinchTapReadyHands.delete(oldHandKey);
+      this.pinchTapReadyHands.add(newHandKey);
+    }
     this.activeHandKeys = [newHandKey];
   }
 
@@ -896,6 +933,16 @@ export class PlanetFocusController {
   private updatePinchTap(handKey: string, metrics: PinchMetrics): boolean {
     const previousPhase = this.pinchPhases.get(handKey) ?? 'open';
 
+    if (!this.pinchTapReadyHands.has(handKey)) {
+      if (isPinchTapOpen(metrics)) {
+        this.pinchPhases.set(handKey, 'open');
+        this.pinchTapReadyHands.add(handKey);
+      } else if (isPinchTapClosed(metrics)) {
+        this.pinchPhases.set(handKey, 'closed');
+      }
+      return false;
+    }
+
     if (previousPhase === 'open' && isPinchTapClosed(metrics)) {
       this.pinchPhases.set(handKey, 'closed');
       return false;
@@ -922,6 +969,7 @@ export class PlanetFocusController {
     this.trackingLostSince = null;
     this.heatZoneClearRequired = 'release';
     this.pinchPhases.clear();
+    this.pinchTapReadyHands.clear();
     const snapshot = this.createSnapshot({
       touchCandidates: input.touchCandidates,
       pinchMetrics: input.pinchMetrics,

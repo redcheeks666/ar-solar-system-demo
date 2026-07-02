@@ -8,7 +8,6 @@ import {
   Mesh,
   MeshBasicMaterial,
   PointLight,
-  Quaternion,
   RingGeometry,
   SphereGeometry,
   Sprite,
@@ -44,7 +43,12 @@ import { FocusedCelestialBody } from './focusedCelestialBody';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import { SolarParticleField } from './solarParticles';
+import {
+  SOLAR_SYSTEM_PREVIEW_TILT_X,
+  SOLAR_SYSTEM_PREVIEW_TILT_Y,
+} from './solarVisualConfig';
 import { loadTexture } from './textureAssets';
+import { UniverseRiftBackdrop } from './universeRiftBackdrop';
 
 export interface CelestialBodyScreenTarget {
   id: InteractiveCelestialBodyId;
@@ -76,17 +80,9 @@ export interface SolarSystemTransform {
     y: number;
     z: number;
   };
-  rotation?: {
-    x: number;
-    y: number;
-    z: number;
-  };
-  quaternion?: Quaternion;
   scale?: number;
 }
 
-const PREVIEW_TILT_X = -0.58;
-const PREVIEW_TILT_Y = 0.12;
 const DEFAULT_SCALE = 1;
 const MIN_OPEN_SCALE = 0.08;
 const CONTROL_ENDPOINT_RING_INNER_RADIUS = 0.075;
@@ -128,6 +124,7 @@ export class CodePlaceholderSolarSystem {
   private readonly openingVfxSprites = new Map<OpeningVfxSpriteName, OpeningVfxSprite>();
   private readonly openingVfxMaterials: Material[] = [];
   private readonly openingVfxTextures: Texture[] = [];
+  private readonly riftBackdrop = new UniverseRiftBackdrop();
   private readonly particleField = new SolarParticleField(CELESTIAL_BODY_DEFINITIONS);
   private readonly endpointGeometries: BufferGeometry[] = [];
   private readonly endpointMaterials: Material[] = [];
@@ -139,8 +136,13 @@ export class CodePlaceholderSolarSystem {
   constructor() {
     this.group.name = 'code-placeholder-solar-system';
     this.group.visible = false;
-    this.group.rotation.set(PREVIEW_TILT_X, PREVIEW_TILT_Y, 0);
+    this.group.rotation.set(
+      SOLAR_SYSTEM_PREVIEW_TILT_X,
+      SOLAR_SYSTEM_PREVIEW_TILT_Y,
+      0,
+    );
     this.addLights();
+    this.group.add(this.riftBackdrop.root);
     this.createBodies();
     this.addControlEndpoints();
     this.addOpeningVfx();
@@ -155,10 +157,18 @@ export class CodePlaceholderSolarSystem {
     }
 
     this.bodies.forEach((body) => body.update(deltaSeconds));
+    this.riftBackdrop.update(deltaSeconds);
     this.particleField.update(deltaSeconds);
     if (this.focusedBody) {
       this.focusedBodies.get(this.focusedBody)?.update(deltaSeconds, this.group);
     }
+  }
+
+  getPerformanceSnapshot(): {
+    vfxFrameUploadMs: number | null;
+    vfxFrameUploadCount: number;
+  } {
+    return this.riftBackdrop.getPerformanceSnapshot();
   }
 
   setVisible(visible: boolean): void {
@@ -177,16 +187,6 @@ export class CodePlaceholderSolarSystem {
         transform.position.x,
         transform.position.y,
         transform.position.z,
-      );
-    }
-
-    if (transform.quaternion) {
-      this.group.quaternion.copy(transform.quaternion);
-    } else if (transform.rotation) {
-      this.group.rotation.set(
-        transform.rotation.x,
-        transform.rotation.y,
-        transform.rotation.z,
       );
     }
 
@@ -237,6 +237,9 @@ export class CodePlaceholderSolarSystem {
   ): CelestialBodyScreenTarget[] {
     return INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.flatMap((definition) => {
       const body = this.getBodyById(definition.id as InteractiveCelestialBodyId);
+      const targetId = getOverviewActivationTargetId(
+        definition.id as InteractiveCelestialBodyId,
+      );
       const worldPosition = body.getWorldPosition(TEMP_WORLD_POSITION);
       const projected = mapWorldToStagePixel(worldPosition, layout, camera);
 
@@ -259,8 +262,8 @@ export class CodePlaceholderSolarSystem {
 
       return [
         {
-          id: definition.id as InteractiveCelestialBodyId,
-          label: definition.label,
+          id: targetId,
+          label: definition.id === 'moon' ? 'Earth-Moon' : definition.label,
           screenPosition: {
             x: projected.x,
             y: projected.y,
@@ -270,7 +273,7 @@ export class CodePlaceholderSolarSystem {
             Math.max(MIN_BODY_HIT_RADIUS_PX, projectedRadius) +
             smallBodyPadding,
           originalOrbit: getOriginalOrbitTransform(
-            definition.id as InteractiveCelestialBodyId,
+            targetId,
           ),
         },
       ];
@@ -408,6 +411,7 @@ export class CodePlaceholderSolarSystem {
       this.updateFocusedBodyLayout();
     }
     this.bodies.forEach((body) => body.setFocusBackgroundDimmed(focusActive));
+    this.applyRiftBackdropState();
     this.applyParticleState();
 
     INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
@@ -432,6 +436,7 @@ export class CodePlaceholderSolarSystem {
     this.endpointMaterials.forEach((material) => material.dispose());
     this.openingVfxMaterials.forEach((material) => material.dispose());
     this.openingVfxTextures.forEach((texture) => texture.dispose());
+    this.riftBackdrop.dispose();
     this.particleField.dispose();
     this.endpointGeometries.length = 0;
     this.endpointMaterials.length = 0;
@@ -440,8 +445,8 @@ export class CodePlaceholderSolarSystem {
   }
 
   private addLights(): void {
-    const ambient = new AmbientLight(0xb8c7ff, 0.68);
-    const sunLight = new PointLight(0xffd48a, 5.5, 12, 1.4);
+    const ambient = new AmbientLight(0xcad7ff, 0.92);
+    const sunLight = new PointLight(0xffd48a, 7.2, 12, 1.4);
     ambient.name = 'placeholder-solar-ambient-light';
     sunLight.name = 'placeholder-solar-sun-light';
     sunLight.position.set(0, 0, 1.2);
@@ -649,8 +654,17 @@ export class CodePlaceholderSolarSystem {
     this.group.scale.copy(this.baseScale).multiplyScalar(openScale);
     this.group.visible = this.visibleRequested && this.openingProgress > 0.001;
     this.applyOpeningVfx();
+    this.applyRiftBackdropState();
     this.applyParticleState();
     this.updateFocusedBodyLayout();
+  }
+
+  private applyRiftBackdropState(): void {
+    this.riftBackdrop.setState({
+      visibleRequested: this.visibleRequested,
+      openingProgress: this.openingProgress,
+      focusDimmed: Boolean(this.focusedBody),
+    });
   }
 
   private applyParticleState(): void {
@@ -849,15 +863,31 @@ function getBodyVisualState(
     activatedBody: InteractiveCelestialBodyId | null;
   },
 ): CelestialBodyInteractionVisualState {
-  if (input.activatedBody === id) {
+  if (input.activatedBody === id || isEarthMoonPeer(id, input.activatedBody)) {
     return 'activated';
   }
 
-  if (input.hoveredBody === id) {
+  if (input.hoveredBody === id || isEarthMoonPeer(id, input.hoveredBody)) {
     return 'hovered';
   }
 
   return 'idle';
+}
+
+function getOverviewActivationTargetId(
+  id: InteractiveCelestialBodyId,
+): InteractiveCelestialBodyId {
+  return id === 'moon' ? 'earth' : id;
+}
+
+function isEarthMoonPeer(
+  id: InteractiveCelestialBodyId,
+  target: InteractiveCelestialBodyId | null,
+): boolean {
+  return (
+    (id === 'moon' && target === 'earth') ||
+    (id === 'earth' && target === 'moon')
+  );
 }
 
 function shouldPauseBodyOrbit(

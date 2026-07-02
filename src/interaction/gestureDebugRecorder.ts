@@ -1,6 +1,7 @@
 import type { DebugSnapshot, NormalizedPoint, TrackingSnapshot } from '../utils/types';
 
 const MAX_FRAMES = 1200;
+const EXPORT_SCHEMA_VERSION = 2;
 
 interface GestureDebugFrame {
   t: number;
@@ -29,6 +30,8 @@ interface GestureDebugFrame {
   };
   wholeSystem: DebugSnapshot['wholeSystem'];
   planetActivation: DebugSnapshot['planetActivation'];
+  planetFocus: DebugSnapshot['planetFocus'];
+  performance: DebugSnapshot['performance'];
 }
 
 export class GestureDebugRecorder {
@@ -37,11 +40,12 @@ export class GestureDebugRecorder {
   private lastEvent: string | null = null;
 
   toggle(): boolean {
-    this.recording = !this.recording;
-
-    if (this.recording) {
+    if (!this.recording) {
+      this.frames = [];
+      this.recording = true;
       this.lastEvent = 'recording-started';
     } else {
+      this.recording = false;
       this.lastEvent = 'recording-stopped';
     }
 
@@ -89,6 +93,8 @@ export class GestureDebugRecorder {
       },
       wholeSystem: snapshot.wholeSystem,
       planetActivation: snapshot.planetActivation,
+      planetFocus: snapshot.planetFocus,
+      performance: snapshot.performance,
     };
 
     this.frames.push(frame);
@@ -97,15 +103,15 @@ export class GestureDebugRecorder {
       this.frames.shift();
     }
 
-    this.lastEvent = `${frame.startup.transitionReason} / ${frame.wholeSystem.transitionReason} / ${frame.planetActivation.transitionReason}`;
+    this.lastEvent = `${frame.startup.transitionReason} / ${frame.wholeSystem.transitionReason} / ${frame.planetActivation.transitionReason} / ${frame.planetFocus.transitionReason}`;
   }
 
   exportJson(): void {
     const payload = {
-      version: 1,
+      version: EXPORT_SCHEMA_VERSION,
       createdAt: new Date().toISOString(),
       frameCount: this.frames.length,
-      note: 'Structured gesture diagnostics only. No raw camera video is included.',
+      note: 'Structured gesture diagnostics only. Includes focus-controller state; no raw camera video is included.',
       frames: this.frames,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {

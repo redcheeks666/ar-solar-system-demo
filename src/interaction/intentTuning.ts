@@ -33,6 +33,16 @@ export const RELEASE_OPEN_SCORE_THRESHOLD = 0.82;
 export const RELEASE_GRIP_CANCEL_THRESHOLD = 0.44;
 export const RELEASE_MIN_OPEN_FINGERS = 4;
 
+// --- Opened-solar place-down (two-hand fist -> open) ------------------------
+// Placing the opened solar system down in SolarHandleControl is a deliberate
+// "both hands make a fist, then open again once" gesture. Both hands must clear
+// the fist score to arm, then clear the open score (with enough extended
+// fingers) to confirm the place-down. Kept separate from the legacy open-hand
+// release thresholds above so tuning one does not move the other.
+export const SOLAR_PLACE_DOWN_FIST_SCORE_MIN = 0.55;
+export const SOLAR_PLACE_DOWN_OPEN_SCORE_MIN = 0.6;
+export const SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS = 3;
+
 // --- Availability ----------------------------------------------------------
 export const AVAILABILITY_LOST_HAND_SCORE = 0.55;
 

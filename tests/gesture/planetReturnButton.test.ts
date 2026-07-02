@@ -95,6 +95,32 @@ describe('planet return button index-finger hold', () => {
     expect(charged.reason).toBe('charged');
   });
 
+  it('can reuse the same hold helper for a 0.5 second focus switch button', () => {
+    const hand = handWithIndexAtPixel({ x: 60, y: 34 });
+    const first = updatePlanetReturnButtonHold({
+      active: true,
+      hands: [hand],
+      layout: TEST_LAYOUT,
+      rect: BUTTON_RECT,
+      previous: EMPTY_PLANET_RETURN_BUTTON_HOLD,
+      requiredMs: 500,
+      timestamp: 2000,
+    });
+    const charged = updatePlanetReturnButtonHold({
+      active: true,
+      hands: [hand],
+      layout: TEST_LAYOUT,
+      rect: BUTTON_RECT,
+      previous: first.hold,
+      requiredMs: 500,
+      timestamp: 2500,
+    });
+
+    expect(charged.progress).toBe(1);
+    expect(charged.triggered).toBe(true);
+    expect(charged.reason).toBe('charged');
+  });
+
   it('resets when the index finger leaves the button before the threshold', () => {
     const first = updatePlanetReturnButtonHold({
       active: true,

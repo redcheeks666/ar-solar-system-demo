@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Mesh, MeshBasicMaterial, Points, ShaderMaterial, Sprite, Vector3 } from 'three';
+import {
+  Mesh,
+  MeshBasicMaterial,
+  Points,
+  ShaderMaterial,
+  Sprite,
+  Vector3,
+} from 'three';
 import { CAMERA_FOV, CAMERA_Z } from '../../src/rendering/scene';
+import { BACKGROUND_RENDER_LAYER } from '../../src/rendering/renderLayers';
 import {
   FOCUS_BODY_WORLD_Z,
   FOCUS_INTRO_DURATION_SECONDS,
@@ -10,6 +18,15 @@ import {
 import { SOLAR_PARTICLE_COUNT } from '../../src/solar/solarParticles';
 import { CodePlaceholderSolarSystem } from '../../src/solar/solarSystem';
 import type { InteractiveCelestialBodyId } from '../../src/solar/solarSystemData';
+import { TEST_LAYOUT, createTestCamera } from '../helpers/testCamera';
+import {
+  AE_RIFT_BORDER_SOURCE_HEIGHT,
+  AE_RIFT_BORDER_SOURCE_WIDTH,
+  AE_RIFT_VERTICAL_TILT_DEGREES,
+  SOLAR_SYSTEM_PREVIEW_TILT_X_DEGREES,
+  UNIVERSE_RIFT_HEIGHT,
+  UNIVERSE_RIFT_WIDTH,
+} from '../../src/solar/solarVisualConfig';
 
 function createCanvasContextStub(): CanvasRenderingContext2D {
   return {
@@ -25,6 +42,7 @@ function createCanvasContextStub(): CanvasRenderingContext2D {
     lineTo: vi.fn(),
     bezierCurveTo: vi.fn(),
     closePath: vi.fn(),
+    clip: vi.fn(),
     arc: vi.fn(),
     ellipse: vi.fn(),
     fill: vi.fn(),
@@ -66,6 +84,8 @@ const FOCUS_VIEWPORT_HEIGHT =
   (CAMERA_Z - FOCUS_BODY_WORLD_Z) *
   Math.tan((CAMERA_FOV * Math.PI) / 360);
 
+const degreesToRadians = (degrees: number) => (degrees * Math.PI) / 180;
+
 function getFocusedBodyHeightFraction(
   solarSystem: CodePlaceholderSolarSystem,
   id: InteractiveCelestialBodyId,
@@ -79,6 +99,70 @@ function getFocusedBodyHeightFraction(
 }
 
 describe('CodePlaceholderSolarSystem interaction state', () => {
+  it('matches the AE-approved pre-flattened rift angle with an equivalent runtime pitch', () => {
+    const aeProjectedHeightRatio =
+      (AE_RIFT_BORDER_SOURCE_HEIGHT / AE_RIFT_BORDER_SOURCE_WIDTH) *
+      Math.cos(degreesToRadians(AE_RIFT_VERTICAL_TILT_DEGREES));
+    const runtimeProjectedHeightRatio =
+      (UNIVERSE_RIFT_HEIGHT / UNIVERSE_RIFT_WIDTH) *
+      Math.cos(Math.abs(degreesToRadians(SOLAR_SYSTEM_PREVIEW_TILT_X_DEGREES)));
+
+    expect(Math.abs(SOLAR_SYSTEM_PREVIEW_TILT_X_DEGREES)).toBeGreaterThan(
+      AE_RIFT_VERTICAL_TILT_DEGREES,
+    );
+    expect(runtimeProjectedHeightRatio).toBeCloseTo(
+      aeProjectedHeightRatio,
+      6,
+    );
+  });
+
+  it('uses compressed presentation-scale body sizes for overview readability', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+
+    try {
+      const mercury = solarSystem.getBodyDefinition('mercury');
+      const earth = solarSystem.getBodyDefinition('earth');
+      const moon = solarSystem.getBodyDefinition('moon');
+      const mars = solarSystem.getBodyDefinition('mars');
+      const jupiter = solarSystem.getBodyDefinition('jupiter');
+      const saturn = solarSystem.getBodyDefinition('saturn');
+
+      expect(mercury.radius).toBeGreaterThanOrEqual(0.14);
+      expect(moon.radius).toBeGreaterThanOrEqual(0.09);
+      expect(mars.radius).toBeGreaterThan(mercury.radius);
+      expect(earth.radius).toBeGreaterThan(mars.radius);
+      expect(jupiter.radius).toBeGreaterThan(earth.radius);
+      expect(saturn.radius).toBeGreaterThan(earth.radius);
+      expect(jupiter.radius / earth.radius).toBeLessThan(2);
+      expect(moon.orbitRadius).toBeGreaterThan(earth.radius + moon.radius);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('maps the Moon overview hit point into the Earth-Moon focus entry', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const targets = solarSystem.getInteractiveBodyScreenTargets(
+        createTestCamera(),
+        TEST_LAYOUT,
+      );
+      const earthTargets = targets.filter((target) => target.id === 'earth');
+
+      expect(targets.some((target) => target.id === 'moon')).toBe(false);
+      expect(earthTargets.length).toBeGreaterThanOrEqual(2);
+      expect(
+        earthTargets[0].screenPosition.x !== earthTargets[1].screenPosition.x ||
+          earthTargets[0].screenPosition.y !== earthTargets[1].screenPosition.y,
+      ).toBe(true);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
   it('pauses only the activated orbit, keeps self-rotation, and resumes the previous body when activation switches', () => {
     const solarSystem = new CodePlaceholderSolarSystem();
     solarSystem.setVisible(true);
@@ -335,6 +419,56 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     }
   });
 
+  it('reveals the universe rift backdrop with opening progress and dims it during focus', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+
+    try {
+      const riftRoot = solarSystem.group.getObjectByName('universe-rift-backdrop');
+      const starfield = solarSystem.group.getObjectByName(
+        'universe-rift-elliptical-starfield',
+      ) as Mesh;
+
+      expect(riftRoot?.visible).toBe(false);
+      expect(starfield).toBeDefined();
+      expect(
+        solarSystem.group.getObjectByName('universe-rift-border-soft-glow'),
+      ).toBeUndefined();
+      expect(
+        solarSystem.group.getObjectByName('universe-rift-ae-border-glow'),
+      ).toBeUndefined();
+      expect(
+        solarSystem.group.getObjectByName('universe-rift-ae-border-sequence'),
+      ).toBeUndefined();
+      expect(
+        solarSystem.group.getObjectByName('universe-rift-ae-border-support'),
+      ).toBeUndefined();
+      expect(starfield.position.z).toBeLessThan(0);
+      expect(starfield.layers.isEnabled(BACKGROUND_RENDER_LAYER)).toBe(true);
+      expect((starfield.material as MeshBasicMaterial).depthTest).toBe(false);
+      expect((starfield.material as MeshBasicMaterial).depthWrite).toBe(false);
+
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(0.005);
+      expect(riftRoot?.visible).toBe(false);
+
+      solarSystem.setOpeningProgress(0.7);
+      expect(riftRoot?.visible).toBe(true);
+      const overviewOpacity = (starfield.material as MeshBasicMaterial).opacity;
+      expect(overviewOpacity).toBeGreaterThan(0.1);
+
+      solarSystem.applyBodyInteractionState({
+        hoveredBody: null,
+        activatedBody: 'earth',
+        focusedBody: 'earth',
+      });
+      expect((starfield.material as MeshBasicMaterial).opacity).toBeLessThan(
+        overviewOpacity,
+      );
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
   it('uses HUD target-lock, label, and orbit opacity states for hover and activation', () => {
     const solarSystem = new CodePlaceholderSolarSystem();
     solarSystem.setVisible(true);
@@ -395,7 +529,6 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     solarSystem.setOpeningProgress(1);
     solarSystem.setTransform({
       position: { x: 1.1, y: 0.85, z: 0 },
-      rotation: { x: -0.42, y: 0.28, z: 0.18 },
       scale: 1.35,
     });
 
@@ -523,7 +656,6 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     solarSystem.setOpeningProgress(1);
     solarSystem.setTransform({
       position: { x: -1.4, y: -0.72, z: 0 },
-      rotation: { x: -0.34, y: -0.2, z: -0.16 },
       scale: 1.8,
     });
 
@@ -537,7 +669,7 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       const moonRoot = solarSystem.group.getObjectByName('focus-moon-root');
       expect(moonRoot!.getWorldPosition(new Vector3()).y).toBeCloseTo(0, 5);
       expect(getFocusedBodyHeightFraction(solarSystem, 'moon')).toBeCloseTo(
-        0.5,
+        getFocusedBodyScreenHeightFraction(solarSystem.getBodyDefinition('moon')),
         5,
       );
 
@@ -551,7 +683,9 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         solarSystem.group.getObjectByName('focus-jupiter-root');
       expect(jupiterRoot!.getWorldPosition(new Vector3()).y).toBeCloseTo(0, 5);
       expect(getFocusedBodyHeightFraction(solarSystem, 'jupiter')).toBeCloseTo(
-        2 / 3,
+        getFocusedBodyScreenHeightFraction(
+          solarSystem.getBodyDefinition('jupiter'),
+        ),
         5,
       );
     } finally {
@@ -565,7 +699,6 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     solarSystem.setOpeningProgress(1);
     solarSystem.setTransform({
       position: { x: 0.2, y: -0.15, z: 0 },
-      rotation: { x: -0.5, y: 0.18, z: 0.06 },
       scale: 1.15,
     });
 
@@ -614,7 +747,6 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     solarSystem.setOpeningProgress(1);
     solarSystem.setTransform({
       position: { x: 0.2, y: -0.15, z: 0 },
-      rotation: { x: -0.5, y: 0.18, z: 0.06 },
       scale: 1.15,
     });
 

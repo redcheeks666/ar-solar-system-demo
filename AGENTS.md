@@ -15,7 +15,7 @@ The MVP experience is:
 7. After opening, the solar system may initially use a body-relative reference for AR feel, but after release it can free-hover at any user-chosen position instead of being constrained to the chest anchor or screen center.
 8. The user can re-grip the solar-system left/right endpoints to control the whole-system handle lifecycle, including placement, release, and reverse collapse.
 9. After the solar system is released into free hover, one-hand spread/contract, fist-hold reset, and push gestures no longer zoom, shrink, reset, or pan the solar-system view; the released solar system waits for endpoint re-grip or reverse collapse.
-10. The user can hover and pinch-activate Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, and Moon.
+10. The user can hover and pinch-activate Mercury, Venus, the Earth-Moon group, Mars, Jupiter, Saturn, Uranus, and Neptune. Moon is no longer a separate overview activation entry; hitting Moon in the overview maps to the Earth-Moon group.
 11. A pinch-activated body stops its original orbit but keeps natural self-rotation; after activation, two closeDown events from the same activating hand's thumb/index pair enter a single-planet focus view.
 12. In the single-planet focus view, the selected body remains self-rotating while it is heat-zone-followed, released to floating, and inspected; one-hand focus zoom, pan, and reset controls are retired. The background solar system is dimmed and interaction-locked while preserving basic motion.
 13. In focus view, heat-zone follow is gated by an intro cooldown and heat-zone-clear rule: after DoubleClose enters the focus view, wait for the focused body to finish its centered intro, then require the hands to leave the focused body's heat zone before any follow dwell can begin.
@@ -223,7 +223,7 @@ The opened solar system should feel like it exists in front of the user, but it 
 - The chest/body reference must not be required for startup, release, re-grip, free-hover behavior, or reverse collapse.
 - Because the body reference currently gates nothing, `PoseLandmarker` is disabled by default via `ENABLE_POSE_TRACKING` in `src/tracking/config.ts` to free CPU for hand tracking and gesture stability. Pose data must not be assumed present; the debug panel shows `Pose: missing` while disabled. Re-enable the flag (it then runs throttled at `POSE_DETECTION_INTERVAL_MS`) only when M4+ actually consumes body-relative placement.
 - Do not leave the solar system fixed at the screen center after opening.
-- When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable transform instead of snapping back to a chest/body reference or the screen center.
+- When the user releases the whole-system two-hand handle, keep the solar system hovering at the last stable position and scale instead of snapping back to a chest/body reference or the screen center. The whole-system overview keeps the fixed AE-equivalent oblique visual angle; do not drive whole-system rotation from hand gestures.
 - A released solar system can hover at any visible in-frame position chosen by the user's hands.
 
 ### Whole-System Handle, Release, and Re-Grip
@@ -232,21 +232,16 @@ The opened solar system should behave like a manipulable object suspended in the
 
 - During pull-open, the left and right visual endpoints should stay attached to the left and right hands.
 - Once 3D solar content is visible, the whole-system control affordance should be two independent control endpoints on the solar-system left/right edges. Do not use a connected joystick/rod-style line as the primary control visual over the solar system.
-- Releasing both hands from the endpoints should place the whole solar system in a free-hover state at the last stable position, scale, and orientation.
-- Returning both hands near the left and right endpoints should re-grip the whole-system handle without requiring a planet pinch.
-- After initial pull-open completes, arbitrary visible hands must not keep moving the solar system. Post-opening whole-system handle control requires both hands to stably hit the left/right control endpoints and enter `SolarHandleControl`.
-- Do not add a hand-pose gate to post-opening endpoint re-grip until explicitly requested; for now endpoint proximity is the gate so control remains easy to reacquire.
-- The primary whole-system release gesture is both hands opening fully, with fingers extended and grip-pose confidence low for a short confirmation window.
-- Open-hand release must not win from a single frame; it needs a short stable confirmation window before `ReleaseCandidate`.
-- Once an open-hand release is accepted, release should latch: endpoints freeze immediately, and re-grip is blocked until both hands have clearly moved away from the frozen endpoints. Fingers relaxing during withdrawal must not reattach the handle.
-- Slightly curved hands should be treated as still holding the endpoints, not as a release.
-- Palms-up cupped hands near the endpoints may remain useful as a legacy/debug signal for protecting against false release, but they are not the current user-facing whole-system rotation gesture.
-- Whole-system intent priority is hold/handle-protection first, reverse collapse second, and open-hand release last.
-- Complete hand loss, endpoint mismatch, or low whole-control confidence may remain fallback release signals, but they must not replace open-hand release as the primary user-facing gesture.
-- Re-grip should use a forgiving magnetic zone around the frozen visual endpoints. For visible M4 solar content, those endpoints are the solar-system-owned 3D left/right control endpoints and re-grip requires stable endpoint hits before entering `SolarHandleControl`; the older 2D virtual endpoint snap-back behavior is protocol/debug-only until explicitly reconnected.
+- After initial pull-open completes, arbitrary visible hands must not keep moving the solar system. Post-opening whole-system handle control requires both hands to stably hit the left/right control endpoints for ~0.5s (`ENDPOINT_ENTER_STABLE_MS`) and enter `SolarHandleControl`.
+- The opened solar system stays hand-attached while controlled, so simply leaving the endpoints is NOT a place-down. Place-down comes only from a deliberate two-hand fist->open gesture, an auto place-down past the max visual width, or a sustained full loss of both hands.
+- Primary place-down gesture: both hands clench into a fist together (arming), then reopen together once. While armed, freeze position and scale so the clench does not drag or rescale the system; a confirming reopen drops to `SolarFreeHover` at the last stable position and scale. A fist that never reopens times out (`PLACE_DOWN_ARMED_TIMEOUT_MS`) and resumes hand-follow. Pose thresholds live in `intentTuning.ts` (`SOLAR_PLACE_DOWN_*`).
+- Auto place-down: once the two-hand screen-x span (the hand-attached endpoints' on-screen visual width) reaches `MAX_VISUAL_WIDTH_SCREEN_FRACTION` of the frame, drop to `SolarFreeHover` frozen at that max-width transform. Keep this fraction above the pull-open target width so completing the opening does not instantly trip it.
+- A sustained full loss of both hands (`HANDLE_HAND_LOSS_RELEASE_MS`) is a fallback place-down that keeps the last stable position and scale; a one-frame tracking gap must not place down.
+- Placed-down free hover keeps the last stable position and scale with the fixed overview angle; it must not recenter, snap to a chest/body reference, or preserve a hand-derived whole-system rotation.
+- Re-grip: returning both hands near the solar-system-owned 3D left/right control endpoints and holding them stably for ~0.5s re-acquires `SolarHandleControl` without a planet pinch. Endpoint proximity (not a hand pose) is the re-grip gate; the fist->open pose gate applies only as the place-down inside `SolarHandleControl`. The older 2D virtual-endpoint snap-back and the legacy open-hand release / palms-up hold-protection / release-latch / `wholeSystemIntent` release/re-grip confidences are protocol/debug-only, not the current product path.
 - Moving gripped hands inward from the opened state should collapse the solar system in reverse; when fully closed, the scene returns to the initial empty camera view.
 - M5.5 one-hand solar inspection controls are retired: after `SolarFreeHover`, single-hand spread, contract, fist-hold reset, and push must not zoom, shrink, reset, or pan the solar-system view. Free-hover waits for endpoint re-grip or reverse collapse.
-- Palm-forward side-to-side "sliding glass" scaling and palms-up whole-system 3D rotation are retired M5 semantics. Keep related protocol/debug fields only when useful for diagnostics; do not implement them as active product controls unless the user explicitly reopens that requirement.
+- Palm-forward side-to-side "sliding glass" scaling and palms-up whole-system 3D rotation are retired M5 semantics. Keep related protocol/debug fields only when useful for diagnostics; do not implement them as active product controls or reintroduce an externally supplied whole-system rotation/quaternion transform unless the user explicitly reopens that requirement.
 - Whole-system handle gestures must remain separate from pinch-activating individual planets.
 
 ### Pre-3D Whole-System Interaction Protocol
@@ -290,35 +285,35 @@ Virtual endpoints may be displayed only as debug-only 2D overlay markers before 
 
 ### Spatial Orientation
 
-If a future approved interaction rotates the whole solar system or focused bodies, the rotation must feel 3D. The retired M5 palms-up whole-system rotation gesture is not an active product control.
+The whole solar-system overview currently uses a fixed AE-equivalent oblique visual angle and runtime controllers should only update its position and scale. The retired M5 palms-up whole-system rotation gesture is not an active product control. If a future approved interaction rotates focused bodies or explicitly reopens whole-system rotation, that rotation must feel 3D.
 
 - Use quaternions, arcball-style mapping, or equivalent 3D orientation logic.
 - Avoid implementing any approved rotation as only a flat 2D screen-plane rotation.
-- The orbit plane and body orientation should visibly tilt in depth.
+- The orbit plane and body orientation should visibly tilt in depth; do not fake an approved rotation as a flat screen-plane spin.
 
 ### Interactive Bodies
 
-MVP interactive bodies are:
+MVP overview interaction entries are:
 
 - Mercury
 - Venus
-- Earth
+- Earth-Moon group
 - Mars
 - Jupiter
 - Saturn
 - Uranus
 - Neptune
-- Moon
 
-Use one unified body data model and one unified activation/focus/return pipeline. Do not implement each planet with unrelated one-off code.
+Use one unified body data model and one unified activation/focus/return pipeline. Do not implement each planet with unrelated one-off code. Moon remains a rendered Earth satellite and a reusable focused-body overlay, but it must not be exposed as a separate overview activation target unless the user explicitly reopens that requirement.
 
-Only one body may be activated or focused at a time in the MVP.
+Only one overview entry may be activated or focused at a time in the MVP. The Earth-Moon group enters focus as Earth by default.
 
 ### Planet Activation, Focus, Release, and Return Rules
 
 - Pinch near a hovered body enters `PlanetActivated`.
 - A `PlanetActivated` body stops its original orbit but keeps natural self-rotation; other bodies continue normal orbit and self-rotation.
-- Only the currently activated body may have its original orbit paused, except for the Earth-Moon bound pair. Activating Earth pauses Earth's solar orbit while Moon may keep orbiting Earth. Activating Moon pauses both Earth's solar orbit and Moon's local orbit around Earth. Earth and Moon keep self-rotating in both cases. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting unless it is paused by this Earth-Moon binding.
+- Only the currently activated entry may have its original orbit paused, except for the Earth-Moon group. Activating the Earth-Moon group pauses Earth's solar orbit while Moon may keep orbiting Earth. Moon focus is reached only through the Earth-Moon focus switch button, not through an independent overview activation target. When activation switches from A to B, or A is cleared because the user touches/hovers B, A immediately resumes orbiting unless it is paused by this Earth-Moon binding.
+- In Earth-Moon focus, show Earth by default. Only this focus view shows a second top-left glass button whose label alternates between "长按切换月球视角" and "长按切换地球视角"; holding the tracked index fingertip on it for 0.5 seconds switches the focused overlay and heat zone. The switch button must be hidden in all non-Earth-Moon focus views and must not replace the 1 second return button.
 - After activation, two closeDown events from the same activating hand's thumb/index pair enter `PlanetFocusView`; the initial activation pinch does not count, and a long closed hold must not count as two closeDown events. The reopen between the two closeDown events is a small thumb/index click reopen, not a full pinch release beyond the activation pinch-end threshold.
 - A `PlanetActivated` body remains selected through brief same-hand heat-zone exits so the user can complete close-open-close timing; leaving the heat zone for about 1 second while open cancels selection.
 - Passing over another body while the activating thumb/index pair is open must not switch selection or reset DoubleClose progress; switching to another body requires a closed touch/pinch on that new body.
@@ -380,9 +375,9 @@ Required smoothing:
 - Low-pass filter for hand positions.
 - Short hold window for missing hands during startup gestures and active planet activation/focus.
 - Hysteresis thresholds for pinch start and pinch end.
-- Slerp or equivalent smoothing for 3D rotations.
+- Slerp or equivalent smoothing for approved focused-body or future explicitly reopened 3D rotations; current whole-system overview rotation is fixed.
 - Stable tracked-index-fingertip hold timing for the top-left return button progress.
-- Once visible 3D solar-system content is driven by hand endpoints, reject abrupt endpoint-geometry outliers before updating the solar-system transform. Fast hand withdrawal, edge-of-frame partial hand tracking, or one-frame MediaPipe mis-detection must hold the last stable transform instead of shrinking or jumping the model.
+- Once visible 3D solar-system content is driven by hand endpoints, reject abrupt endpoint-geometry outliers before updating solar-system position and scale. Fast hand withdrawal, edge-of-frame partial hand tracking, or one-frame MediaPipe mis-detection must hold the last stable position and scale instead of shrinking or jumping the model.
 - Run the interaction controllers only on a fresh MediaPipe detection frame (`freshFrameGate.ts`), fed the detection timestamp, so re-rendered stale frames do not inject zero-velocity samples into pull, endpoint, release stability, or return-button index-finger dwell. Rendering still runs every requestAnimationFrame.
 - Assign visual-left/right hand identity from the previous frame's trajectory before smoothing, then smooth per visual slot (`gestureInputFrame.ts`). Do not smooth per MediaPipe handedness, which swaps history when hands cross.
 - Keep MediaPipe image-landmark z out of screen-plane gesture distances (close / pull / endpoint / hover / support); use 2D x/y. Prefer world landmarks for hand-shape (open-hand / fist / pinch).
@@ -440,6 +435,8 @@ Starting with the visual-effects phase, treat previously tested interaction logi
 Visual-effects work may improve appearance and presentation: materials, procedural textures, lighting, glow, particles, nebula, trails, labels, UI polish, recording mode, and rendering performance. These changes must sit on top of the current interaction behavior.
 
 Do not modify gesture state machines, gesture thresholds, hand pairing, fresh-frame gating, coordinate mapping, solar-system opening/release/re-grip/collapse semantics, planet activation/focus/follow/return semantics, or the existing object visibility lifecycle unless the user explicitly requests that logic/display behavior change.
+
+The AE rift boundary halo should stay close to the approved PNG look. If readability needs tuning, prefer the existing dark support pass and additive AE border pass; do not add extra runtime glow/material passes, global bloom, independent halo rotation/scale, or autoplaying visual lifecycles unless explicitly approved.
 
 If a visual goal appears to require changing interaction logic or existing show/hide control flow, pause and state the exact proposed behavior change and risk before editing code. Do not use visual polish as a reason to clean up, refactor, or retune already validated interaction paths.
 
@@ -586,7 +583,7 @@ When you deliberately choose custom over an available built-in, record the reaso
 - Any interaction/debug overlay used for coordinate inspection should share the same preview-stage dimensions as the video and canvas so gesture coordinates do not drift from the displayed image.
 - User-facing UI is minimal and should not cover the hands or chest area.
 - Hover, activation, focus, PinchTap release-to-floating, and return states need visible feedback.
-- Small bodies such as Mercury and Moon require expanded interaction hit areas.
+- Small bodies such as Mercury require expanded interaction hit areas. Moon keeps a hit point in the overview, but that hit point maps to the Earth-Moon group instead of a separate Moon activation target.
 - Saturn must have a recognizable ring.
 - The code-placeholder solar system should use procedural materials only, keep visuals data-driven, and allow future texture replacement through material/data sources without changing interaction logic.
 - Star dust, nebula, and glow effects appear only after the pull-open interaction begins.

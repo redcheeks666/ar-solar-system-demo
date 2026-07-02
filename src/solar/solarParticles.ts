@@ -13,13 +13,13 @@ import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import type { CelestialBodyDefinition } from './solarSystemData';
 import { loadTexture } from './textureAssets';
 
-export const SOLAR_PARTICLE_COUNT = 200;
+export const SOLAR_PARTICLE_COUNT = 420;
 
-const WHITE_STARDUST_COUNT = 82;
-const SOFT_STARDUST_COUNT = 54;
-const CYAN_TRAIL_COUNT = 30;
-const GOLD_TRAIL_COUNT = 30;
-const MICRO_FLARE_COUNT = 4;
+const WHITE_STARDUST_COUNT = 180;
+const SOFT_STARDUST_COUNT = 126;
+const CYAN_TRAIL_COUNT = 54;
+const GOLD_TRAIL_COUNT = 54;
+const MICRO_FLARE_COUNT = 6;
 const PARTICLE_RENDER_ORDER = 18;
 const FOCUS_DIM_OPACITY_SCALE = 0.16;
 const PARTICLE_OPENING_START = 0.25;
@@ -60,7 +60,7 @@ export class SolarParticleField {
       positions: createStardustPositions(WHITE_STARDUST_COUNT, 1),
       size: 0.018,
       color: '#f8fbff',
-      opacity: 0.11,
+      opacity: 0.18,
       textureAsset: SOLAR_FX_TEXTURES.whiteParticle,
     });
     this.addParticleLayer({
@@ -69,7 +69,7 @@ export class SolarParticleField {
       positions: createStardustPositions(SOFT_STARDUST_COUNT, 17),
       size: 0.024,
       color: '#d9f4ff',
-      opacity: 0.07,
+      opacity: 0.12,
       textureAsset: SOLAR_FX_TEXTURES.stardustParticles,
     });
     this.addParticleLayer({
@@ -78,7 +78,7 @@ export class SolarParticleField {
       positions: createTrailPositions(definitions, CYAN_TRAIL_COUNT, 29),
       size: 0.022,
       color: '#77e8ff',
-      opacity: 0.15,
+      opacity: 0.22,
       textureAsset: SOLAR_FX_TEXTURES.cyanParticle,
     });
     this.addParticleLayer({
@@ -87,7 +87,7 @@ export class SolarParticleField {
       positions: createTrailPositions(definitions, GOLD_TRAIL_COUNT, 53),
       size: 0.024,
       color: '#ffd277',
-      opacity: 0.14,
+      opacity: 0.2,
       textureAsset: SOLAR_FX_TEXTURES.goldParticle,
     });
     this.addParticleLayer({
@@ -96,7 +96,7 @@ export class SolarParticleField {
       positions: createTrailPositions(definitions, MICRO_FLARE_COUNT, 83),
       size: 0.032,
       color: '#fff1b8',
-      opacity: 0.07,
+      opacity: 0.11,
       textureAsset: SOLAR_FX_TEXTURES.microFlare,
     });
   }
@@ -199,10 +199,10 @@ function createStardustPositions(count: number, seedOffset: number): Float32Arra
 
   for (let index = 0; index < count; index += 1) {
     const angle = pseudoRandom(index, seedOffset + 3) * Math.PI * 2;
-    const radius = lerp(0.52, 2.08, Math.sqrt(pseudoRandom(index, seedOffset + 7)));
-    const verticalJitter = lerp(-0.11, 0.11, pseudoRandom(index, seedOffset + 11));
+    const radius = lerp(0.52, 3.48, Math.sqrt(pseudoRandom(index, seedOffset + 7)));
+    const verticalJitter = lerp(-0.16, 0.16, pseudoRandom(index, seedOffset + 11));
     positions[index * 3] = Math.cos(angle) * radius;
-    positions[index * 3 + 1] = Math.sin(angle) * radius * 0.54 + verticalJitter;
+    positions[index * 3 + 1] = Math.sin(angle) * radius * 0.7 + verticalJitter;
     positions[index * 3 + 2] = lerp(-0.055, 0.085, pseudoRandom(index, seedOffset + 19));
   }
 

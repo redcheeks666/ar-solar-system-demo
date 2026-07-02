@@ -199,8 +199,35 @@ export interface GestureRecordingStatus {
   lastEvent: string | null;
 }
 
+export interface MediaPipePerformanceSnapshot {
+  detectMs: number | null;
+  handDetectMs: number | null;
+  poseDetectMs: number | null;
+  trackingHz: number | null;
+  detectionFrameCount: number;
+  repeatedVideoFrameCount: number;
+  videoCurrentTimeMs: number | null;
+  videoFrameDeltaMs: number | null;
+}
+
+export interface PerformanceDebugSnapshot extends MediaPipePerformanceSnapshot {
+  renderDeltaMs: number;
+  renderMs: number | null;
+  trackingUpdateMs: number | null;
+  controllerMs: number | null;
+  recorderMs: number | null;
+  solarUpdateMs: number | null;
+  vfxFrameUploadMs: number | null;
+  vfxFrameUploadCount: number;
+  freshFrameAgeMs: number | null;
+  freshTrackingFrame: boolean;
+  freshTrackingFrames: number;
+  staleRenderFrames: number;
+}
+
 export interface DebugSnapshot {
   fps: number;
+  performance: PerformanceDebugSnapshot;
   cameraStatus: CameraPermissionStatus;
   trackingStatus: TrackingStatus;
   trackingError: string | null;
@@ -358,6 +385,7 @@ export interface RenderFrameSnapshot {
   fps: number;
   deltaMs: number;
   deltaSeconds: number;
+  renderMs: number | null;
   timestampMs: number;
   canvasSize: {
     width: number;

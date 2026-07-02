@@ -7,6 +7,7 @@ import {
 } from 'three';
 import type { Object3D } from 'three';
 import type { RenderFrameSnapshot } from '../utils/types';
+import { BACKGROUND_RENDER_LAYER, MAIN_RENDER_LAYER } from './renderLayers';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
 export const CAMERA_FOV = 45;
@@ -29,6 +30,7 @@ export class TransparentSceneRenderer {
   private readonly renderer: WebGLRenderer;
   private animationFrameId: number | null = null;
   private lastFrameTime = 0;
+  private lastRenderMs: number | null = null;
   private smoothedFps = 0;
   private readonly canvasSize = new Vector2();
   private readonly resizeObserver: ResizeObserver | null = null;
@@ -45,6 +47,7 @@ export class TransparentSceneRenderer {
 
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.setClearColor(0x000000, 0);
+    this.renderer.autoClear = false;
     this.camera.position.set(0, 0, CAMERA_Z);
 
     if ('ResizeObserver' in window) {
@@ -76,9 +79,12 @@ export class TransparentSceneRenderer {
         canvasSize: this.getCanvasSize(),
         deltaMs,
         deltaSeconds: deltaMs / 1000,
+        renderMs: this.lastRenderMs,
         timestampMs: time,
       });
-      this.renderer.render(this.scene, this.camera);
+      const renderStartedAt = performance.now();
+      this.renderScene();
+      this.lastRenderMs = performance.now() - renderStartedAt;
 
       this.animationFrameId = window.requestAnimationFrame(tick);
     };
@@ -121,6 +127,18 @@ export class TransparentSceneRenderer {
    */
   getCamera(): PerspectiveCamera {
     return this.camera;
+  }
+
+  private renderScene(): void {
+    const originalCameraLayerMask = this.camera.layers.mask;
+
+    this.renderer.clear(true, true, true);
+    this.camera.layers.set(BACKGROUND_RENDER_LAYER);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.clearDepth();
+    this.camera.layers.set(MAIN_RENDER_LAYER);
+    this.renderer.render(this.scene, this.camera);
+    this.camera.layers.mask = originalCameraLayerMask;
   }
 
   private resize(): void {
