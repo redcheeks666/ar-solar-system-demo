@@ -27,3 +27,18 @@ export const SOLAR_SYSTEM_PREVIEW_TILT_X = degreesToRadians(
 );
 // Keep this as only a tiny yaw, not the user-approved vertical pitch.
 export const SOLAR_SYSTEM_PREVIEW_TILT_Y = 0.08;
+
+// Rift edge shader tuning. Length-like values are fractions of the rift
+// plane width so the band reads with the same thickness all around the rim.
+export const RIFT_EDGE_FEATHER = 0.02;
+export const RIFT_EDGE_NOISE_AMPLITUDE = 0.022;
+export const RIFT_EDGE_NOISE_SCALE = 3.4;
+export const RIFT_EDGE_NOISE_SPEED = 0.14;
+export const RIFT_EDGE_GLOW_WIDTH = 0.014;
+export const RIFT_EDGE_GLOW_INTENSITY = 1.25;
+export const RIFT_EDGE_GLOW_CYAN = '#7fd8ff';
+export const RIFT_EDGE_GLOW_GOLD = '#ffd47c';
+export const RIFT_EDGE_BREATHE_SPEED = 1.6;
+// Extra glow / boundary wobble while the rift is still being pulled open.
+export const RIFT_EDGE_OPENING_GLOW_BOOST = 0.9;
+export const RIFT_EDGE_OPENING_WOBBLE_BOOST = 1.2;

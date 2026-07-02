@@ -444,8 +444,10 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       ).toBeUndefined();
       expect(starfield.position.z).toBeLessThan(0);
       expect(starfield.layers.isEnabled(BACKGROUND_RENDER_LAYER)).toBe(true);
-      expect((starfield.material as MeshBasicMaterial).depthTest).toBe(false);
-      expect((starfield.material as MeshBasicMaterial).depthWrite).toBe(false);
+      const starfieldMaterial = starfield.material as ShaderMaterial;
+      expect(starfieldMaterial).toBeInstanceOf(ShaderMaterial);
+      expect(starfieldMaterial.depthTest).toBe(false);
+      expect(starfieldMaterial.depthWrite).toBe(false);
 
       solarSystem.setVisible(true);
       solarSystem.setOpeningProgress(0.005);
@@ -453,7 +455,7 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
 
       solarSystem.setOpeningProgress(0.7);
       expect(riftRoot?.visible).toBe(true);
-      const overviewOpacity = (starfield.material as MeshBasicMaterial).opacity;
+      const overviewOpacity = starfieldMaterial.uniforms.opacity.value as number;
       expect(overviewOpacity).toBeGreaterThan(0.1);
 
       solarSystem.applyBodyInteractionState({
@@ -461,7 +463,7 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         activatedBody: 'earth',
         focusedBody: 'earth',
       });
-      expect((starfield.material as MeshBasicMaterial).opacity).toBeLessThan(
+      expect(starfieldMaterial.uniforms.opacity.value as number).toBeLessThan(
         overviewOpacity,
       );
     } finally {

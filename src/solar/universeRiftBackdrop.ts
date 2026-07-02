@@ -1,17 +1,30 @@
 import {
   CanvasTexture,
+  Color,
   DoubleSide,
   Euler,
   Group,
   Mesh,
-  MeshBasicMaterial,
   PlaneGeometry,
   Quaternion,
+  ShaderMaterial,
   SRGBColorSpace,
+  Vector2,
 } from 'three';
 import { BACKGROUND_RENDER_LAYER } from '../rendering/renderLayers';
 import { clamp01, lerp } from '../utils/math';
 import {
+  RIFT_EDGE_BREATHE_SPEED,
+  RIFT_EDGE_FEATHER,
+  RIFT_EDGE_GLOW_CYAN,
+  RIFT_EDGE_GLOW_GOLD,
+  RIFT_EDGE_GLOW_INTENSITY,
+  RIFT_EDGE_GLOW_WIDTH,
+  RIFT_EDGE_NOISE_AMPLITUDE,
+  RIFT_EDGE_NOISE_SCALE,
+  RIFT_EDGE_NOISE_SPEED,
+  RIFT_EDGE_OPENING_GLOW_BOOST,
+  RIFT_EDGE_OPENING_WOBBLE_BOOST,
   SOLAR_SYSTEM_PREVIEW_TILT_X,
   SOLAR_SYSTEM_PREVIEW_TILT_Y,
   UNIVERSE_RIFT_BACKGROUND_OPACITY,
@@ -33,6 +46,10 @@ const BACKDROP_ELLIPSE_RADIUS_X =
   RIFT_VISIBLE_BOUNDS_WIDTH * 0.43;
 const BACKDROP_ELLIPSE_RADIUS_Y =
   RIFT_VISIBLE_BOUNDS_HEIGHT * 0.36;
+// Both radii expressed as fractions of the plane width so shader distances
+// stay isotropic in world units around the whole rim.
+const ELLIPSE_RADIUS_U = BACKDROP_ELLIPSE_RADIUS_X / TEXTURE_WIDTH;
+const ELLIPSE_RADIUS_V = BACKDROP_ELLIPSE_RADIUS_Y / TEXTURE_WIDTH;
 const DEFAULT_SOLAR_TILT_INVERSE = new Quaternion()
   .setFromEuler(
     new Euler(
@@ -62,23 +79,17 @@ export class UniverseRiftBackdrop {
     RIFT_PLANE_WIDTH,
     RIFT_PLANE_HEIGHT,
   );
-  private readonly backgroundMaterial: MeshBasicMaterial;
+  private readonly backgroundMaterial: ShaderMaterial;
   private readonly geometries: PlaneGeometry[] = [];
-  private readonly materials: MeshBasicMaterial[] = [];
+  private readonly materials: ShaderMaterial[] = [];
+  private elapsedSeconds = 0;
 
   constructor() {
     this.root.name = 'universe-rift-backdrop';
     this.root.visible = false;
 
     this.backgroundTexture = createRiftBackgroundTexture();
-    this.backgroundMaterial = new MeshBasicMaterial({
-      map: this.backgroundTexture,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      depthTest: false,
-      side: DoubleSide,
-    });
+    this.backgroundMaterial = createRiftEdgeMaterial(this.backgroundTexture);
     const backdrop = new Mesh(this.backgroundGeometry, this.backgroundMaterial);
     backdrop.name = 'universe-rift-elliptical-starfield';
     backdrop.position.z = BACKDROP_LOCAL_Z;
@@ -91,9 +102,11 @@ export class UniverseRiftBackdrop {
     this.materials.push(this.backgroundMaterial);
   }
 
-  update(_deltaSeconds = 0): void {
+  update(deltaSeconds = 0): void {
     // The rift is a child of the solar-system group and shares its transform, so its
     // widest left/right points stay locked to the hand-attached control endpoints.
+    this.elapsedSeconds += deltaSeconds;
+    this.backgroundMaterial.uniforms.time.value = this.elapsedSeconds;
   }
 
   setState(state: RiftState): void {
@@ -107,7 +120,11 @@ export class UniverseRiftBackdrop {
     this.root.visible = opacityScale > 0.005;
     // No independent scale: the rift shares the solar-system group's transform so its
     // left/right widest points stay aligned with the control endpoints.
-    this.backgroundMaterial.opacity = opacityScale;
+    this.backgroundMaterial.uniforms.opacity.value = opacityScale;
+    // Edge stays hot and turbulent while the hands are still tearing it open,
+    // then settles into a calm breathing rim once fully revealed.
+    this.backgroundMaterial.uniforms.openingEnergy.value =
+      1 - smoothProgressRange(state.openingProgress, 0.72, 0.98);
   }
 
   dispose(): void {
@@ -124,6 +141,133 @@ export class UniverseRiftBackdrop {
   }
 }
 
+function createRiftEdgeMaterial(texture: CanvasTexture): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: {
+      map: { value: texture },
+      time: { value: 0 },
+      opacity: { value: 0 },
+      openingEnergy: { value: 1 },
+      ellipseRadii: { value: new Vector2(ELLIPSE_RADIUS_U, ELLIPSE_RADIUS_V) },
+      planeAspect: { value: RIFT_CANVAS_ASPECT_RATIO },
+      edgeFeather: { value: RIFT_EDGE_FEATHER },
+      noiseAmplitude: { value: RIFT_EDGE_NOISE_AMPLITUDE },
+      noiseScale: { value: RIFT_EDGE_NOISE_SCALE },
+      noiseSpeed: { value: RIFT_EDGE_NOISE_SPEED },
+      glowWidth: { value: RIFT_EDGE_GLOW_WIDTH },
+      glowIntensity: { value: RIFT_EDGE_GLOW_INTENSITY },
+      glowCyan: { value: new Color(RIFT_EDGE_GLOW_CYAN) },
+      glowGold: { value: new Color(RIFT_EDGE_GLOW_GOLD) },
+      breatheSpeed: { value: RIFT_EDGE_BREATHE_SPEED },
+      openingGlowBoost: { value: RIFT_EDGE_OPENING_GLOW_BOOST },
+      openingWobbleBoost: { value: RIFT_EDGE_OPENING_WOBBLE_BOOST },
+    },
+    vertexShader: RIFT_EDGE_VERTEX_SHADER,
+    fragmentShader: RIFT_EDGE_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+    side: DoubleSide,
+  });
+}
+
+const RIFT_EDGE_VERTEX_SHADER = `
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const RIFT_EDGE_FRAGMENT_SHADER = `
+  uniform sampler2D map;
+  uniform float time;
+  uniform float opacity;
+  uniform float openingEnergy;
+  uniform vec2 ellipseRadii;
+  uniform float planeAspect;
+  uniform float edgeFeather;
+  uniform float noiseAmplitude;
+  uniform float noiseScale;
+  uniform float noiseSpeed;
+  uniform float glowWidth;
+  uniform float glowIntensity;
+  uniform vec3 glowCyan;
+  uniform vec3 glowGold;
+  uniform float breatheSpeed;
+  uniform float openingGlowBoost;
+  uniform float openingWobbleBoost;
+  varying vec2 vUv;
+
+  float hash(vec2 value) {
+    return fract(sin(dot(value, vec2(127.1, 311.7))) * 43758.5453123);
+  }
+
+  float noise(vec2 value) {
+    vec2 integerPart = floor(value);
+    vec2 fractionPart = fract(value);
+    vec2 curve = fractionPart * fractionPart * (3.0 - 2.0 * fractionPart);
+
+    float a = hash(integerPart);
+    float b = hash(integerPart + vec2(1.0, 0.0));
+    float c = hash(integerPart + vec2(0.0, 1.0));
+    float d = hash(integerPart + vec2(1.0, 1.0));
+
+    return mix(mix(a, b, curve.x), mix(c, d, curve.x), curve.y);
+  }
+
+  float fbm(vec2 value) {
+    float total = 0.0;
+    float amplitude = 0.5;
+    mat2 rotate = mat2(0.8, -0.6, 0.6, 0.8);
+
+    for (int i = 0; i < 5; i++) {
+      total += noise(value) * amplitude;
+      value = rotate * value * 2.03 + 7.13;
+      amplitude *= 0.5;
+    }
+
+    return total;
+  }
+
+  void main() {
+    // Work in plane-width units so band thickness is uniform around the rim.
+    vec2 centered = vec2(vUv.x - 0.5, (vUv.y - 0.5) * planeAspect);
+    vec2 normalized = centered / ellipseRadii;
+    float radial = length(normalized);
+    vec2 rimDirection = radial > 0.0001 ? normalized / radial : vec2(1.0, 0.0);
+    float gradientLength = length(rimDirection / ellipseRadii);
+    float signedDistance = (radial - 1.0) / max(gradientLength, 0.0001);
+
+    float wobbleAmp = noiseAmplitude * (1.0 + openingWobbleBoost * openingEnergy);
+    vec2 flow = rimDirection * noiseScale
+      + vec2(time * noiseSpeed, -time * noiseSpeed * 0.6);
+    float ripple = (fbm(flow) - 0.48) * 2.0;
+    float d = signedDistance - ripple * wobbleAmp;
+
+    float interior = 1.0 - smoothstep(-edgeFeather, 0.0, d);
+    vec4 starfield = texture2D(map, vUv);
+
+    float band = exp(-abs(d) / glowWidth);
+    float shimmer = fbm(rimDirection * noiseScale * 2.6
+      + vec2(-time * noiseSpeed * 2.2, time * noiseSpeed * 1.5));
+    float pulse = 0.78 + 0.22 * sin(time * breatheSpeed + shimmer * 6.28318);
+    float rim = band * glowIntensity * pulse * (0.55 + 0.75 * shimmer)
+      * (1.0 + openingGlowBoost * openingEnergy);
+
+    float colorDrift = fbm(rimDirection * 1.9 + vec2(time * 0.05, -time * 0.04));
+    vec3 rimColor = mix(glowCyan, glowGold, smoothstep(0.25, 0.75, colorDrift));
+    rimColor += vec3(1.0) * pow(band, 3.0) * 0.55;
+
+    vec3 color = starfield.rgb * interior + rimColor * rim;
+    float alpha = clamp(starfield.a * interior + rim * 0.85, 0.0, 1.0) * opacity;
+
+    gl_FragColor = vec4(color, alpha);
+    #include <colorspace_fragment>
+  }
+`;
+
 function createRiftBackgroundTexture(): CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = TEXTURE_WIDTH;
@@ -134,26 +278,15 @@ function createRiftBackgroundTexture(): CanvasTexture {
     throw new Error('Unable to create universe rift texture context.');
   }
 
+  // No hard elliptical clip here anymore: the shader owns the boundary with a
+  // feathered, noise-perturbed edge, so the texture paints the full frame and
+  // keeps valid content slightly beyond the nominal ellipse for the wobble.
   context.clearRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
-  context.save();
-  context.beginPath();
-  context.ellipse(
-    TEXTURE_WIDTH / 2,
-    TEXTURE_HEIGHT / 2,
-    BACKDROP_ELLIPSE_RADIUS_X,
-    BACKDROP_ELLIPSE_RADIUS_Y,
-    0,
-    0,
-    Math.PI * 2,
-  );
-  context.clip();
-
   context.fillStyle = `rgba(2, 4, 12, ${UNIVERSE_RIFT_BACKGROUND_OPACITY})`;
   context.fillRect(0, 0, TEXTURE_WIDTH, TEXTURE_HEIGHT);
   drawNebulaGlow(context);
   drawStarField(context, 1200);
   drawMilkyDust(context);
-  context.restore();
 
   const texture = new CanvasTexture(canvas);
   texture.colorSpace = SRGBColorSpace;
