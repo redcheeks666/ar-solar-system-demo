@@ -13,6 +13,7 @@ import {
 } from 'three';
 import { BACKGROUND_RENDER_LAYER } from '../rendering/renderLayers';
 import { clamp01, lerp } from '../utils/math';
+import { RiftEdgeSparks } from './riftEdgeSparks';
 import {
   FOCUS_DIM_EASE_SECONDS,
   RIFT_APERTURE_HORIZONTAL_PROGRESS_END,
@@ -91,6 +92,10 @@ export class UniverseRiftBackdrop {
     RIFT_PLANE_HEIGHT,
   );
   private readonly backgroundMaterial: ShaderMaterial;
+  private readonly edgeSparks = new RiftEdgeSparks(
+    ELLIPSE_RADIUS_U * RIFT_PLANE_WIDTH,
+    ELLIPSE_RADIUS_V * RIFT_PLANE_WIDTH,
+  );
   private readonly geometries: PlaneGeometry[] = [];
   private readonly materials: ShaderMaterial[] = [];
   private elapsedSeconds = 0;
@@ -112,6 +117,10 @@ export class UniverseRiftBackdrop {
     backdrop.layers.set(BACKGROUND_RENDER_LAYER);
     backdrop.renderOrder = BACKDROP_RENDER_ORDER;
     this.root.add(backdrop);
+    // Sparks live on the same tilted plane as the rim they spawn from.
+    this.edgeSparks.root.quaternion.copy(DEFAULT_SOLAR_TILT_INVERSE);
+    this.edgeSparks.root.position.z = BACKDROP_LOCAL_Z + 0.012;
+    this.root.add(this.edgeSparks.root);
     this.geometries.push(this.backgroundGeometry);
     this.materials.push(this.backgroundMaterial);
   }
@@ -123,6 +132,13 @@ export class UniverseRiftBackdrop {
     const blend = 1 - Math.exp(-deltaSeconds / FOCUS_DIM_EASE_SECONDS);
     this.dimCurrent += (this.dimTarget - this.dimCurrent) * blend;
     this.applyOpacity();
+
+    this.edgeSparks.update(
+      deltaSeconds,
+      this.backgroundMaterial.uniforms.aperture.value as Vector2,
+      this.backgroundMaterial.uniforms.openingEnergy.value as number,
+      this.reveal * this.dimCurrent,
+    );
   }
 
   setState(state: RiftState): void {
@@ -189,6 +205,7 @@ export class UniverseRiftBackdrop {
     this.backgroundTexture.dispose();
     this.geometries.forEach((geometry) => geometry.dispose());
     this.materials.forEach((material) => material.dispose());
+    this.edgeSparks.dispose();
   }
 
   getPerformanceSnapshot(): RiftPerformanceSnapshot {

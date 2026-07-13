@@ -551,10 +551,11 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       });
 
       const hoverRingMaterial = (hoverRing as Mesh).material as MeshBasicMaterial;
-      const orbitMaterial = (orbit as Mesh).material as MeshBasicMaterial;
+      // The orbit ring is a trail shader; its state opacity lives in a uniform.
+      const orbitMaterial = (orbit as Mesh).material as ShaderMaterial;
       const labelMaterial = (label as Sprite).material;
       const hoverRingOpacity = hoverRingMaterial.opacity;
-      const hoverOrbitOpacity = orbitMaterial.opacity;
+      const hoverOrbitOpacity = orbitMaterial.uniforms.opacity.value as number;
 
       expect(hoverRing.visible).toBe(true);
       expect(label.visible).toBe(true);
@@ -566,7 +567,9 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       });
 
       expect(hoverRingMaterial.opacity).toBeGreaterThan(hoverRingOpacity);
-      expect(orbitMaterial.opacity).toBeGreaterThan(hoverOrbitOpacity);
+      expect(orbitMaterial.uniforms.opacity.value as number).toBeGreaterThan(
+        hoverOrbitOpacity,
+      );
 
       solarSystem.applyBodyInteractionState({
         hoveredBody: null,
@@ -575,7 +578,9 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       });
 
       expect(hoverRingMaterial.opacity).toBeLessThan(hoverRingOpacity);
-      expect(orbitMaterial.opacity).toBeLessThan(hoverOrbitOpacity);
+      expect(orbitMaterial.uniforms.opacity.value as number).toBeLessThan(
+        hoverOrbitOpacity,
+      );
       expect(labelMaterial.opacity).toBeLessThan(1);
     } finally {
       solarSystem.dispose();

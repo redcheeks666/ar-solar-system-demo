@@ -128,7 +128,8 @@ export const FOCUS_PLANET_PROFILES: Readonly<
         opacity: 0.86,
         alphaLow: 0.24,
         alphaHigh: 0.62,
-        speedScale: 1.08,
+        // Clearly faster than the surface so the cloud shear reads on camera.
+        speedScale: 1.26,
       },
     ],
     shadow: {

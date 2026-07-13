@@ -9,29 +9,40 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   RingGeometry,
+  ShaderMaterial,
   SphereGeometry,
   Sprite,
   SpriteMaterial,
   Texture,
+  TorusGeometry,
   Vector3,
 } from 'three';
+import { BLOOM_RENDER_LAYER } from '../rendering/renderLayers';
+import { getFocusPlanetProfile } from './focusPlanetProfiles';
 import {
   getOverviewPlanetAlbedoAsset,
   getSaturnRingTextureCandidates,
   getTextureAssetPath,
 } from './planetTextureMaterials';
 import { createPlaceholderBodyMaterial, createSaturnRingMaterial } from './proceduralMaterials';
+import { applyRadialRingTextureUvs } from './ringTextureMapping';
 import {
+  createAtmosphereRimMaterial,
+  createOrbitTrailMaterial,
   createSolarCoronaMaterial,
   createSolarLensFlareMaterial,
   createSolarPlasmaMaterial,
   getSolarLensFlareTextureAsset,
+  setSolarVfxFlareBoost,
   setSolarVfxOpacity,
   setSolarVfxTime,
   type SolarVfxMaterialBundle,
 } from './solarVfxMaterials';
 import { SOLAR_FX_TEXTURES } from './solarAssetManifest';
-import type { CelestialBodyDefinition } from './solarSystemData';
+import {
+  isInteractiveCelestialBodyId,
+  type CelestialBodyDefinition,
+} from './solarSystemData';
 import { loadTexture } from './textureAssets';
 
 const SPHERE_WIDTH_SEGMENTS = 40;
@@ -62,6 +73,63 @@ const SUN_LENS_FLARE_WIDTH_SCALE = 6.4;
 const SUN_LENS_FLARE_HEIGHT_SCALE = 0.82;
 const SUN_CORONA_RENDER_ORDER = 54;
 const SUN_LENS_FLARE_RENDER_ORDER = 55;
+const ATMOSPHERE_RIM_RADIUS_SCALE = 1.055;
+const ATMOSPHERE_RIM_RENDER_ORDER = 4;
+const PROMINENCE_COLOR = '#ff9a4d';
+const PROMINENCE_PEAK_OPACITY = 0.58;
+const SOLAR_FLARE_RISE_SECONDS = 0.22;
+const SOLAR_FLARE_DECAY_SECONDS = 1.35;
+const SOLAR_FLARE_MIN_GAP_SECONDS = 9;
+const SOLAR_FLARE_MAX_GAP_SECONDS = 20;
+const SOLAR_FLARE_FIRST_DELAY_SECONDS = 6;
+
+interface SolarProminenceConfig {
+  readonly longitude: number;
+  readonly planeTilt: number;
+  readonly arcRadius: number;
+  readonly tubeRadius: number;
+  readonly arcSpan: number;
+  readonly periodSeconds: number;
+  readonly phaseOffset: number;
+}
+
+// Plasma loops rising from the sun's limb; staggered slow lifecycles so at
+// most one or two are prominent at a time.
+const SOLAR_PROMINENCE_CONFIGS: readonly SolarProminenceConfig[] = [
+  {
+    longitude: 0.6,
+    planeTilt: 0.42,
+    arcRadius: 0.21,
+    tubeRadius: 0.016,
+    arcSpan: 2.5,
+    periodSeconds: 9.5,
+    phaseOffset: 0,
+  },
+  {
+    longitude: 2.7,
+    planeTilt: -0.3,
+    arcRadius: 0.16,
+    tubeRadius: 0.013,
+    arcSpan: 2.2,
+    periodSeconds: 12.5,
+    phaseOffset: 0.42,
+  },
+  {
+    longitude: 4.6,
+    planeTilt: 0.14,
+    arcRadius: 0.26,
+    tubeRadius: 0.014,
+    arcSpan: 2.7,
+    periodSeconds: 15,
+    phaseOffset: 0.74,
+  },
+];
+
+interface SolarProminence {
+  readonly mesh: Mesh;
+  readonly material: MeshBasicMaterial;
+  readonly config: SolarProminenceConfig;
+}
 
 export interface CelestialBodyRenderState {
   opacity: number;
@@ -93,8 +161,15 @@ export class CelestialBody {
   private targetLockSprite: Sprite | null = null;
   private targetLockMaterial: SpriteMaterial | null = null;
   private targetLockTextureLoaded = false;
-  private orbitMaterial: MeshBasicMaterial | null = null;
+  private orbitMaterial: ShaderMaterial | null = null;
+  private atmosphereRimMaterial: ShaderMaterial | null = null;
   private solarVfxMaterials: SolarVfxMaterialBundle | null = null;
+  private lensFlareSprite: Sprite | null = null;
+  private lensFlareBaseWidth = 0;
+  private readonly prominences: SolarProminence[] = [];
+  private flareLevel = 0;
+  private flareElapsedSeconds = -1;
+  private flareCooldownSeconds = SOLAR_FLARE_FIRST_DELAY_SECONDS;
   private solarVfxElapsedSeconds = 0;
   private hudPulseElapsedSeconds = 0;
   private interactionVisualState: CelestialBodyInteractionVisualState = 'idle';
@@ -136,8 +211,69 @@ export class CelestialBody {
     if (this.solarVfxMaterials) {
       this.solarVfxElapsedSeconds += deltaSeconds;
       setSolarVfxTime(this.solarVfxMaterials, this.solarVfxElapsedSeconds);
+      this.updateSolarActivity(deltaSeconds);
     }
     this.updateHudPulse(deltaSeconds);
+  }
+
+  /** Flare pulse level (0 calm → 1 peak); non-sun bodies always report 0. */
+  getFlareLevel(): number {
+    return this.flareLevel;
+  }
+
+  private updateSolarActivity(deltaSeconds: number): void {
+    const dimScale = this.focusBackgroundDimmed ? FOCUS_BACKGROUND_BODY_OPACITY : 1;
+
+    this.prominences.forEach(({ mesh, material, config }) => {
+      const cycle =
+        (this.solarVfxElapsedSeconds / config.periodSeconds + config.phaseOffset) % 1;
+      // Active for the first 55% of each cycle, dormant for the rest.
+      const envelope =
+        cycle < 0.55 ? Math.sin((cycle / 0.55) * Math.PI) : 0;
+
+      material.opacity = envelope * PROMINENCE_PEAK_OPACITY * dimScale;
+      mesh.visible = material.opacity > 0.01;
+      mesh.scale.setScalar(0.55 + 0.45 * envelope);
+    });
+
+    if (this.flareElapsedSeconds < 0) {
+      this.flareCooldownSeconds -= deltaSeconds;
+      if (this.flareCooldownSeconds <= 0) {
+        this.flareElapsedSeconds = 0;
+      }
+    } else {
+      this.flareElapsedSeconds += deltaSeconds;
+      const elapsed = this.flareElapsedSeconds;
+
+      if (elapsed >= SOLAR_FLARE_RISE_SECONDS + SOLAR_FLARE_DECAY_SECONDS) {
+        this.flareElapsedSeconds = -1;
+        this.flareCooldownSeconds =
+          SOLAR_FLARE_MIN_GAP_SECONDS +
+          Math.random() *
+            (SOLAR_FLARE_MAX_GAP_SECONDS - SOLAR_FLARE_MIN_GAP_SECONDS);
+      }
+    }
+
+    const elapsed = this.flareElapsedSeconds;
+    const rawLevel =
+      elapsed < 0
+        ? 0
+        : elapsed < SOLAR_FLARE_RISE_SECONDS
+          ? elapsed / SOLAR_FLARE_RISE_SECONDS
+          : Math.max(
+              0,
+              1 - (elapsed - SOLAR_FLARE_RISE_SECONDS) / SOLAR_FLARE_DECAY_SECONDS,
+            );
+    this.flareLevel = rawLevel * dimScale;
+
+    if (this.solarVfxMaterials) {
+      setSolarVfxFlareBoost(this.solarVfxMaterials, this.flareLevel);
+    }
+
+    if (this.lensFlareSprite) {
+      this.lensFlareSprite.scale.x =
+        this.lensFlareBaseWidth * (1 + 0.32 * this.flareLevel);
+    }
   }
 
   setOrbitPaused(paused: boolean): void {
@@ -233,8 +369,14 @@ export class CelestialBody {
           : state === 'hovered'
             ? ORBIT_HOVER_OPACITY
             : ORBIT_IDLE_OPACITY;
-      this.orbitMaterial.opacity =
+      this.orbitMaterial.uniforms.opacity.value =
         baseOpacity * (dimmed ? FOCUS_BACKGROUND_RING_OPACITY_SCALE : 1);
+    }
+
+    if (this.atmosphereRimMaterial) {
+      this.atmosphereRimMaterial.uniforms.opacity.value = dimmed
+        ? FOCUS_BACKGROUND_BODY_OPACITY
+        : 1;
     }
 
     if (this.labelMaterial) {
@@ -290,6 +432,39 @@ export class CelestialBody {
     this.materials.push(materialBundle.material);
     this.textures.push(...materialBundle.textures);
     this.applyOverviewPlanetTexture(materialBundle.material);
+    this.addAtmosphereRim();
+  }
+
+  private addAtmosphereRim(): void {
+    if (!isInteractiveCelestialBodyId(this.definition.id)) {
+      return;
+    }
+
+    const atmosphere = getFocusPlanetProfile(this.definition.id).atmosphere;
+
+    if (!atmosphere) {
+      return;
+    }
+
+    const geometry = new SphereGeometry(
+      this.definition.radius * ATMOSPHERE_RIM_RADIUS_SCALE,
+      SPHERE_WIDTH_SEGMENTS,
+      SPHERE_HEIGHT_SEGMENTS,
+    );
+    // Focus-profile atmosphere colors/curves are re-used at overview scale
+    // with a stronger intensity so the small spheres still get a visible rim.
+    const material = createAtmosphereRimMaterial(
+      atmosphere.color,
+      Math.max(atmosphere.rimPower, 2.4),
+      Math.min(atmosphere.opacity * 1.4, 0.6),
+    );
+    const shell = new Mesh(geometry, material);
+    shell.name = `${this.definition.id}-atmosphere-rim`;
+    shell.renderOrder = ATMOSPHERE_RIM_RENDER_ORDER;
+    this.bodyAnchor.add(shell);
+    this.atmosphereRimMaterial = material;
+    this.geometries.push(geometry);
+    this.materials.push(material);
   }
 
   private addSolarVfxBody(): void {
@@ -301,6 +476,7 @@ export class CelestialBody {
     const plasmaMaterial = createSolarPlasmaMaterial(this.definition);
     const plasmaCore = new Mesh(plasmaGeometry, plasmaMaterial);
     plasmaCore.name = `${this.definition.id}-plasma-core`;
+    plasmaCore.layers.enable(BLOOM_RENDER_LAYER);
     this.spinGroup.add(plasmaCore);
 
     const coronaGeometry = new SphereGeometry(
@@ -312,6 +488,7 @@ export class CelestialBody {
     const coronaShell = new Mesh(coronaGeometry, coronaMaterial);
     coronaShell.name = `${this.definition.id}-corona-shell`;
     coronaShell.renderOrder = SUN_CORONA_RENDER_ORDER;
+    coronaShell.layers.enable(BLOOM_RENDER_LAYER);
     this.spinGroup.add(coronaShell);
 
     const lensFlareMaterial = createSolarLensFlareMaterial();
@@ -325,6 +502,8 @@ export class CelestialBody {
       1,
     );
     this.bodyAnchor.add(lensFlare);
+    this.lensFlareSprite = lensFlare;
+    this.lensFlareBaseWidth = this.definition.radius * SUN_LENS_FLARE_WIDTH_SCALE;
 
     this.solarVfxMaterials = {
       plasmaMaterial,
@@ -334,6 +513,46 @@ export class CelestialBody {
     this.geometries.push(plasmaGeometry, coronaGeometry);
     this.materials.push(plasmaMaterial, coronaMaterial, lensFlareMaterial);
     this.applySolarLensFlareTexture(lensFlareMaterial, lensFlare);
+    this.addSolarProminences();
+  }
+
+  private addSolarProminences(): void {
+    SOLAR_PROMINENCE_CONFIGS.forEach((config, index) => {
+      const geometry = new TorusGeometry(
+        config.arcRadius,
+        config.tubeRadius,
+        8,
+        26,
+        config.arcSpan,
+      );
+      const material = new MeshBasicMaterial({
+        color: PROMINENCE_COLOR,
+        blending: AdditiveBlending,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      });
+      const arc = new Mesh(geometry, material);
+      arc.name = `${this.definition.id}-prominence-${index}`;
+      arc.layers.enable(BLOOM_RENDER_LAYER);
+      // Center the arc span on the outward (+x) direction so the loop bulges
+      // away from the limb instead of hiding inside the sphere.
+      arc.rotation.z = -config.arcSpan / 2;
+      arc.position.x = this.definition.radius * 0.94;
+      arc.visible = false;
+
+      const pivot = new Group();
+      pivot.name = `${this.definition.id}-prominence-pivot-${index}`;
+      pivot.rotation.z = config.longitude;
+      pivot.rotation.x = config.planeTilt;
+      pivot.add(arc);
+      // Parented to the spin group so loops ride the rotating surface.
+      this.spinGroup.add(pivot);
+
+      this.prominences.push({ mesh: arc, material, config });
+      this.geometries.push(geometry);
+      this.materials.push(material);
+    });
   }
 
   private addOrbitRing(): void {
@@ -346,8 +565,8 @@ export class CelestialBody {
       this.definition.orbitRadius + ORBIT_THICKNESS,
       ORBIT_SEGMENTS,
     );
-    const material = createSaturnRingMaterial('#9fb3c9', ORBIT_IDLE_OPACITY);
-    material.side = DoubleSide;
+    const material = createOrbitTrailMaterial('#9fb3c9', this.definition.markerColor);
+    material.uniforms.opacity.value = ORBIT_IDLE_OPACITY;
     const ring = new Mesh(geometry, material);
     ring.name = `${this.definition.id}-orbit-ring`;
     ring.renderOrder = -1;
@@ -366,6 +585,11 @@ export class CelestialBody {
       this.definition.ring.innerRadius,
       this.definition.ring.outerRadius,
       ORBIT_SEGMENTS,
+    );
+    applyRadialRingTextureUvs(
+      geometry,
+      this.definition.ring.innerRadius,
+      this.definition.ring.outerRadius,
     );
     const material = createSaturnRingMaterial(
       this.definition.ring.color,

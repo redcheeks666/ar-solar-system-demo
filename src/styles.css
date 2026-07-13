@@ -60,6 +60,26 @@ button {
   background: #050607;
 }
 
+/* 太阳位置向现实画面投出暖光；与视频同级、压在 WebGL 画布下。 */
+.sun-room-glow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  --sun-glow-x: 50%;
+  --sun-glow-y: 50%;
+  background: radial-gradient(
+    circle at var(--sun-glow-x) var(--sun-glow-y),
+    rgba(255, 190, 110, 0.55) 0%,
+    rgba(255, 150, 70, 0.18) 22%,
+    rgba(255, 130, 50, 0) 46%
+  );
+  mix-blend-mode: screen;
+}
+
 .webgl-canvas {
   z-index: 1;
   pointer-events: none;

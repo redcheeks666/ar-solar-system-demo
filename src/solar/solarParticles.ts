@@ -25,6 +25,10 @@ const PARTICLE_RENDER_ORDER = 18;
 const FOCUS_DIM_OPACITY_SCALE = 0.16;
 const PARTICLE_OPENING_START = 0.25;
 const PARTICLE_OPENING_FULL = 0.72;
+const SUCTION_COLLAPSED_SCALE = 0.06;
+const SUCTION_SPIN_MULTIPLIER = 4.2;
+const SUCTION_EASE_IN_SECONDS = 0.55;
+const SUCTION_EASE_OUT_SECONDS = 0.22;
 
 interface ParticleLayer {
   readonly points: Points;
@@ -50,6 +54,8 @@ export class SolarParticleField {
   private baseOpacity = 0;
   private dimTarget = 1;
   private dimCurrent = 1;
+  private closingActive = false;
+  private suctionScale = 1;
 
   constructor(definitions: readonly CelestialBodyDefinition[]) {
     this.root.name = 'solar-particles-root';
@@ -114,9 +120,29 @@ export class SolarParticleField {
       return;
     }
 
-    this.stardustRoot.rotation.z += deltaSeconds * 0.018;
+    // Collapse pulls the whole dust field into the seam like a vortex: the
+    // roots shrink toward the center while spinning up.
+    const suctionTarget = this.closingActive ? SUCTION_COLLAPSED_SCALE : 1;
+    const suctionBlend =
+      1 -
+      Math.exp(
+        -deltaSeconds /
+          (this.closingActive ? SUCTION_EASE_IN_SECONDS : SUCTION_EASE_OUT_SECONDS),
+      );
+    this.suctionScale += (suctionTarget - this.suctionScale) * suctionBlend;
+    this.stardustRoot.scale.setScalar(this.suctionScale);
+    this.trailRoot.scale.setScalar(this.suctionScale);
+    const spinBoost = this.closingActive
+      ? SUCTION_SPIN_MULTIPLIER
+      : 1 + (SUCTION_SPIN_MULTIPLIER - 1) * (1 - this.suctionScale);
+
+    this.stardustRoot.rotation.z += deltaSeconds * 0.018 * spinBoost;
     this.stardustRoot.rotation.y += deltaSeconds * 0.006;
-    this.trailRoot.rotation.z += deltaSeconds * 0.055;
+    this.trailRoot.rotation.z += deltaSeconds * 0.055 * spinBoost;
+  }
+
+  setClosingActive(active: boolean): void {
+    this.closingActive = active;
   }
 
   setState(state: ParticleState): void {

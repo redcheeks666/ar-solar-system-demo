@@ -147,7 +147,7 @@ Work milestone by milestone; make the smallest useful change; inspect existing f
 
 Visual-effects work (materials, textures, lighting, glow, particles, labels, UI polish, performance) sits ON TOP of tested interaction behavior. Do not modify gesture state machines, thresholds, hand pairing, fresh-frame gating, coordinate mapping, opening/release/re-grip/collapse semantics, activation/focus/follow/return semantics, or the object visibility lifecycle unless the user explicitly requests it. If a visual goal appears to require an interaction change, pause and state the proposed change and risk first.
 
-The AE rift boundary halo must stay close to the approved PNG look: keep the dark support pass + additive AE border pass; no extra runtime glow passes, global bloom, independent halo rotation/scale, or autoplaying visual lifecycles without explicit approval.
+The AE rift boundary halo must stay close to the approved PNG look: keep the dark support pass + additive AE border pass; no extra runtime glow passes, global bloom, independent halo rotation/scale, or autoplaying visual lifecycles without explicit approval. Approved 2026-07: the selective bloom pass (`selectiveBloom.ts`, emissive-only layer), rift edge sparks, tear arcs, the sun-positioned DOM room glow, and the autoplaying solar prominence/flare + comet lifecycles.
 
 ### Manual Verification
 

@@ -8,6 +8,7 @@ import {
 import type { Object3D } from 'three';
 import type { RenderFrameSnapshot } from '../utils/types';
 import { BACKGROUND_RENDER_LAYER, MAIN_RENDER_LAYER } from './renderLayers';
+import { SelectiveBloomPipeline } from './selectiveBloom';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
 export const CAMERA_FOV = 45;
@@ -28,11 +29,13 @@ export class TransparentSceneRenderer {
     CAMERA_FAR,
   );
   private readonly renderer: WebGLRenderer;
+  private readonly bloom = new SelectiveBloomPipeline();
   private animationFrameId: number | null = null;
   private lastFrameTime = 0;
   private lastRenderMs: number | null = null;
   private smoothedFps = 0;
   private readonly canvasSize = new Vector2();
+  private readonly drawingBufferSize = new Vector2();
   private readonly resizeObserver: ResizeObserver | null = null;
   private readonly handleResize = (): void => this.resize();
 
@@ -100,7 +103,16 @@ export class TransparentSceneRenderer {
 
     window.removeEventListener('resize', this.handleResize);
     this.resizeObserver?.disconnect();
+    this.bloom.dispose();
     this.renderer.dispose();
+  }
+
+  /**
+   * Skips the bloom passes entirely while no emissive content is on screen
+   * (e.g. empty idle before the solar system opens).
+   */
+  setBloomActive(active: boolean): void {
+    this.bloom.setActive(active);
   }
 
   getCanvasSize(): { width: number; height: number } {
@@ -132,6 +144,7 @@ export class TransparentSceneRenderer {
   private renderScene(): void {
     const originalCameraLayerMask = this.camera.layers.mask;
 
+    this.bloom.renderGlow(this.renderer, this.scene, this.camera);
     this.renderer.clear(true, true, true);
     this.camera.layers.set(BACKGROUND_RENDER_LAYER);
     this.renderer.render(this.scene, this.camera);
@@ -139,6 +152,7 @@ export class TransparentSceneRenderer {
     this.camera.layers.set(MAIN_RENDER_LAYER);
     this.renderer.render(this.scene, this.camera);
     this.camera.layers.mask = originalCameraLayerMask;
+    this.bloom.composite(this.renderer);
   }
 
   private resize(): void {
@@ -150,6 +164,8 @@ export class TransparentSceneRenderer {
       Math.min(window.devicePixelRatio, MAX_DEVICE_PIXEL_RATIO),
     );
     this.renderer.setSize(width, height, false);
+    this.renderer.getDrawingBufferSize(this.drawingBufferSize);
+    this.bloom.setSize(this.drawingBufferSize.x, this.drawingBufferSize.y);
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();

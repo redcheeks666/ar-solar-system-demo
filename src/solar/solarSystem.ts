@@ -17,11 +17,13 @@ import {
   type Camera,
 } from 'three';
 import { clamp01, lerp } from '../utils/math';
+import { AsteroidBelt } from './asteroidBelt';
 import {
   CelestialBody,
   type CelestialBodyRenderState,
   type CelestialBodyInteractionVisualState,
 } from './celestialBody';
+import { CometFlyby } from './cometFlyby';
 import {
   type PreviewLayout,
   estimateWorldRadiusInStagePixels,
@@ -39,10 +41,12 @@ import {
   type CelestialOriginalOrbitTransform,
   type InteractiveCelestialBodyId,
 } from './solarSystemData';
+import { BLOOM_RENDER_LAYER } from '../rendering/renderLayers';
 import { FocusedCelestialBody } from './focusedCelestialBody';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import { SolarParticleField } from './solarParticles';
+import { TearArcField } from './tearArcs';
 import {
   SOLAR_SYSTEM_PREVIEW_TILT_X,
   SOLAR_SYSTEM_PREVIEW_TILT_Y,
@@ -85,6 +89,7 @@ export interface SolarSystemTransform {
 
 const DEFAULT_SCALE = 1;
 const MIN_OPEN_SCALE = 0.08;
+const SUN_LIGHT_BASE_INTENSITY = 7.2;
 const CONTROL_ENDPOINT_RING_INNER_RADIUS = 0.075;
 const CONTROL_ENDPOINT_RING_OUTER_RADIUS = 0.11;
 const CONTROL_ENDPOINT_DOT_RADIUS = 0.025;
@@ -219,6 +224,10 @@ export class CodePlaceholderSolarSystem {
   private readonly openingVfxTextures: Texture[] = [];
   private readonly riftBackdrop = new UniverseRiftBackdrop();
   private readonly particleField = new SolarParticleField(CELESTIAL_BODY_DEFINITIONS);
+  private readonly asteroidBelt = new AsteroidBelt();
+  private readonly cometFlyby = new CometFlyby();
+  private readonly tearArcs = new TearArcField();
+  private sunLight: PointLight | null = null;
   private readonly endpointGeometries: BufferGeometry[] = [];
   private readonly endpointMaterials: Material[] = [];
   private readonly baseScale = new Vector3(DEFAULT_SCALE, DEFAULT_SCALE, DEFAULT_SCALE);
@@ -241,6 +250,8 @@ export class CodePlaceholderSolarSystem {
     this.addControlEndpoints();
     this.addOpeningVfx();
     this.group.add(this.particleField.root);
+    this.group.add(this.asteroidBelt.root);
+    this.group.add(this.cometFlyby.root);
     this.addFocusViewBodies();
     this.applyVisibility();
   }
@@ -253,9 +264,22 @@ export class CodePlaceholderSolarSystem {
     this.bodies.forEach((body) => body.update(deltaSeconds));
     this.riftBackdrop.update(deltaSeconds);
     this.particleField.update(deltaSeconds);
+    this.asteroidBelt.update(deltaSeconds);
+    this.cometFlyby.update(deltaSeconds);
+    this.tearArcs.update(deltaSeconds);
+    this.updateSunFlareLight();
     if (this.focusedBody) {
       this.focusedBodies.get(this.focusedBody)?.update(deltaSeconds, this.group);
     }
+  }
+
+  private updateSunFlareLight(): void {
+    if (!this.sunLight) {
+      return;
+    }
+
+    const flareLevel = this.bodies.get('sun')?.getFlareLevel() ?? 0;
+    this.sunLight.intensity = SUN_LIGHT_BASE_INTENSITY * (1 + 0.5 * flareLevel);
   }
 
   getPerformanceSnapshot(): {
@@ -281,6 +305,7 @@ export class CodePlaceholderSolarSystem {
     }
 
     this.closingActive = active;
+    this.particleField.setClosingActive(active);
     this.applyVisibility();
   }
 
@@ -541,6 +566,9 @@ export class CodePlaceholderSolarSystem {
     this.openingVfxTextures.forEach((texture) => texture.dispose());
     this.riftBackdrop.dispose();
     this.particleField.dispose();
+    this.asteroidBelt.dispose();
+    this.cometFlyby.dispose();
+    this.tearArcs.dispose();
     this.endpointGeometries.length = 0;
     this.endpointMaterials.length = 0;
     this.openingVfxMaterials.length = 0;
@@ -549,11 +577,12 @@ export class CodePlaceholderSolarSystem {
 
   private addLights(): void {
     const ambient = new AmbientLight(0xcad7ff, 0.92);
-    const sunLight = new PointLight(0xffd48a, 7.2, 12, 1.4);
+    const sunLight = new PointLight(0xffd48a, SUN_LIGHT_BASE_INTENSITY, 12, 1.4);
     ambient.name = 'placeholder-solar-ambient-light';
     sunLight.name = 'placeholder-solar-sun-light';
     sunLight.position.set(0, 0, 1.2);
     this.group.add(ambient, sunLight);
+    this.sunLight = sunLight;
   }
 
   private createBodies(): void {
@@ -594,6 +623,7 @@ export class CodePlaceholderSolarSystem {
     this.openingVfxGroup.name = 'solar-opening-vfx';
     this.openingVfxGroup.visible = false;
     this.group.add(this.openingVfxGroup);
+    this.openingVfxGroup.add(this.tearArcs.root);
 
     // The tearing crack itself now lives in the rift backdrop shader (aperture
     // animation); sprites only cover punctual radial bursts and hand anchors.
@@ -647,6 +677,7 @@ export class CodePlaceholderSolarSystem {
     sprite.name = name;
     sprite.renderOrder = OPENING_VFX_RENDER_ORDER;
     sprite.visible = false;
+    sprite.layers.enable(BLOOM_RENDER_LAYER);
     this.openingVfxGroup.add(sprite);
     this.openingVfxSprites.set(key, { sprite, material });
     this.openingVfxMaterials.push(material);
@@ -766,11 +797,15 @@ export class CodePlaceholderSolarSystem {
   }
 
   private applyParticleState(): void {
-    this.particleField.setState({
+    const state = {
       visibleRequested: this.visibleRequested,
       openingProgress: this.openingProgress,
       focusDimmed: Boolean(this.focusedBody),
-    });
+    };
+
+    this.particleField.setState(state);
+    this.asteroidBelt.setState(state);
+    this.cometFlyby.setState(state);
   }
 
   private applyOpeningVfx(): void {
@@ -783,8 +818,19 @@ export class CodePlaceholderSolarSystem {
         sprite.visible = false;
         material.opacity = 0;
       });
+      this.tearArcs.setIntensity(0);
       return;
     }
+
+    // Arcs crackle while the hands are actively tearing (early opening) or
+    // collapsing the rift, and vanish once the system settles open.
+    this.tearArcs.setIntensity(
+      this.closingActive
+        ? smoothProgressRange(1 - progress, 0.02, 0.22) *
+            smoothProgressRange(progress, 0.03, 0.1)
+        : smoothProgressRange(progress, 0.02, 0.12) *
+            (1 - smoothProgressRange(progress, 0.55, 0.82)),
+    );
 
     const riftScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.28);
     const anchorScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.32);

@@ -34,6 +34,7 @@ import { DebugOverlay } from './rendering/debugOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { INTERACTION_PLANE_Z, TransparentSceneRenderer } from './rendering/scene';
+import { SunRoomGlow } from './rendering/sunRoomGlow';
 import { FOCUS_BODY_WORLD_Z } from './solar/focusedCelestialBody';
 import { CodePlaceholderSolarSystem } from './solar/solarSystem';
 import {
@@ -43,6 +44,7 @@ import {
 import { MediaPipeTrackingController } from './tracking/mediapipe';
 import {
   mapStagePixelToWorld,
+  mapWorldToStagePixel,
   type PreviewLayout,
 } from './interaction/coordinateMapping';
 import type {
@@ -73,6 +75,7 @@ const planetFocusSwitchButton = getElement<HTMLButtonElement>(
 const planetFocusSwitchLabel = getElement<HTMLElement>(
   'planet-focus-switch-label',
 );
+const sunRoomGlow = getElement<HTMLElement>('sun-room-glow');
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
@@ -84,6 +87,7 @@ const placeholderSolarSystem = new CodePlaceholderSolarSystem();
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
 const statusSummary = new InteractionStatusSummary(interactionSummary);
 const landmarkOverlay = new LandmarkOverlay(landmarkCanvas, videoElement);
+const sunRoomGlowEffect = new SunRoomGlow(sunRoomGlow);
 const tracking = new MediaPipeTrackingController();
 const handPrimitives = new HandPrimitiveController();
 const gestureCalibration = new GestureCalibrationController();
@@ -251,6 +255,8 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
   const solarUpdateStartedAt = performance.now();
   placeholderSolarSystem.update(deltaSeconds);
   lastSolarUpdateMs = performance.now() - solarUpdateStartedAt;
+  renderer.setBloomActive(placeholderSolarSystem.group.visible);
+  updateSunRoomGlow(canvasSize, deltaSeconds);
   completeBodyReturnIfReady();
 
   debugSnapshot.fps = fps;
@@ -294,6 +300,7 @@ startButton.addEventListener('click', () => {
 window.addEventListener('beforeunload', () => {
   stopCamera(activeStream);
   tracking.dispose();
+  sunRoomGlowEffect.reset();
   handPrimitives.reset();
   gestureCalibration.reset();
   wholeSystemIntent.reset();
@@ -485,6 +492,40 @@ function getElement<T extends HTMLElement>(id: string): T {
   }
 
   return element as T;
+}
+
+function updateSunRoomGlow(
+  canvasSize: { width: number; height: number },
+  deltaSeconds: number,
+): void {
+  // The dev-only static preview has no camera feed to light.
+  if (solarPreviewEnabled || cameraStatus !== 'granted') {
+    return;
+  }
+
+  const solarVisible = placeholderSolarSystem.group.visible;
+  const reveal = solarVisible ? debugSnapshot.openProgress : 0;
+  let sunStagePosition: { x: number; y: number } | null = null;
+
+  if (solarVisible && reveal > 0.3) {
+    const projected = mapWorldToStagePixel(
+      placeholderSolarSystem.group.position,
+      createPreviewLayout(canvasSize),
+      renderer.getCamera(),
+    );
+
+    if (projected?.visible) {
+      sunStagePosition = { x: projected.x, y: projected.y };
+    }
+  }
+
+  sunRoomGlowEffect.update({
+    reveal,
+    focusActive: isFocusVisualState(interaction.state),
+    sunStagePosition,
+    stageSize: canvasSize,
+    deltaSeconds,
+  });
 }
 
 function updatePreviewDebugMetrics(): void {

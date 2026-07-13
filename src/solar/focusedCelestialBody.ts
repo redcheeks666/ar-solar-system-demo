@@ -7,6 +7,7 @@ import {
   Material,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
   Quaternion,
   RingGeometry,
   ShaderMaterial,
@@ -14,6 +15,7 @@ import {
   Texture,
   Vector3,
 } from 'three';
+import { BLOOM_RENDER_LAYER } from '../rendering/renderLayers';
 import { CAMERA_FOV, CAMERA_Z } from '../rendering/scene';
 import { clamp, inverseLerp, lerp } from '../utils/math';
 import {
@@ -28,6 +30,7 @@ import {
 } from './focusPlanetProfiles';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { createSaturnRingMaterial, createUnlitPlaceholderBodyMaterial } from './proceduralMaterials';
+import { applyRadialRingTextureUvs } from './ringTextureMapping';
 import type { TextureAsset } from './solarAssetManifest';
 import type {
   CelestialBodyDefinition,
@@ -76,6 +79,8 @@ export class FocusedCelestialBody {
   private transitionSourceWorldScale = 1;
   private transitionTargetWorldScale: number;
   private scaleMultiplier = 1;
+  private introStreakMesh: Mesh | null = null;
+  private introStreakMaterial: ShaderMaterial | null = null;
   private disposed = false;
 
   constructor(readonly definition: CelestialBodyDefinition) {
@@ -92,6 +97,7 @@ export class FocusedCelestialBody {
 
     this.addBodyMesh();
     this.addPlanetRing();
+    this.addIntroStreaks();
   }
 
   update(deltaSeconds: number, parent: Group): void {
@@ -114,7 +120,29 @@ export class FocusedCelestialBody {
       );
     }
 
+    this.updateIntroStreaks();
     this.applyScreenCenteredLayout(parent);
+  }
+
+  private updateIntroStreaks(): void {
+    if (!this.introStreakMesh || !this.introStreakMaterial) {
+      return;
+    }
+
+    const introActive =
+      this.transitionKind === 'intro' &&
+      this.transitionElapsedSeconds < this.transitionDurationSeconds;
+    this.introStreakMesh.visible = introActive;
+
+    if (!introActive) {
+      return;
+    }
+
+    const progress =
+      this.transitionElapsedSeconds / this.transitionDurationSeconds;
+    this.introStreakMaterial.uniforms.progress.value = progress;
+    this.introStreakMaterial.uniforms.opacity.value =
+      Math.sin(progress * Math.PI) * 0.85;
   }
 
   setVisible(visible: boolean): void {
@@ -469,6 +497,35 @@ export class FocusedCelestialBody {
     this.materials.push(material);
   }
 
+  private addIntroStreaks(): void {
+    const size = this.definition.radius * 7;
+    const geometry = new PlaneGeometry(size, size);
+    const material = new ShaderMaterial({
+      uniforms: {
+        progress: { value: 0 },
+        opacity: { value: 0 },
+      },
+      vertexShader: INTRO_STREAK_VERTEX_SHADER,
+      fragmentShader: INTRO_STREAK_FRAGMENT_SHADER,
+      blending: AdditiveBlending,
+      transparent: true,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const mesh = new Mesh(geometry, material);
+    mesh.name = `focus-${this.definition.id}-intro-streaks`;
+    // Behind the body along the camera axis; the root is camera-aligned.
+    mesh.position.z = -this.definition.radius * 1.6;
+    mesh.renderOrder = FOCUS_RENDER_ORDER - 1;
+    mesh.visible = false;
+    mesh.layers.enable(BLOOM_RENDER_LAYER);
+    this.root.add(mesh);
+    this.introStreakMesh = mesh;
+    this.introStreakMaterial = material;
+    this.geometries.push(geometry);
+    this.materials.push(material);
+  }
+
   private addOverlaySpinGroup(id: string, speedScale: number): Group {
     const group = new Group();
     group.name = `focus-${this.definition.id}-${id}-spin`;
@@ -517,6 +574,11 @@ export class FocusedCelestialBody {
       this.definition.ring.innerRadius,
       this.definition.ring.outerRadius,
       RING_SEGMENTS,
+    );
+    applyRadialRingTextureUvs(
+      geometry,
+      this.definition.ring.innerRadius,
+      this.definition.ring.outerRadius,
     );
     const material = createSaturnRingMaterial(
       this.definition.ring.color,
@@ -629,8 +691,50 @@ const EARTH_SHADOW_FRAGMENT_SHADER = `
   void main() {
     float lightAmount = dot(normalize(vViewNormal), normalize(lightDirection));
     float darkness = 1.0 - smoothstep(-0.18, 0.48, lightAmount);
-    float alpha = darkness * opacity;
-    gl_FragColor = vec4(shadowColor, alpha);
+    // Keep only a narrow trace of warmth at the day/night boundary.
+    float dawn = exp(-pow((lightAmount - 0.07) / 0.05, 2.0));
+    vec3 color = mix(shadowColor, vec3(1.0, 0.55, 0.28), dawn * 0.25);
+    float alpha = max(darkness * opacity, dawn * 0.08);
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+const INTRO_STREAK_VERTEX_SHADER = `
+  varying vec2 vUv;
+
+  void main() {
+    vUv = uv;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// Radial hyperspace star-streaks rushing outward during the focus intro.
+const INTRO_STREAK_FRAGMENT_SHADER = `
+  uniform float progress;
+  uniform float opacity;
+  varying vec2 vUv;
+
+  float hash(float value) {
+    return fract(sin(value * 127.1) * 43758.5453);
+  }
+
+  void main() {
+    vec2 centered = vUv - 0.5;
+    float dist = length(centered) * 2.0;
+    float angle = atan(centered.y, centered.x);
+    float lane = (angle + 3.14159265) * 10.5;
+    float laneIndex = floor(lane);
+    float laneNoise = hash(laneIndex);
+    float lanePosition = fract(lane);
+    float lineCore = pow(max(1.0 - abs(lanePosition - 0.5) * 2.0, 0.0), 5.0);
+    float travel = fract(dist * 1.35 - progress * 2.4 - laneNoise);
+    float streak = smoothstep(0.5, 1.0, travel);
+    float radialMask = smoothstep(0.24, 0.52, dist) * (1.0 - smoothstep(0.7, 1.0, dist));
+    float alpha = lineCore * streak * radialMask * opacity;
+    vec3 color = mix(vec3(0.6, 0.84, 1.0), vec3(1.0), laneNoise * 0.6);
+
+    gl_FragColor = vec4(color * alpha, alpha);
+    #include <colorspace_fragment>
   }
 `;
 

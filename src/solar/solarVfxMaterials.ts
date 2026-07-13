@@ -2,6 +2,7 @@ import {
   AdditiveBlending,
   BackSide,
   Color,
+  DoubleSide,
   ShaderMaterial,
   SpriteMaterial,
 } from 'three';
@@ -21,6 +22,7 @@ export function createSolarPlasmaMaterial(
     uniforms: {
       time: { value: 0 },
       opacity: { value: 1 },
+      flareBoost: { value: 0 },
       baseColor: { value: new Color(definition.baseColor) },
       hotColor: { value: new Color(definition.accentColor) },
       flareColor: { value: new Color(definition.markerColor) },
@@ -39,6 +41,7 @@ export function createSolarCoronaMaterial(
     uniforms: {
       time: { value: 0 },
       opacity: { value: 0.64 },
+      flareBoost: { value: 0 },
       glowColor: { value: new Color(definition.markerColor) },
       hotColor: { value: new Color(definition.accentColor) },
     },
@@ -48,6 +51,54 @@ export function createSolarCoronaMaterial(
     side: BackSide,
     transparent: true,
     depthTest: false,
+    depthWrite: false,
+  });
+}
+
+/**
+ * Thin fresnel halo shell for overview planets, colored per body so planets
+ * read as atmospheres instead of matte texture balls against the dark rift.
+ */
+export function createAtmosphereRimMaterial(
+  color: string,
+  rimPower: number,
+  intensity: number,
+): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: {
+      opacity: { value: 1 },
+      rimColor: { value: new Color(color) },
+      rimPower: { value: rimPower },
+      intensity: { value: intensity },
+    },
+    vertexShader: SOLAR_CORONA_VERTEX_SHADER,
+    fragmentShader: ATMOSPHERE_RIM_FRAGMENT_SHADER,
+    blending: AdditiveBlending,
+    side: BackSide,
+    transparent: true,
+    depthWrite: false,
+  });
+}
+
+/**
+ * Orbit ring with a fading arc behind the planet. The ring mesh is a child of
+ * the orbit pivot, so the planet always sits at local angle 0 and the gradient
+ * needs no per-frame uniform updates — the pivot rotation carries it.
+ */
+export function createOrbitTrailMaterial(
+  baseColor: string,
+  trailColor: string,
+): ShaderMaterial {
+  return new ShaderMaterial({
+    uniforms: {
+      opacity: { value: 0 },
+      baseColor: { value: new Color(baseColor) },
+      trailColor: { value: new Color(trailColor) },
+    },
+    vertexShader: ORBIT_TRAIL_VERTEX_SHADER,
+    fragmentShader: ORBIT_TRAIL_FRAGMENT_SHADER,
+    side: DoubleSide,
+    transparent: true,
     depthWrite: false,
   });
 }
@@ -73,6 +124,15 @@ export function setSolarVfxTime(
 ): void {
   bundle.plasmaMaterial.uniforms.time.value = timeSeconds;
   bundle.coronaMaterial.uniforms.time.value = timeSeconds;
+}
+
+/** Drives the periodic solar-flare pulse (0 = calm, 1 = flare peak). */
+export function setSolarVfxFlareBoost(
+  bundle: SolarVfxMaterialBundle,
+  level: number,
+): void {
+  bundle.plasmaMaterial.uniforms.flareBoost.value = level;
+  bundle.coronaMaterial.uniforms.flareBoost.value = level;
 }
 
 export function setSolarVfxOpacity(
@@ -101,6 +161,7 @@ const SOLAR_PLASMA_VERTEX_SHADER = `
 const SOLAR_PLASMA_FRAGMENT_SHADER = `
   uniform float time;
   uniform float opacity;
+  uniform float flareBoost;
   uniform vec3 baseColor;
   uniform vec3 hotColor;
   uniform vec3 flareColor;
@@ -152,6 +213,7 @@ const SOLAR_PLASMA_FRAGMENT_SHADER = `
     color += flareColor * filaments * 0.48;
     color += flareColor * pow(rim, 1.8) * 0.55;
     color += hotColor * pow(plasma, 3.0) * 0.35;
+    color += flareColor * flareBoost * (0.3 + 0.5 * plasma + 0.6 * pow(rim, 1.6));
 
     gl_FragColor = vec4(color, opacity);
   }
@@ -172,6 +234,7 @@ const SOLAR_CORONA_VERTEX_SHADER = `
 const SOLAR_CORONA_FRAGMENT_SHADER = `
   uniform float time;
   uniform float opacity;
+  uniform float flareBoost;
   uniform vec3 glowColor;
   uniform vec3 hotColor;
   varying vec3 vNormal;
@@ -180,9 +243,60 @@ const SOLAR_CORONA_FRAGMENT_SHADER = `
   void main() {
     float rim = 1.0 - abs(dot(normalize(vNormal), normalize(vViewDirection)));
     float pulse = 0.82 + 0.18 * sin(time * 1.7 + rim * 9.0);
-    float alpha = smoothstep(0.14, 0.96, pow(rim, 1.45)) * opacity * pulse;
+    float alpha = smoothstep(0.14, 0.96, pow(rim, 1.45)) * opacity * pulse
+      * (1.0 + flareBoost * 0.85);
     vec3 color = mix(hotColor, glowColor, smoothstep(0.0, 1.0, rim));
+    color = mix(color, hotColor, flareBoost * 0.55);
 
     gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+const ATMOSPHERE_RIM_FRAGMENT_SHADER = `
+  uniform float opacity;
+  uniform float rimPower;
+  uniform float intensity;
+  uniform vec3 rimColor;
+  varying vec3 vNormal;
+  varying vec3 vViewDirection;
+
+  void main() {
+    float rim = 1.0 - abs(dot(normalize(vNormal), normalize(vViewDirection)));
+    // Shape into a thin limb band instead of a full halo bubble.
+    float alpha = smoothstep(0.22, 0.9, pow(rim, rimPower)) * intensity * opacity;
+
+    gl_FragColor = vec4(rimColor, alpha);
+  }
+`;
+
+const ORBIT_TRAIL_VERTEX_SHADER = `
+  varying vec2 vLocalPosition;
+
+  void main() {
+    vLocalPosition = position.xy;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const ORBIT_TRAIL_FRAGMENT_SHADER = `
+  uniform float opacity;
+  uniform vec3 baseColor;
+  uniform vec3 trailColor;
+  varying vec2 vLocalPosition;
+
+  void main() {
+    // Planet sits at local angle 0; positive orbit speeds sweep counter-
+    // clockwise, so the freshly-vacated arc lies at small negative angles.
+    float angle = atan(vLocalPosition.y, vLocalPosition.x);
+    float behind = mod(-angle, 6.28318530718);
+    float trail = exp(-behind / 0.62);
+    float head = exp(-behind / 0.085);
+
+    float alpha = min(opacity * (1.0 + trail * 4.2 + head * 2.4), 0.9);
+    vec3 color = mix(baseColor, trailColor, clamp(trail * 1.5, 0.0, 1.0));
+    color += trailColor * head * 0.5;
+
+    gl_FragColor = vec4(color, alpha);
+    #include <colorspace_fragment>
   }
 `;
