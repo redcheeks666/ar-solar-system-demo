@@ -2,6 +2,9 @@ node_modules/
 dist/
 .DS_Store
 
+# MediaPipe 运行时资源由 scripts/sync-mediapipe-assets.mjs 同步生成
+public/mediapipe/
+
 .env
 .env.*
 !.env.example

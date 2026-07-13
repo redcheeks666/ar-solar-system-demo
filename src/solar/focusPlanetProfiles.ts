@@ -2,7 +2,6 @@ import {
   NASA_EARTH_TEXTURES,
   NASA_PLANET_TEXTURES,
   NASA_RING_TEXTURES,
-  SOLAR_FX_TEXTURES,
   type AvailableTextureAsset,
   type TextureAsset,
 } from './solarAssetManifest';
@@ -74,7 +73,6 @@ export interface FocusPlanetProfile {
 
 const SATURN_RING_TEXTURE_CANDIDATES = [
   NASA_RING_TEXTURES.saturn,
-  SOLAR_FX_TEXTURES.saturnRingTexture,
 ] as const satisfies readonly AvailableTextureAsset[];
 
 export const FOCUS_PLANET_PROFILES: Readonly<

@@ -15,6 +15,10 @@ export class InteractionStatusSummary {
   constructor(private readonly container: HTMLElement) {}
 
   update(snapshot: DebugSnapshot): void {
+    if (this.container.hidden) {
+      return;
+    }
+
     const now = performance.now();
 
     if (now - this.lastRenderTime < UPDATE_INTERVAL_MS) {

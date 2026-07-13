@@ -978,9 +978,17 @@ function updatePlanetFocusSwitchButtonVisibility(): void {
   }
 }
 
+let lastPlanetFocusSwitchLabel = '';
+
 function updatePlanetFocusSwitchButtonLabel(): void {
   const targetBody = earthMoonFocusBody === 'earth' ? '月球' : '地球';
   const label = `长按切换${targetBody}视角`;
+
+  if (label === lastPlanetFocusSwitchLabel) {
+    return;
+  }
+
+  lastPlanetFocusSwitchLabel = label;
   planetFocusSwitchLabel.textContent = label;
   planetFocusSwitchButton.setAttribute('aria-label', label);
 }

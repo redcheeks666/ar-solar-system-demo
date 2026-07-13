@@ -107,6 +107,101 @@ type OpeningVfxSpriteName =
   | 'leftAnchorGlow'
   | 'rightAnchorGlow';
 
+type ShockwaveSpriteName = Extract<
+  OpeningVfxSpriteName,
+  'burstRift' | 'cyanShockwave' | 'blueGoldShockwave'
+>;
+
+const SHOCKWAVE_SPRITE_NAMES: readonly ShockwaveSpriteName[] = [
+  'burstRift',
+  'cyanShockwave',
+  'blueGoldShockwave',
+];
+
+interface ShockwaveBeat {
+  readonly fadeIn: readonly [number, number];
+  readonly fadeOut: readonly [number, number];
+  readonly peakOpacity: number;
+  readonly scaleX: readonly [number, number];
+  readonly scaleY: readonly [number, number];
+  readonly scaleRange: readonly [number, number];
+  readonly zOffset: number;
+  /** Closing beats counter the shrinking group scale so rings keep hand-span size. */
+  readonly compensateScale: boolean;
+}
+
+const OPENING_SHOCKWAVE_BEATS: Readonly<
+  Record<ShockwaveSpriteName, ShockwaveBeat>
+> = {
+  burstRift: {
+    fadeIn: [0.62, 0.76],
+    fadeOut: [0.84, 1],
+    peakOpacity: 0.42,
+    scaleX: [0.28, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.46],
+    scaleY: [0.16, 0.54],
+    scaleRange: [0.62, 1],
+    zOffset: 0.014,
+    compensateScale: false,
+  },
+  cyanShockwave: {
+    fadeIn: [0.68, 0.8],
+    fadeOut: [0.86, 1],
+    peakOpacity: 0.34,
+    scaleX: [0.24, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38],
+    scaleY: [0.24, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38],
+    scaleRange: [0.68, 1],
+    zOffset: 0.018,
+    compensateScale: false,
+  },
+  blueGoldShockwave: {
+    fadeIn: [0.74, 0.86],
+    fadeOut: [0.92, 1],
+    peakOpacity: 0.3,
+    scaleX: [0.22, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44],
+    scaleY: [0.22, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44],
+    scaleRange: [0.74, 1],
+    zOffset: 0.02,
+    compensateScale: false,
+  },
+};
+
+// Closing gets its own implosion beats instead of replaying the opening
+// shockwaves in reverse: a shrinking flash plus one inward ring.
+const CLOSING_SHOCKWAVE_BEATS: Readonly<
+  Record<ShockwaveSpriteName, ShockwaveBeat>
+> = {
+  burstRift: {
+    fadeIn: [0.08, 0.18],
+    fadeOut: [0.28, 0.42],
+    peakOpacity: 0.5,
+    scaleX: [0.22, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.5],
+    scaleY: [0.14, 0.5],
+    scaleRange: [0.05, 0.42],
+    zOffset: 0.014,
+    compensateScale: true,
+  },
+  cyanShockwave: {
+    fadeIn: [0.12, 0.24],
+    fadeOut: [0.4, 0.55],
+    peakOpacity: 0.3,
+    scaleX: [0.2, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42],
+    scaleY: [0.2, SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42],
+    scaleRange: [0.1, 0.55],
+    zOffset: 0.018,
+    compensateScale: true,
+  },
+  blueGoldShockwave: {
+    fadeIn: [0, 0.5],
+    fadeOut: [0.5, 1],
+    peakOpacity: 0,
+    scaleX: [1, 1],
+    scaleY: [1, 1],
+    scaleRange: [0, 1],
+    zOffset: 0.02,
+    compensateScale: false,
+  },
+};
+
 interface OpeningVfxSprite {
   readonly sprite: Sprite;
   readonly material: SpriteMaterial;
@@ -693,100 +788,29 @@ export class CodePlaceholderSolarSystem {
 
     const riftScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.28);
     const anchorScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.32);
+    const beats = this.closingActive
+      ? CLOSING_SHOCKWAVE_BEATS
+      : OPENING_SHOCKWAVE_BEATS;
 
-    if (this.closingActive) {
-      // Closing gets its own implosion beats instead of replaying the opening
-      // shockwaves in reverse: a shrinking flash plus one inward ring.
-      this.applyOpeningVfxSprite('burstRift', {
+    SHOCKWAVE_SPRITE_NAMES.forEach((key) => {
+      const beat = beats[key];
+      const compensation = beat.compensateScale ? riftScaleCompensation : 1;
+      const scaleProgress = smoothProgressRange(
+        progress,
+        beat.scaleRange[0],
+        beat.scaleRange[1],
+      );
+
+      this.applyOpeningVfxSprite(key, {
         opacity:
-          smoothProgressRange(progress, 0.08, 0.18) *
-          (1 - smoothProgressRange(progress, 0.28, 0.42)) *
-          0.5,
-        scaleX:
-          lerp(
-            0.22,
-            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.5,
-            smoothProgressRange(progress, 0.05, 0.42),
-          ) * riftScaleCompensation,
-        scaleY:
-          lerp(0.14, 0.5, smoothProgressRange(progress, 0.05, 0.42)) *
-          riftScaleCompensation,
-        z: OPENING_VFX_RIFT_Z + 0.014,
+          smoothProgressRange(progress, beat.fadeIn[0], beat.fadeIn[1]) *
+          (1 - smoothProgressRange(progress, beat.fadeOut[0], beat.fadeOut[1])) *
+          beat.peakOpacity,
+        scaleX: lerp(beat.scaleX[0], beat.scaleX[1], scaleProgress) * compensation,
+        scaleY: lerp(beat.scaleY[0], beat.scaleY[1], scaleProgress) * compensation,
+        z: OPENING_VFX_RIFT_Z + beat.zOffset,
       });
-      this.applyOpeningVfxSprite('cyanShockwave', {
-        opacity:
-          smoothProgressRange(progress, 0.12, 0.24) *
-          (1 - smoothProgressRange(progress, 0.4, 0.55)) *
-          0.3,
-        scaleX:
-          lerp(
-            0.2,
-            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42,
-            smoothProgressRange(progress, 0.1, 0.55),
-          ) * riftScaleCompensation,
-        scaleY:
-          lerp(
-            0.2,
-            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42,
-            smoothProgressRange(progress, 0.1, 0.55),
-          ) * riftScaleCompensation,
-        z: OPENING_VFX_RIFT_Z + 0.018,
-      });
-      this.applyOpeningVfxSprite('blueGoldShockwave', {
-        opacity: 0,
-        scaleX: 1,
-        scaleY: 1,
-        z: OPENING_VFX_RIFT_Z + 0.02,
-      });
-    } else {
-      this.applyOpeningVfxSprite('burstRift', {
-        opacity:
-          smoothProgressRange(progress, 0.62, 0.76) *
-          (1 - smoothProgressRange(progress, 0.84, 1)) *
-          0.42,
-        scaleX: lerp(
-          0.28,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.46,
-          smoothProgressRange(progress, 0.62, 1),
-        ),
-        scaleY: lerp(0.16, 0.54, smoothProgressRange(progress, 0.62, 1)),
-        z: OPENING_VFX_RIFT_Z + 0.014,
-      });
-      this.applyOpeningVfxSprite('cyanShockwave', {
-        opacity:
-          smoothProgressRange(progress, 0.68, 0.8) *
-          (1 - smoothProgressRange(progress, 0.86, 1)) *
-          0.34,
-        scaleX: lerp(
-          0.24,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
-          smoothProgressRange(progress, 0.68, 1),
-        ),
-        scaleY: lerp(
-          0.24,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
-          smoothProgressRange(progress, 0.68, 1),
-        ),
-        z: OPENING_VFX_RIFT_Z + 0.018,
-      });
-      this.applyOpeningVfxSprite('blueGoldShockwave', {
-        opacity:
-          smoothProgressRange(progress, 0.74, 0.86) *
-          (1 - smoothProgressRange(progress, 0.92, 1)) *
-          0.3,
-        scaleX: lerp(
-          0.22,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
-          smoothProgressRange(progress, 0.74, 1),
-        ),
-        scaleY: lerp(
-          0.22,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
-          smoothProgressRange(progress, 0.74, 1),
-        ),
-        z: OPENING_VFX_RIFT_Z + 0.02,
-      });
-    }
+    });
     this.applyOpeningAnchorVfx(
       'leftAnchorGlow',
       -SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X,

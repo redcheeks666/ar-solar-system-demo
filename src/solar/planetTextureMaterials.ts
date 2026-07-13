@@ -2,7 +2,6 @@ import {
   NASA_EARTH_TEXTURES,
   NASA_PLANET_TEXTURES,
   NASA_RING_TEXTURES,
-  SOLAR_FX_TEXTURES,
   type AvailableTextureAsset,
   type TextureAsset,
 } from './solarAssetManifest';
@@ -22,7 +21,6 @@ const OVERVIEW_PLANET_ALBEDO_ASSETS: Partial<Record<CelestialBodyId, TextureAsse
 
 const SATURN_RING_TEXTURE_CANDIDATES = [
   NASA_RING_TEXTURES.saturn,
-  SOLAR_FX_TEXTURES.saturnRingTexture,
 ] as const satisfies readonly AvailableTextureAsset[];
 
 export function getOverviewPlanetAlbedoAsset(

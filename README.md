@@ -18,6 +18,8 @@ npm run typecheck
 npm test
 ```
 
+`npm run dev` / `npm run build` first sync MediaPipe wasm + the hand model into `public/mediapipe/` (gitignored), so tracking runs fully offline after the first sync. NASA master/4k source textures live in `assets-src/` and are not shipped.
+
 URL routes on the dev server:
 
 - `/` — full app with debug UI (Debug toggle, status summary, gesture guidance).
