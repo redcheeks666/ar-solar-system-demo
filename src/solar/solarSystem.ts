@@ -101,8 +101,6 @@ const OPENING_ANCHOR_Z = CONTROL_ENDPOINT_Z_OFFSET + 0.012;
 const OPENING_ANCHOR_GLOW_SIZE = 0.54;
 
 type OpeningVfxSpriteName =
-  | 'thinCrack'
-  | 'energyRift'
   | 'burstRift'
   | 'cyanShockwave'
   | 'blueGoldShockwave'
@@ -131,6 +129,7 @@ export class CodePlaceholderSolarSystem {
   private readonly baseScale = new Vector3(DEFAULT_SCALE, DEFAULT_SCALE, DEFAULT_SCALE);
   private visibleRequested = false;
   private openingProgress = 0;
+  private closingActive = false;
   private focusedBody: InteractiveCelestialBodyId | null = null;
 
   constructor() {
@@ -178,6 +177,15 @@ export class CodePlaceholderSolarSystem {
 
   setOpeningProgress(progress: number): void {
     this.openingProgress = clamp01(progress);
+    this.applyVisibility();
+  }
+
+  setClosingActive(active: boolean): void {
+    if (this.closingActive === active) {
+      return;
+    }
+
+    this.closingActive = active;
     this.applyVisibility();
   }
 
@@ -492,18 +500,8 @@ export class CodePlaceholderSolarSystem {
     this.openingVfxGroup.visible = false;
     this.group.add(this.openingVfxGroup);
 
-    this.addOpeningVfxSprite(
-      'thinCrack',
-      'solar-opening-thin-space-crack',
-      SOLAR_FX_TEXTURES.thinSpaceCrack,
-      '#d7f7ff',
-    );
-    this.addOpeningVfxSprite(
-      'energyRift',
-      'solar-opening-blue-gold-energy-rift',
-      SOLAR_FX_TEXTURES.blueGoldEnergyRift,
-      '#ffffff',
-    );
+    // The tearing crack itself now lives in the rift backdrop shader (aperture
+    // animation); sprites only cover punctual radial bursts and hand anchors.
     this.addOpeningVfxSprite(
       'burstRift',
       'solar-opening-burst-rift',
@@ -664,6 +662,11 @@ export class CodePlaceholderSolarSystem {
       visibleRequested: this.visibleRequested,
       openingProgress: this.openingProgress,
       focusDimmed: Boolean(this.focusedBody),
+      closingActive: this.closingActive,
+      scaleCompensation: getOpeningVfxScaleCompensation(
+        this.openingProgress,
+        0.28,
+      ),
     });
   }
 
@@ -691,85 +694,99 @@ export class CodePlaceholderSolarSystem {
     const riftScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.28);
     const anchorScaleCompensation = getOpeningVfxScaleCompensation(progress, 0.32);
 
-    this.applyOpeningVfxSprite('thinCrack', {
-      opacity:
-        smoothProgressRange(progress, 0.01, 0.25) *
-        (1 - smoothProgressRange(progress, 0.58, 0.78)) *
-        0.95,
-      scaleX:
-        lerp(
-          0.38,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.82,
-          smoothProgressRange(progress, 0.01, 0.28),
-        ) * riftScaleCompensation,
-      scaleY:
-        lerp(0.055, 0.2, smoothProgressRange(progress, 0.01, 0.28)) *
-        riftScaleCompensation,
-      z: OPENING_VFX_RIFT_Z,
-    });
-    this.applyOpeningVfxSprite('energyRift', {
-      opacity:
-        smoothProgressRange(progress, 0.14, 0.34) *
-        (1 - smoothProgressRange(progress, 0.82, 0.98)) *
-        0.88,
-      scaleX:
-        lerp(
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.34,
-          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.92,
-          smoothProgressRange(progress, 0.14, 0.68),
-        ) * riftScaleCompensation,
-      scaleY:
-        lerp(0.18, 0.52, smoothProgressRange(progress, 0.14, 0.68)) *
-        riftScaleCompensation,
-      z: OPENING_VFX_RIFT_Z + 0.006,
-    });
-    this.applyOpeningVfxSprite('burstRift', {
-      opacity:
-        smoothProgressRange(progress, 0.62, 0.76) *
-        (1 - smoothProgressRange(progress, 0.84, 1)) *
-        0.42,
-      scaleX: lerp(
-        0.28,
-        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.46,
-        smoothProgressRange(progress, 0.62, 1),
-      ),
-      scaleY: lerp(0.16, 0.54, smoothProgressRange(progress, 0.62, 1)),
-      z: OPENING_VFX_RIFT_Z + 0.014,
-    });
-    this.applyOpeningVfxSprite('cyanShockwave', {
-      opacity:
-        smoothProgressRange(progress, 0.68, 0.8) *
-        (1 - smoothProgressRange(progress, 0.86, 1)) *
-        0.34,
-      scaleX: lerp(
-        0.24,
-        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
-        smoothProgressRange(progress, 0.68, 1),
-      ),
-      scaleY: lerp(
-        0.24,
-        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
-        smoothProgressRange(progress, 0.68, 1),
-      ),
-      z: OPENING_VFX_RIFT_Z + 0.018,
-    });
-    this.applyOpeningVfxSprite('blueGoldShockwave', {
-      opacity:
-        smoothProgressRange(progress, 0.74, 0.86) *
-        (1 - smoothProgressRange(progress, 0.92, 1)) *
-        0.3,
-      scaleX: lerp(
-        0.22,
-        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
-        smoothProgressRange(progress, 0.74, 1),
-      ),
-      scaleY: lerp(
-        0.22,
-        SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
-        smoothProgressRange(progress, 0.74, 1),
-      ),
-      z: OPENING_VFX_RIFT_Z + 0.02,
-    });
+    if (this.closingActive) {
+      // Closing gets its own implosion beats instead of replaying the opening
+      // shockwaves in reverse: a shrinking flash plus one inward ring.
+      this.applyOpeningVfxSprite('burstRift', {
+        opacity:
+          smoothProgressRange(progress, 0.08, 0.18) *
+          (1 - smoothProgressRange(progress, 0.28, 0.42)) *
+          0.5,
+        scaleX:
+          lerp(
+            0.22,
+            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.5,
+            smoothProgressRange(progress, 0.05, 0.42),
+          ) * riftScaleCompensation,
+        scaleY:
+          lerp(0.14, 0.5, smoothProgressRange(progress, 0.05, 0.42)) *
+          riftScaleCompensation,
+        z: OPENING_VFX_RIFT_Z + 0.014,
+      });
+      this.applyOpeningVfxSprite('cyanShockwave', {
+        opacity:
+          smoothProgressRange(progress, 0.12, 0.24) *
+          (1 - smoothProgressRange(progress, 0.4, 0.55)) *
+          0.3,
+        scaleX:
+          lerp(
+            0.2,
+            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42,
+            smoothProgressRange(progress, 0.1, 0.55),
+          ) * riftScaleCompensation,
+        scaleY:
+          lerp(
+            0.2,
+            SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.42,
+            smoothProgressRange(progress, 0.1, 0.55),
+          ) * riftScaleCompensation,
+        z: OPENING_VFX_RIFT_Z + 0.018,
+      });
+      this.applyOpeningVfxSprite('blueGoldShockwave', {
+        opacity: 0,
+        scaleX: 1,
+        scaleY: 1,
+        z: OPENING_VFX_RIFT_Z + 0.02,
+      });
+    } else {
+      this.applyOpeningVfxSprite('burstRift', {
+        opacity:
+          smoothProgressRange(progress, 0.62, 0.76) *
+          (1 - smoothProgressRange(progress, 0.84, 1)) *
+          0.42,
+        scaleX: lerp(
+          0.28,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.46,
+          smoothProgressRange(progress, 0.62, 1),
+        ),
+        scaleY: lerp(0.16, 0.54, smoothProgressRange(progress, 0.62, 1)),
+        z: OPENING_VFX_RIFT_Z + 0.014,
+      });
+      this.applyOpeningVfxSprite('cyanShockwave', {
+        opacity:
+          smoothProgressRange(progress, 0.68, 0.8) *
+          (1 - smoothProgressRange(progress, 0.86, 1)) *
+          0.34,
+        scaleX: lerp(
+          0.24,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
+          smoothProgressRange(progress, 0.68, 1),
+        ),
+        scaleY: lerp(
+          0.24,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.38,
+          smoothProgressRange(progress, 0.68, 1),
+        ),
+        z: OPENING_VFX_RIFT_Z + 0.018,
+      });
+      this.applyOpeningVfxSprite('blueGoldShockwave', {
+        opacity:
+          smoothProgressRange(progress, 0.74, 0.86) *
+          (1 - smoothProgressRange(progress, 0.92, 1)) *
+          0.3,
+        scaleX: lerp(
+          0.22,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
+          smoothProgressRange(progress, 0.74, 1),
+        ),
+        scaleY: lerp(
+          0.22,
+          SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN * 0.44,
+          smoothProgressRange(progress, 0.74, 1),
+        ),
+        z: OPENING_VFX_RIFT_Z + 0.02,
+      });
+    }
     this.applyOpeningAnchorVfx(
       'leftAnchorGlow',
       -SOLAR_SYSTEM_CONTROL_ENDPOINT_LOCAL_X,

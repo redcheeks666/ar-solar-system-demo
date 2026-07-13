@@ -306,12 +306,13 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
 
     try {
       const openingVfx = solarSystem.group.getObjectByName('solar-opening-vfx');
-      const thinCrack = solarSystem.group.getObjectByName(
-        'solar-opening-thin-space-crack',
+      const riftRoot = solarSystem.group.getObjectByName(
+        'universe-rift-backdrop',
       );
-      const energyRift = solarSystem.group.getObjectByName(
-        'solar-opening-blue-gold-energy-rift',
-      );
+      const starfield = solarSystem.group.getObjectByName(
+        'universe-rift-elliptical-starfield',
+      ) as Mesh;
+      const starfieldUniforms = (starfield.material as ShaderMaterial).uniforms;
       const burstRift = solarSystem.group.getObjectByName(
         'solar-opening-burst-rift',
       );
@@ -331,6 +332,14 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         'visual-right-control-endpoint',
       );
 
+      // The tearing crack now lives in the rift backdrop shader; the old crack
+      // sprites are gone.
+      expect(
+        solarSystem.group.getObjectByName('solar-opening-thin-space-crack'),
+      ).toBeUndefined();
+      expect(
+        solarSystem.group.getObjectByName('solar-opening-blue-gold-energy-rift'),
+      ).toBeUndefined();
       expect(openingVfx?.visible).toBe(false);
 
       solarSystem.setVisible(true);
@@ -341,27 +350,69 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       solarSystem.setOpeningProgress(0.12);
       expect(solarSystem.group.visible).toBe(true);
       expect(openingVfx?.visible).toBe(true);
-      expect(thinCrack?.visible).toBe(true);
+      expect(riftRoot?.visible).toBe(true);
+      const seamApertureY = starfieldUniforms.aperture.value.y as number;
+      expect(seamApertureY).toBeLessThan(0.2);
       expect(leftAnchor?.visible).toBe(true);
       expect(rightAnchor?.visible).toBe(true);
       expect(leftAnchor?.position.x).toBeCloseTo(leftEndpoint?.position.x ?? 0, 5);
       expect(rightAnchor?.position.x).toBeCloseTo(rightEndpoint?.position.x ?? 0, 5);
 
       solarSystem.setOpeningProgress(0.48);
-      expect(energyRift?.visible).toBe(true);
-      expect(energyRift?.scale.x).toBeGreaterThan(0.5);
+      expect(starfieldUniforms.aperture.value.y as number).toBeGreaterThan(
+        seamApertureY,
+      );
 
       solarSystem.setOpeningProgress(0.72);
       expect(burstRift?.visible).toBe(true);
       expect(shockwave?.visible).toBe(true);
 
       solarSystem.setOpeningProgress(1);
-      expect(thinCrack?.visible).toBe(false);
-      expect(energyRift?.visible).toBe(false);
+      expect(starfieldUniforms.aperture.value.x).toBeCloseTo(1, 5);
+      expect(starfieldUniforms.aperture.value.y).toBeCloseTo(1, 5);
+      expect(riftRoot?.scale.x).toBeCloseTo(1, 5);
       expect(burstRift?.visible).toBe(false);
       expect(shockwave?.visible).toBe(false);
       expect(leftAnchor?.visible).toBe(false);
       expect(rightAnchor?.visible).toBe(false);
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
+  it('plays an implosion pulse instead of reversed opening shockwaves while closing', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+
+    try {
+      const burstRift = solarSystem.group.getObjectByName(
+        'solar-opening-burst-rift',
+      );
+      const cyanShockwave = solarSystem.group.getObjectByName(
+        'solar-opening-cyan-shockwave-ring',
+      );
+      const blueGoldShockwave = solarSystem.group.getObjectByName(
+        'solar-opening-blue-gold-shockwave-ring',
+      );
+
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(1);
+      solarSystem.setClosingActive(true);
+
+      // Passing back through the opening shockwave window must not re-fire it.
+      solarSystem.setOpeningProgress(0.75);
+      expect(burstRift?.visible).toBe(false);
+      expect(cyanShockwave?.visible).toBe(false);
+      expect(blueGoldShockwave?.visible).toBe(false);
+
+      // The implosion beats fire near the end of the collapse instead.
+      solarSystem.setOpeningProgress(0.2);
+      expect(burstRift?.visible).toBe(true);
+      expect(cyanShockwave?.visible).toBe(true);
+      expect(blueGoldShockwave?.visible).toBe(false);
+
+      solarSystem.setOpeningProgress(0.02);
+      expect(burstRift?.visible).toBe(false);
+      expect(cyanShockwave?.visible).toBe(false);
     } finally {
       solarSystem.dispose();
     }
@@ -413,6 +464,10 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         activatedBody: 'earth',
         focusedBody: 'earth',
       });
+      // The focus dim eases in over time instead of snapping.
+      const preEaseOpacity = whiteStardust.material.opacity;
+      solarSystem.update(1);
+      expect(preEaseOpacity).toBeGreaterThan(whiteStardust.material.opacity);
       expect(whiteStardust.material.opacity).toBeLessThan(openingOpacity);
     } finally {
       solarSystem.dispose();
@@ -463,6 +518,8 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         activatedBody: 'earth',
         focusedBody: 'earth',
       });
+      // The focus dim eases in over update time instead of snapping.
+      solarSystem.update(1);
       expect(starfieldMaterial.uniforms.opacity.value as number).toBeLessThan(
         overviewOpacity,
       );

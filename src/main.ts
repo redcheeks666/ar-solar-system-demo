@@ -76,8 +76,10 @@ const planetFocusSwitchLabel = getElement<HTMLElement>(
 
 const interaction = new InteractionStateMachine();
 const renderer = new TransparentSceneRenderer(canvasElement);
-const solarPreviewEnabled =
-  new URLSearchParams(window.location.search).get('solarPreview') === '1';
+const urlParams = new URLSearchParams(window.location.search);
+const solarPreviewEnabled = urlParams.get('solarPreview') === '1';
+// 纯演示模式：隐藏右上角 Debug 按钮与状态说明卡，以及底部手势提示文字。
+const demoModeEnabled = urlParams.get('demo') === '1';
 const placeholderSolarSystem = new CodePlaceholderSolarSystem();
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
 const statusSummary = new InteractionStatusSummary(interactionSummary);
@@ -129,6 +131,11 @@ if (solarPreviewEnabled) {
   });
   introPanel.hidden = true;
   guidance.hidden = true;
+}
+
+if (demoModeEnabled) {
+  debugToggle.hidden = true;
+  interactionSummary.hidden = true;
 }
 
 const debugSnapshot: DebugSnapshot = {
@@ -338,7 +345,7 @@ async function handleCameraStart(): Promise<void> {
   activeStream = result.stream;
   interaction.transition('EmptyIdle');
   introPanel.hidden = true;
-  guidance.hidden = false;
+  guidance.hidden = demoModeEnabled;
   guidance.textContent = '正在加载姿态与手部识别模型...';
   void initializeTracking();
 }
@@ -573,6 +580,7 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
   debugSnapshot.solarTargetDistance = snapshot.targetDistance;
 
   placeholderSolarSystem.setVisible(snapshot.visible);
+  placeholderSolarSystem.setClosingActive(interaction.state === 'SolarClosing');
   placeholderSolarSystem.setOpeningProgress(snapshot.progress);
 
   if (!snapshot.midpointWorld) {

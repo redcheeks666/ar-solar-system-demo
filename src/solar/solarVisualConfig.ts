@@ -42,3 +42,17 @@ export const RIFT_EDGE_BREATHE_SPEED = 1.6;
 // Extra glow / boundary wobble while the rift is still being pulled open.
 export const RIFT_EDGE_OPENING_GLOW_BOOST = 0.9;
 export const RIFT_EDGE_OPENING_WOBBLE_BOOST = 1.2;
+
+// Exponential time constant for easing the focus dim in/out instead of snapping.
+export const FOCUS_DIM_EASE_SECONDS = 0.16;
+
+// The rift tear: the shader ellipse grows from a thin seam into the full
+// ellipse as opening progress advances, so the boundary itself is the crack.
+export const RIFT_REVEAL_PROGRESS_START = 0.02;
+export const RIFT_REVEAL_PROGRESS_END = 0.42;
+export const RIFT_APERTURE_HORIZONTAL_START = 0.5;
+export const RIFT_APERTURE_HORIZONTAL_PROGRESS_START = 0.02;
+export const RIFT_APERTURE_HORIZONTAL_PROGRESS_END = 0.6;
+export const RIFT_APERTURE_VERTICAL_START = 0.045;
+export const RIFT_APERTURE_VERTICAL_PROGRESS_START = 0.06;
+export const RIFT_APERTURE_VERTICAL_PROGRESS_END = 0.9;

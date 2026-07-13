@@ -14,3 +14,8 @@ pnpm-debug.log*
 .vscode/
 .idea/
 .claude/
+
+# After Effects 本地工程文件（体积大，不入库；.jsx 脚本仍入库）
+scripts/after-effects/历史项目文件夹/
+scripts/after-effects/**/*.aep
+scripts/after-effects/**/*报告.txt

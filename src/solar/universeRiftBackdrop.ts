@@ -14,6 +14,13 @@ import {
 import { BACKGROUND_RENDER_LAYER } from '../rendering/renderLayers';
 import { clamp01, lerp } from '../utils/math';
 import {
+  FOCUS_DIM_EASE_SECONDS,
+  RIFT_APERTURE_HORIZONTAL_PROGRESS_END,
+  RIFT_APERTURE_HORIZONTAL_PROGRESS_START,
+  RIFT_APERTURE_HORIZONTAL_START,
+  RIFT_APERTURE_VERTICAL_PROGRESS_END,
+  RIFT_APERTURE_VERTICAL_PROGRESS_START,
+  RIFT_APERTURE_VERTICAL_START,
   RIFT_EDGE_BREATHE_SPEED,
   RIFT_EDGE_FEATHER,
   RIFT_EDGE_GLOW_CYAN,
@@ -25,6 +32,8 @@ import {
   RIFT_EDGE_NOISE_SPEED,
   RIFT_EDGE_OPENING_GLOW_BOOST,
   RIFT_EDGE_OPENING_WOBBLE_BOOST,
+  RIFT_REVEAL_PROGRESS_END,
+  RIFT_REVEAL_PROGRESS_START,
   SOLAR_SYSTEM_PREVIEW_TILT_X,
   SOLAR_SYSTEM_PREVIEW_TILT_Y,
   UNIVERSE_RIFT_BACKGROUND_OPACITY,
@@ -64,6 +73,8 @@ interface RiftState {
   readonly visibleRequested: boolean;
   readonly openingProgress: number;
   readonly focusDimmed: boolean;
+  readonly closingActive: boolean;
+  readonly scaleCompensation: number;
 }
 
 interface RiftPerformanceSnapshot {
@@ -83,6 +94,9 @@ export class UniverseRiftBackdrop {
   private readonly geometries: PlaneGeometry[] = [];
   private readonly materials: ShaderMaterial[] = [];
   private elapsedSeconds = 0;
+  private reveal = 0;
+  private dimTarget = 1;
+  private dimCurrent = 1;
 
   constructor() {
     this.root.name = 'universe-rift-backdrop';
@@ -103,28 +117,72 @@ export class UniverseRiftBackdrop {
   }
 
   update(deltaSeconds = 0): void {
-    // The rift is a child of the solar-system group and shares its transform, so its
-    // widest left/right points stay locked to the hand-attached control endpoints.
     this.elapsedSeconds += deltaSeconds;
     this.backgroundMaterial.uniforms.time.value = this.elapsedSeconds;
+
+    const blend = 1 - Math.exp(-deltaSeconds / FOCUS_DIM_EASE_SECONDS);
+    this.dimCurrent += (this.dimTarget - this.dimCurrent) * blend;
+    this.applyOpacity();
   }
 
   setState(state: RiftState): void {
-    const reveal =
+    this.reveal =
       state.visibleRequested && state.openingProgress > 0.01
-        ? smoothProgressRange(state.openingProgress, 0.03, 0.78)
+        ? smoothProgressRange(
+            state.openingProgress,
+            RIFT_REVEAL_PROGRESS_START,
+            RIFT_REVEAL_PROGRESS_END,
+          )
         : 0;
-    const dimScale = state.focusDimmed ? FOCUS_DIM_OPACITY_SCALE : 1;
-    const opacityScale = reveal * dimScale;
+    this.dimTarget = state.focusDimmed ? FOCUS_DIM_OPACITY_SCALE : 1;
+    if (this.reveal <= 0) {
+      // Fresh open must not inherit a half-eased dim from the previous session.
+      this.dimCurrent = this.dimTarget;
+    }
+    this.applyOpacity();
 
-    this.root.visible = opacityScale > 0.005;
-    // No independent scale: the rift shares the solar-system group's transform so its
-    // left/right widest points stay aligned with the control endpoints.
-    this.backgroundMaterial.uniforms.opacity.value = opacityScale;
-    // Edge stays hot and turbulent while the hands are still tearing it open,
-    // then settles into a calm breathing rim once fully revealed.
-    this.backgroundMaterial.uniforms.openingEnergy.value =
+    // The shader ellipse is the crack itself: it tears open from a thin seam
+    // into the full ellipse as the hands pull, and collapses back on closing.
+    const aperture = this.backgroundMaterial.uniforms.aperture.value as Vector2;
+    aperture.set(
+      lerp(
+        RIFT_APERTURE_HORIZONTAL_START,
+        1,
+        smoothProgressRange(
+          state.openingProgress,
+          RIFT_APERTURE_HORIZONTAL_PROGRESS_START,
+          RIFT_APERTURE_HORIZONTAL_PROGRESS_END,
+        ),
+      ),
+      lerp(
+        RIFT_APERTURE_VERTICAL_START,
+        1,
+        smoothProgressRange(
+          state.openingProgress,
+          RIFT_APERTURE_VERTICAL_PROGRESS_START,
+          RIFT_APERTURE_VERTICAL_PROGRESS_END,
+        ),
+      ),
+    );
+
+    // Counter the group's opening scale the same way the opening sprites do, so
+    // the seam reads at hand-span size early on. The factor is exactly 1 once
+    // fully open, keeping the rim aligned with the control endpoints.
+    this.root.scale.setScalar(state.scaleCompensation);
+
+    // Edge stays hot and turbulent while the hands are still tearing it open or
+    // collapsing it shut, and settles into a calm breathing rim once revealed.
+    const openingEnergy =
       1 - smoothProgressRange(state.openingProgress, 0.72, 0.98);
+    this.backgroundMaterial.uniforms.openingEnergy.value = state.closingActive
+      ? 1
+      : openingEnergy;
+  }
+
+  private applyOpacity(): void {
+    const opacityScale = this.reveal * this.dimCurrent;
+    this.root.visible = opacityScale > 0.005;
+    this.backgroundMaterial.uniforms.opacity.value = opacityScale;
   }
 
   dispose(): void {
@@ -148,6 +206,7 @@ function createRiftEdgeMaterial(texture: CanvasTexture): ShaderMaterial {
       time: { value: 0 },
       opacity: { value: 0 },
       openingEnergy: { value: 1 },
+      aperture: { value: new Vector2(1, 1) },
       ellipseRadii: { value: new Vector2(ELLIPSE_RADIUS_U, ELLIPSE_RADIUS_V) },
       planeAspect: { value: RIFT_CANVAS_ASPECT_RATIO },
       edgeFeather: { value: RIFT_EDGE_FEATHER },
@@ -185,6 +244,7 @@ const RIFT_EDGE_FRAGMENT_SHADER = `
   uniform float time;
   uniform float opacity;
   uniform float openingEnergy;
+  uniform vec2 aperture;
   uniform vec2 ellipseRadii;
   uniform float planeAspect;
   uniform float edgeFeather;
@@ -234,13 +294,18 @@ const RIFT_EDGE_FRAGMENT_SHADER = `
   void main() {
     // Work in plane-width units so band thickness is uniform around the rim.
     vec2 centered = vec2(vUv.x - 0.5, (vUv.y - 0.5) * planeAspect);
-    vec2 normalized = centered / ellipseRadii;
+    vec2 radii = ellipseRadii * aperture;
+    vec2 normalized = centered / radii;
     float radial = length(normalized);
     vec2 rimDirection = radial > 0.0001 ? normalized / radial : vec2(1.0, 0.0);
-    float gradientLength = length(rimDirection / ellipseRadii);
+    float gradientLength = length(rimDirection / radii);
     float signedDistance = (radial - 1.0) / max(gradientLength, 0.0001);
 
-    float wobbleAmp = noiseAmplitude * (1.0 + openingWobbleBoost * openingEnergy);
+    // Damp the wobble while the aperture is still a thin seam so the crack
+    // stays a coherent line instead of noise soup.
+    float seamDamp = mix(0.3, 1.0, aperture.y);
+    float wobbleAmp = noiseAmplitude * seamDamp
+      * (1.0 + openingWobbleBoost * openingEnergy);
     vec2 flow = rimDirection * noiseScale
       + vec2(time * noiseSpeed, -time * noiseSpeed * 0.6);
     float ripple = (fbm(flow) - 0.48) * 2.0;

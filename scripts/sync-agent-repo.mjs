@@ -14,8 +14,6 @@ const agentRoot = resolve(
 
 const docsToSnapshot = [
   "AGENTS.md",
-  "TODO.md",
-  "TODO.zh-CN.md",
   "ar_solar_system_prd.md",
   "README.md",
   "package.json",

@@ -11,6 +11,7 @@ import { clamp01, lerp } from '../utils/math';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import type { CelestialBodyDefinition } from './solarSystemData';
+import { FOCUS_DIM_EASE_SECONDS } from './solarVisualConfig';
 import { loadTexture } from './textureAssets';
 
 export const SOLAR_PARTICLE_COUNT = 420;
@@ -46,6 +47,9 @@ export class SolarParticleField {
   private readonly geometries: BufferGeometry[] = [];
   private readonly materials: PointsMaterial[] = [];
   private readonly textures: Texture[] = [];
+  private baseOpacity = 0;
+  private dimTarget = 1;
+  private dimCurrent = 1;
 
   constructor(definitions: readonly CelestialBodyDefinition[]) {
     this.root.name = 'solar-particles-root';
@@ -102,6 +106,10 @@ export class SolarParticleField {
   }
 
   update(deltaSeconds: number): void {
+    const blend = 1 - Math.exp(-deltaSeconds / FOCUS_DIM_EASE_SECONDS);
+    this.dimCurrent += (this.dimTarget - this.dimCurrent) * blend;
+    this.applyOpacity();
+
     if (!this.root.visible) {
       return;
     }
@@ -112,7 +120,7 @@ export class SolarParticleField {
   }
 
   setState(state: ParticleState): void {
-    const baseOpacity =
+    this.baseOpacity =
       state.visibleRequested && state.openingProgress > PARTICLE_OPENING_START
         ? smoothProgressRange(
             state.openingProgress,
@@ -120,8 +128,16 @@ export class SolarParticleField {
             PARTICLE_OPENING_FULL,
           )
         : 0;
-    const dimScale = state.focusDimmed ? FOCUS_DIM_OPACITY_SCALE : 1;
-    const opacityScale = baseOpacity * dimScale;
+    this.dimTarget = state.focusDimmed ? FOCUS_DIM_OPACITY_SCALE : 1;
+    if (this.baseOpacity <= 0) {
+      // A fresh reveal must not inherit a half-eased dim from the last session.
+      this.dimCurrent = this.dimTarget;
+    }
+    this.applyOpacity();
+  }
+
+  private applyOpacity(): void {
+    const opacityScale = this.baseOpacity * this.dimCurrent;
 
     this.root.visible = opacityScale > 0.01;
     this.layers.forEach((layer) => {
