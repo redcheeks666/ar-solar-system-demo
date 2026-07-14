@@ -23,7 +23,7 @@ npm test
 URL routes on the dev server:
 
 - `/` — full app with debug UI (Debug toggle, status summary, gesture guidance).
-- `/?demo=1` — presentation mode: same interactions, no debug UI or bottom guidance text.
+- `/?demo=1` — presentation mode: same interactions, a title-only current-operation HUD, no full debug UI or bottom guidance, plus a 0.5s index-fingertip hold card that toggles the hand skeleton.
 - `/?solarPreview=1` — dev-only static solar-system visual preview (no camera/gestures).
 
 ## Manual Camera Check
@@ -32,3 +32,4 @@ URL routes on the dev server:
 2. Confirm the webcam appears as a complete mirrored 16:9 preview with no visible 3D content.
 3. Bring both hands together anywhere in frame, then pull them apart — the solar system should open between the hands.
 4. Toggle `Debug` to inspect tracking state, interaction state, and performance values.
+5. Open `/?demo=1`: confirm the compact HUD shows only the current operation, then hold an index fingertip on the hand-model card for 0.5s to show/hide the hand skeleton.

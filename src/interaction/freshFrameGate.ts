@@ -1,10 +1,10 @@
 /**
  * Fresh-tracking-frame gate.
  *
- * The render loop runs faster than MediaPipe detection (requestAnimationFrame ~60fps vs
- * detection ~30fps). `MediaPipeTrackingController.update()` returns the previous snapshot when
- * called inside the detection interval, so its `lastUpdatedAt` only advances on a real new
- * detection. Without this gate, interaction controllers would re-consume the same hand
+ * The render loop runs independently from MediaPipe detection. The tracking Worker publishes
+ * completed snapshots asynchronously, so `MediaPipeTrackingController.update()` usually returns
+ * the previous result and `lastUpdatedAt` advances only on a genuinely new detection. Without
+ * this gate, interaction controllers would re-consume the same hand
  * positions with an advancing render timestamp, injecting fake zero-velocity frames into
  * distance / finger-spread / pan velocity — exactly the features the gestures rely on.
  *

@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { GestureDebugRecorder } from '../../src/interaction/gestureDebugRecorder';
-import type { DebugSnapshot, TrackingSnapshot } from '../../src/utils/types';
+import {
+  captureReplayCamera,
+  GestureDebugRecorder,
+  type GestureReplayFrameContext,
+} from '../../src/interaction/gestureDebugRecorder';
+import { EMPTY_PLANET_RETURN_WAVE_SNAPSHOT } from '../../src/interaction/planetReturnWave';
+import type {
+  DebugSnapshot,
+  TrackedHand,
+  TrackingSnapshot,
+} from '../../src/utils/types';
+import { createHand, point } from '../helpers/syntheticHands';
+import { TEST_LAYOUT, createTestCamera } from '../helpers/testCamera';
 
-function trackingSnapshot(): TrackingSnapshot {
+function trackingSnapshot(hands: TrackedHand[] = []): TrackingSnapshot {
   return {
     status: 'ready',
     error: null,
@@ -14,13 +25,64 @@ function trackingSnapshot(): TrackingSnapshot {
       lastUpdatedAt: null,
     },
     hands: {
-      detectedHands: 0,
-      left: null,
-      right: null,
-      hands: [],
-      lastUpdatedAt: null,
+      detectedHands: hands.length,
+      left: hands.find((hand) => hand.side === 'left') ?? null,
+      right: hands.find((hand) => hand.side === 'right') ?? null,
+      hands,
+      lastUpdatedAt: 1000,
     },
-    lastUpdatedAt: null,
+    lastUpdatedAt: 1000,
+  };
+}
+
+function replayContext(): GestureReplayFrameContext {
+  return {
+    solar: {
+      interactionState: 'SolarFreeHover',
+      layout: TEST_LAYOUT,
+      camera: captureReplayCamera(createTestCamera()),
+      planeZ: 0,
+      snapshot: {
+        active: true,
+        visible: true,
+        progress: 1,
+        scale: 0.6,
+        reason: 'solar-active-waiting-for-both-endpoints',
+        leftWorld: null,
+        rightWorld: null,
+        midpointWorld: { x: 0, y: 0, z: 0 },
+        normalizedDistance: 0.5,
+        startDistance: 0.2,
+        targetDistance: 0.6,
+      },
+      endpoint: {
+        mode: 'enter',
+        reason: 'outside-enter-radius',
+        handLeftWorld: null,
+        handRightWorld: null,
+        referenceLeftWorld: null,
+        referenceRightWorld: null,
+        leftDistanceWorld: null,
+        rightDistanceWorld: null,
+        radiusWorld: 0.5,
+        score: 0,
+        bothWithinRadius: false,
+        stableMs: 0,
+        stableRequiredMs: 500,
+      },
+    },
+    planetFocus: {
+      interactionState: 'PlanetFocusControlled',
+      focusedBody: 'earth',
+      target: {
+        id: 'earth',
+        screenPosition: { x: 640, y: 360 },
+        visible: true,
+        bodyRadiusPx: 100,
+        hitRadiusPx: 150,
+        layout: TEST_LAYOUT,
+      },
+    },
   };
 }
 
@@ -77,18 +139,31 @@ function debugSnapshot(): DebugSnapshot {
       pinchDistancePx: 88,
       pinchRatio: 0.52,
       pinchTapHandKey: null,
-      returnGestureMs: 0,
-      returnGestureRequiredMs: 0,
-      returnGestureScore: 0,
-      returnGestureHandKey: null,
       transitionReason: 'single-hand-following',
+    },
+    planetReturnWave: {
+      ...EMPTY_PLANET_RETURN_WAVE_SNAPSHOT,
+      state: 'Sweeping',
+      handKey: 'right-0',
+      elapsedMs: 132,
+      stableFrames: 5,
+      displacement: 0.18,
+      medianSpeed: 1.1,
+      coherence: 0.96,
+      openHandScore: 0.68,
+      palmScaleRatio: 1.08,
+      score: 0.9,
+      reason: 'sweep-displacement-too-small',
     },
     performance: {
       detectMs: 48,
       handDetectMs: 48,
       poseDetectMs: 0,
+      workerRoundTripMs: 52,
+      handDelegate: 'GPU',
       trackingHz: 20,
       detectionFrameCount: 1,
+      droppedVideoFrameCount: 0,
       repeatedVideoFrameCount: 0,
       videoCurrentTimeMs: 1000,
       videoFrameDeltaMs: 33.3,
@@ -117,7 +192,7 @@ describe('GestureDebugRecorder', () => {
     const recorder = new GestureDebugRecorder();
 
     recorder.toggle();
-    recorder.record(1000, trackingSnapshot(), debugSnapshot());
+    recorder.record(1000, trackingSnapshot(), debugSnapshot(), replayContext());
 
     const frames = recordedFrames(recorder);
     expect(frames).toHaveLength(1);
@@ -129,14 +204,69 @@ describe('GestureDebugRecorder', () => {
         dwellMs: 1000,
         transitionReason: 'single-hand-following',
       },
+      planetReturnWave: {
+        state: 'Sweeping',
+        handKey: 'right-0',
+        stableFrames: 5,
+        displacement: 0.18,
+        medianSpeed: 1.1,
+        coherence: 0.96,
+      },
+      replay: {
+        solar: {
+          interactionState: 'SolarFreeHover',
+          endpoint: {
+            stableRequiredMs: 500,
+          },
+        },
+      },
     });
+  });
+
+  it('exports schema v3 replay inputs and metric world landmarks without camera pixels', () => {
+    const recorder = new GestureDebugRecorder();
+    const worldLandmarks = Array.from({ length: 21 }, (_, index) =>
+      point(index / 100, 0.2, -0.01),
+    );
+    const hand = createHand({
+      center: point(0.5, 0.5),
+      spread: 1.2,
+      worldLandmarks,
+    });
+
+    recorder.toggle();
+    recorder.record(
+      1000,
+      trackingSnapshot([hand]),
+      debugSnapshot(),
+      replayContext(),
+    );
+
+    const payload = recorder.createExport('2026-07-14T00:00:00.000Z');
+    expect(payload).toMatchObject({
+      version: 3,
+      frameCount: 1,
+      frames: [
+        {
+          tracking: {
+            hands: [{ worldLandmarks }],
+          },
+          replay: {
+            planetFocus: {
+              focusedBody: 'earth',
+            },
+          },
+        },
+      ],
+    });
+    expect(payload.note).toContain('No raw camera video');
   });
 
   it('starts each recording as a fresh session', () => {
     const recorder = new GestureDebugRecorder();
 
     recorder.toggle();
-    recorder.record(1000, trackingSnapshot(), debugSnapshot());
+    recorder.record(1000, trackingSnapshot(), debugSnapshot(), replayContext());
     expect(recorder.getStatus().frameCount).toBe(1);
 
     recorder.toggle();

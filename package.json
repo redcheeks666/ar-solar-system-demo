@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:unit": "vitest run tests/unit",
     "test:gesture": "vitest run tests/gesture",
+    "test:replay": "vitest run tests/replay",
     "sync:agent": "node scripts/sync-agent-repo.mjs",
     "sync:agent:commit": "node scripts/sync-agent-repo.mjs --commit-agent",
     "sync:agent:push": "node scripts/sync-agent-repo.mjs --commit-agent --push"

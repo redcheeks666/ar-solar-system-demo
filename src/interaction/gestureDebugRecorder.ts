@@ -1,9 +1,46 @@
-import type { DebugSnapshot, NormalizedPoint, TrackingSnapshot } from '../utils/types';
+import type { PerspectiveCamera } from 'three';
+import type { PreviewLayout } from './coordinateMapping';
+import type { SolarOpeningSnapshot } from './solarOpeningController';
+import type { FocusedCelestialBodyScreenTarget } from '../solar/solarSystem';
+import type { InteractiveCelestialBodyId } from '../solar/solarSystemData';
+import type {
+  DebugSnapshot,
+  InteractionState,
+  NormalizedPoint,
+  SolarEndpointDebugSnapshot,
+  TrackingSnapshot,
+} from '../utils/types';
 
 const MAX_FRAMES = 1200;
-const EXPORT_SCHEMA_VERSION = 2;
+export const GESTURE_EXPORT_SCHEMA_VERSION = 3;
 
-interface GestureDebugFrame {
+export interface ReplayCameraSnapshot {
+  fov: number;
+  aspect: number;
+  near: number;
+  far: number;
+  zoom: number;
+  position: { x: number; y: number; z: number };
+  quaternion: { x: number; y: number; z: number; w: number };
+}
+
+export interface GestureReplayFrameContext {
+  solar: {
+    interactionState: InteractionState;
+    layout: PreviewLayout;
+    camera: ReplayCameraSnapshot;
+    planeZ: number;
+    snapshot: SolarOpeningSnapshot;
+    endpoint: SolarEndpointDebugSnapshot;
+  };
+  planetFocus: {
+    interactionState: InteractionState;
+    focusedBody: InteractiveCelestialBodyId;
+    target: FocusedCelestialBodyScreenTarget | null;
+  } | null;
+}
+
+export interface GestureDebugFrame {
   t: number;
   tracking: {
     status: string;
@@ -14,6 +51,7 @@ interface GestureDebugFrame {
       palmScale: number;
       center: NormalizedPoint;
       landmarks: NormalizedPoint[];
+      worldLandmarks: NormalizedPoint[] | null;
     }>;
   };
   primitives: DebugSnapshot['handPrimitives'];
@@ -31,7 +69,41 @@ interface GestureDebugFrame {
   wholeSystem: DebugSnapshot['wholeSystem'];
   planetActivation: DebugSnapshot['planetActivation'];
   planetFocus: DebugSnapshot['planetFocus'];
+  /** Additive v3 diagnostic; older v3 recordings omit it but retain all replay inputs. */
+  planetReturnWave?: DebugSnapshot['planetReturnWave'];
   performance: DebugSnapshot['performance'];
+  replay: GestureReplayFrameContext;
+}
+
+export interface GestureDebugExport {
+  version: typeof GESTURE_EXPORT_SCHEMA_VERSION;
+  createdAt: string;
+  frameCount: number;
+  note: string;
+  frames: GestureDebugFrame[];
+}
+
+export function captureReplayCamera(
+  camera: PerspectiveCamera,
+): ReplayCameraSnapshot {
+  return {
+    fov: camera.fov,
+    aspect: camera.aspect,
+    near: camera.near,
+    far: camera.far,
+    zoom: camera.zoom,
+    position: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+    },
+    quaternion: {
+      x: camera.quaternion.x,
+      y: camera.quaternion.y,
+      z: camera.quaternion.z,
+      w: camera.quaternion.w,
+    },
+  };
 }
 
 export class GestureDebugRecorder {
@@ -61,6 +133,7 @@ export class GestureDebugRecorder {
     timestamp: number,
     tracking: TrackingSnapshot,
     snapshot: DebugSnapshot,
+    replay: GestureReplayFrameContext,
   ): void {
     if (!this.recording) {
       return;
@@ -77,6 +150,7 @@ export class GestureDebugRecorder {
           palmScale: round(hand.palmScale),
           center: roundPoint(hand.center),
           landmarks: hand.landmarks.map(roundPoint),
+          worldLandmarks: hand.worldLandmarks?.map(roundPoint) ?? null,
         })),
       },
       primitives: snapshot.handPrimitives,
@@ -94,7 +168,9 @@ export class GestureDebugRecorder {
       wholeSystem: snapshot.wholeSystem,
       planetActivation: snapshot.planetActivation,
       planetFocus: snapshot.planetFocus,
+      planetReturnWave: snapshot.planetReturnWave,
       performance: snapshot.performance,
+      replay,
     };
 
     this.frames.push(frame);
@@ -107,13 +183,7 @@ export class GestureDebugRecorder {
   }
 
   exportJson(): void {
-    const payload = {
-      version: EXPORT_SCHEMA_VERSION,
-      createdAt: new Date().toISOString(),
-      frameCount: this.frames.length,
-      note: 'Structured gesture diagnostics only. Includes focus-controller state; no raw camera video is included.',
-      frames: this.frames,
-    };
+    const payload = this.createExport();
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     });
@@ -127,6 +197,16 @@ export class GestureDebugRecorder {
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 0);
     this.lastEvent = `exported-${this.frames.length}-frames`;
+  }
+
+  createExport(createdAt = new Date().toISOString()): GestureDebugExport {
+    return {
+      version: GESTURE_EXPORT_SCHEMA_VERSION,
+      createdAt,
+      frameCount: this.frames.length,
+      note: 'Structured gesture diagnostics and deterministic controller replay inputs only. No raw camera video is included.',
+      frames: this.frames,
+    };
   }
 
   getStatus(): DebugSnapshot['gestureRecording'] {

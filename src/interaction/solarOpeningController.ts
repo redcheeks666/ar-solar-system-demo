@@ -4,6 +4,8 @@ import type {
   HandPoseIntentSnapshot,
   InteractionState,
   NormalizedPoint,
+  SolarEndpointDebugMode,
+  SolarEndpointDebugSnapshot,
   TrackingSnapshot,
 } from '../utils/types';
 import { clamp, clamp01, inverseLerp } from '../utils/math';
@@ -16,6 +18,9 @@ import { getVisualTrackedHandPair } from './handPairing';
 import { computeHandPoseIntent } from './handPose';
 import { SOLAR_SYSTEM_CONTROL_ENDPOINT_SPAN } from '../solar/solarSystemData';
 import {
+  MAX_VISUAL_WIDTH_ENTER_SCREEN_FRACTION,
+  MAX_VISUAL_WIDTH_EXIT_SCREEN_FRACTION,
+  MAX_VISUAL_WIDTH_STABLE_MS,
   SOLAR_PLACE_DOWN_FIST_SCORE_MIN,
   SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS,
   SOLAR_PLACE_DOWN_OPEN_SCORE_MIN,
@@ -62,8 +67,11 @@ interface SolarOpeningGeometry {
 }
 
 interface EndpointHit {
+  leftEndpoint: Vec3;
+  rightEndpoint: Vec3;
   leftDistance: number;
   rightDistance: number;
+  radius: number;
   score: number;
   withinEnterRadius: boolean;
   withinExitRadius: boolean;
@@ -105,21 +113,31 @@ const TARGET_FRAME_MS = 33.33;
 // Re-grip dwell: both hands must hold the endpoints stably for ~0.5s before
 // SolarActive / SolarFreeHover hands re-acquire SolarHandleControl.
 const ENDPOINT_ENTER_STABLE_MS = 500;
+
+const EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT: SolarEndpointDebugSnapshot = {
+  mode: 'inactive',
+  reason: 'inactive',
+  handLeftWorld: null,
+  handRightWorld: null,
+  referenceLeftWorld: null,
+  referenceRightWorld: null,
+  leftDistanceWorld: null,
+  rightDistanceWorld: null,
+  radiusWorld: null,
+  score: 0,
+  bothWithinRadius: false,
+  stableMs: 0,
+  stableRequiredMs: ENDPOINT_ENTER_STABLE_MS,
+};
 const ENDPOINT_EXIT_GRACE_MS = 180;
 // In SolarHandleControl the opened solar system is hand-attached, so a place-down
 // no longer comes from leaving the endpoints. It comes from a deliberate two-hand
-// fist->open gesture, an auto place-down when the visual width exceeds half the
-// frame, or a fallback when both hands are fully lost for this long.
+// fist->open gesture, a sustained near-edge visual span, or a fallback when both
+// hands are fully lost for this long.
 const HANDLE_HAND_LOSS_RELEASE_MS = 320;
 // Once both hands close into a fist (armed), wait at most this long for them to
 // reopen before discarding the place-down attempt and resuming hand-follow.
 const PLACE_DOWN_ARMED_TIMEOUT_MS = 1600;
-// Auto place-down once the two hands span at least this fraction of the frame
-// width. The control endpoints are hand-attached, so the two-hand screen-x span
-// IS the opened solar system's on-screen visual width. Kept above the pull-open
-// target width (~0.5 of the frame) so completing the opening does not instantly
-// trip the max-width place-down; tune toward 0.5 only if the open target shrinks.
-const MAX_VISUAL_WIDTH_SCREEN_FRACTION = 0.72;
 // After opening completes (SolarActive), if the hands are not holding the endpoints for this long
 // (released or dropped), fall through to SolarFreeHover so the solar system can hover while waiting
 // for endpoint re-grip or reverse collapse.
@@ -146,12 +164,23 @@ export class SolarOpeningController {
   // Non-null once both hands have closed into a fist during SolarHandleControl,
   // holding the place-down "armed" until they reopen (confirm) or it times out.
   private placeDownArmedSince: number | null = null;
+  private maxVisualWidthSince: number | null = null;
   private smoothedOpenProgress = 0;
   private lastRawOpenProgress = 0;
+  private endpointDebug = EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT;
   private readonly scaleFilter = new LowPassNumberFilter(SCALE_SMOOTHING_ALPHA);
   private readonly midpointFilter = new LowPassPointFilter(MIDPOINT_SMOOTHING_ALPHA);
 
   update(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
+    if (input.interactionState !== 'SolarHandleControl') {
+      this.maxVisualWidthSince = null;
+    }
+
+    this.endpointDebug = {
+      ...EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT,
+      reason: `inactive-in-${input.interactionState}`,
+    };
+
     if (input.interactionState === 'PullArmed') {
       return this.updatePullArmed(input);
     }
@@ -202,11 +231,17 @@ export class SolarOpeningController {
     this.endpointMissSince = null;
     this.activeReleaseSince = null;
     this.placeDownArmedSince = null;
+    this.maxVisualWidthSince = null;
     this.smoothedOpenProgress = 0;
     this.lastRawOpenProgress = 0;
+    this.endpointDebug = EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT;
     this.scaleFilter.reset();
     this.midpointFilter.reset();
     this.lastSnapshot = EMPTY_SOLAR_OPENING_SNAPSHOT;
+  }
+
+  getEndpointDebugSnapshot(): SolarEndpointDebugSnapshot {
+    return this.endpointDebug;
   }
 
   private updatePullArmed(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
@@ -363,6 +398,11 @@ export class SolarOpeningController {
 
     if (!geometry) {
       this.endpointHitSince = null;
+      this.endpointDebug = {
+        ...EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT,
+        mode: 'enter',
+        reason: 'missing-hand-geometry',
+      };
       const released = this.tryReleaseToFreeHover(
         input,
         'solar-active-released-to-free-hover-hand-loss',
@@ -387,6 +427,21 @@ export class SolarOpeningController {
 
     if (!endpointHit?.withinEnterRadius) {
       this.endpointHitSince = null;
+      this.endpointDebug = endpointHit
+        ? this.createEndpointDebugSnapshot(
+            geometry,
+            endpointHit,
+            'enter',
+            'outside-enter-radius',
+            0,
+          )
+        : {
+            ...EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT,
+            mode: 'enter',
+            reason: 'missing-endpoint-reference',
+            handLeftWorld: geometry.leftWorld,
+            handRightWorld: geometry.rightWorld,
+          };
       const released = this.tryReleaseToFreeHover(
         input,
         'solar-active-released-to-free-hover',
@@ -410,8 +465,18 @@ export class SolarOpeningController {
 
     this.activeReleaseSince = null;
     this.endpointHitSince ??= input.timestamp;
+    const endpointStableMs = input.timestamp - this.endpointHitSince;
+    this.endpointDebug = this.createEndpointDebugSnapshot(
+      geometry,
+      endpointHit,
+      'enter',
+      endpointStableMs < ENDPOINT_ENTER_STABLE_MS
+        ? 'endpoint-hit-stabilizing'
+        : 'endpoint-hit-stable',
+      endpointStableMs,
+    );
 
-    if (input.timestamp - this.endpointHitSince < ENDPOINT_ENTER_STABLE_MS) {
+    if (endpointStableMs < ENDPOINT_ENTER_STABLE_MS) {
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -502,7 +567,14 @@ export class SolarOpeningController {
       // Fallback place-down: only a sustained full loss of both hands drops to
       // free hover. A one-frame tracking gap keeps the handle.
       this.placeDownArmedSince = null;
+      this.maxVisualWidthSince = null;
       this.endpointMissSince ??= input.timestamp;
+      this.endpointDebug = {
+        ...EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT,
+        mode: 'follow',
+        reason: 'missing-hand-geometry',
+        stableRequiredMs: 0,
+      };
 
       if (input.timestamp - this.endpointMissSince >= HANDLE_HAND_LOSS_RELEASE_MS) {
         this.endpointMissSince = null;
@@ -530,6 +602,26 @@ export class SolarOpeningController {
       };
     }
 
+    const endpointHit = this.computeEndpointHit(geometry, input, 'exit');
+    this.endpointDebug = endpointHit
+      ? this.createEndpointDebugSnapshot(
+          geometry,
+          endpointHit,
+          'follow',
+          endpointHit.withinExitRadius
+            ? 'hands-near-follow-endpoints'
+            : 'hands-away-from-follow-endpoints',
+          0,
+        )
+      : {
+          ...EMPTY_SOLAR_ENDPOINT_DEBUG_SNAPSHOT,
+          mode: 'follow',
+          reason: 'missing-endpoint-reference',
+          handLeftWorld: geometry.leftWorld,
+          handRightWorld: geometry.rightWorld,
+          stableRequiredMs: 0,
+        };
+
     this.endpointMissSince = null;
     this.missingSince = null;
 
@@ -539,6 +631,7 @@ export class SolarOpeningController {
     const placeDown = this.updatePlaceDownGesture(input);
 
     if (placeDown === 'released') {
+      this.maxVisualWidthSince = null;
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -551,10 +644,14 @@ export class SolarOpeningController {
       };
     }
 
-    // Auto place-down: pulled wider than half the frame. Freeze at the last
-    // stable transform so it hovers at the width it had when released.
-    if (this.isBeyondMaxVisualWidth(geometry)) {
+    // Auto place-down: hold a near-frame-edge span stably. A single wide frame
+    // must not flip this important state transition.
+    if (
+      placeDown === 'idle' &&
+      this.updateMaxVisualWidthPlaceDown(geometry, input.timestamp)
+    ) {
       this.placeDownArmedSince = null;
+      this.maxVisualWidthSince = null;
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -569,6 +666,7 @@ export class SolarOpeningController {
 
     if (geometry.normalizedDistance <= input.thresholds.collapseStartDistance) {
       this.placeDownArmedSince = null;
+      this.maxVisualWidthSince = null;
       const snapshot = this.smoothTransform(
         this.createClosingSnapshot(
           geometry,
@@ -600,6 +698,7 @@ export class SolarOpeningController {
     // transform so the clench itself does not drag or rescale the system while
     // we wait for the confirming reopen.
     if (placeDown === 'armed') {
+      this.maxVisualWidthSince = null;
       return {
         snapshot: {
           ...this.lastSnapshot,
@@ -702,13 +801,28 @@ export class SolarOpeningController {
 
   /**
    * The opened system's on-screen visual width is the two-hand screen-x span,
-   * because the left/right control endpoints stay hand-attached. Auto place-down
-   * triggers once that span reaches MAX_VISUAL_WIDTH_SCREEN_FRACTION of the frame.
+   * because the left/right control endpoints stay hand-attached. Enter and exit
+   * thresholds form a deadband so boundary jitter cannot restart the dwell.
    */
-  private isBeyondMaxVisualWidth(geometry: SolarOpeningGeometry): boolean {
+  private updateMaxVisualWidthPlaceDown(
+    geometry: SolarOpeningGeometry,
+    timestamp: number,
+  ): boolean {
     const screenXSpan = Math.abs(geometry.rightCenter.x - geometry.leftCenter.x);
 
-    return screenXSpan >= MAX_VISUAL_WIDTH_SCREEN_FRACTION;
+    if (this.maxVisualWidthSince === null) {
+      if (screenXSpan >= MAX_VISUAL_WIDTH_ENTER_SCREEN_FRACTION) {
+        this.maxVisualWidthSince = timestamp;
+      }
+      return false;
+    }
+
+    if (screenXSpan < MAX_VISUAL_WIDTH_EXIT_SCREEN_FRACTION) {
+      this.maxVisualWidthSince = null;
+      return false;
+    }
+
+    return timestamp - this.maxVisualWidthSince >= MAX_VISUAL_WIDTH_STABLE_MS;
   }
 
   private updateClosing(input: SolarOpeningUpdateInput): SolarOpeningUpdate {
@@ -1040,11 +1154,39 @@ export class SolarOpeningController {
     const score = clamp01(1 - maxDistance / radius);
 
     return {
+      leftEndpoint: endpoints.left,
+      rightEndpoint: endpoints.right,
       leftDistance,
       rightDistance,
+      radius,
       score,
       withinEnterRadius: leftDistance <= radius && rightDistance <= radius,
       withinExitRadius: leftDistance <= radius && rightDistance <= radius,
+    };
+  }
+
+  private createEndpointDebugSnapshot(
+    geometry: SolarOpeningGeometry,
+    hit: EndpointHit,
+    mode: Exclude<SolarEndpointDebugMode, 'inactive'>,
+    reason: string,
+    stableMs: number,
+  ): SolarEndpointDebugSnapshot {
+    return {
+      mode,
+      reason,
+      handLeftWorld: geometry.leftWorld,
+      handRightWorld: geometry.rightWorld,
+      referenceLeftWorld: hit.leftEndpoint,
+      referenceRightWorld: hit.rightEndpoint,
+      leftDistanceWorld: hit.leftDistance,
+      rightDistanceWorld: hit.rightDistance,
+      radiusWorld: hit.radius,
+      score: hit.score,
+      bothWithinRadius:
+        mode === 'enter' ? hit.withinEnterRadius : hit.withinExitRadius,
+      stableMs,
+      stableRequiredMs: mode === 'enter' ? ENDPOINT_ENTER_STABLE_MS : 0,
     };
   }
 

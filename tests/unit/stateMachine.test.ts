@@ -22,4 +22,27 @@ describe('InteractionStateMachine', () => {
     expect(() => fromFreeHover.transition('PlanetActivated')).not.toThrow();
     expect(fromFreeHover.state).toBe('PlanetActivated');
   });
+
+  it('allows return only from passive focus states, never while following', () => {
+    const focusView = createFocusViewStateMachine();
+    expect(() => focusView.transition('BodyReturning')).not.toThrow();
+
+    const controlled = createFocusViewStateMachine();
+    controlled.transition('PlanetFocusControlled');
+    expect(() => controlled.transition('BodyReturning')).toThrow(
+      /Invalid interaction transition/,
+    );
+  });
 });
+
+function createFocusViewStateMachine(): InteractionStateMachine {
+  const interaction = new InteractionStateMachine();
+  interaction.transition('EmptyIdle');
+  interaction.transition('HandsClosed');
+  interaction.transition('PullArmed');
+  interaction.transition('SolarOpening');
+  interaction.transition('SolarActive');
+  interaction.transition('PlanetActivated');
+  interaction.transition('PlanetFocusView');
+  return interaction;
+}

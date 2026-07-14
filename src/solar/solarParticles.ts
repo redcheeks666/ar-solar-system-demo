@@ -11,7 +11,10 @@ import { clamp01, lerp } from '../utils/math';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import type { CelestialBodyDefinition } from './solarSystemData';
-import { FOCUS_DIM_EASE_SECONDS } from './solarVisualConfig';
+import {
+  FOCUS_DIM_EASE_SECONDS,
+  SOLAR_BACKGROUND_OPACITY_SCALE,
+} from './solarVisualConfig';
 import { loadTexture } from './textureAssets';
 
 export const SOLAR_PARTICLE_COUNT = 420;
@@ -168,7 +171,8 @@ export class SolarParticleField {
     this.root.visible = opacityScale > 0.01;
     this.layers.forEach((layer) => {
       layer.points.visible = this.root.visible;
-      layer.material.opacity = layer.targetOpacity * opacityScale;
+      layer.material.opacity =
+        layer.targetOpacity * opacityScale * SOLAR_BACKGROUND_OPACITY_SCALE;
     });
   }
 

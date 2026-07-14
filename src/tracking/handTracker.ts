@@ -1,26 +1,12 @@
 import {
-  HandLandmarker,
-  type Category,
-  type NormalizedLandmark,
-} from '@mediapipe/tasks-vision';
-import type {
-  HandTrackingSnapshot,
-  NormalizedPoint,
-  TrackedHand,
-  TrackedHandSide,
-} from '../utils/types';
-import {
   GestureInputFramePairer,
   buildTrackedHand,
 } from '../interaction/gestureInputFrame';
-import { HAND_LANDMARKER_MODEL_URL } from './config';
-import type { VisionFileset } from './mediapipe';
-
-const MIN_HAND_DETECTION_CONFIDENCE = 0.35;
-const MIN_HAND_PRESENCE_CONFIDENCE = 0.35;
-const MIN_HAND_TRACKING_CONFIDENCE = 0.4;
-const PREFERRED_HAND_DELEGATE = 'GPU';
-const FALLBACK_HAND_DELEGATE = 'CPU';
+import type {
+  HandTrackingSnapshot,
+  TrackedHand,
+} from '../utils/types';
+import type { RawWorkerHand } from './handLandmarkerWorkerProtocol';
 
 const EMPTY_HANDS_SNAPSHOT: HandTrackingSnapshot = {
   detectedHands: 0,
@@ -30,31 +16,20 @@ const EMPTY_HANDS_SNAPSHOT: HandTrackingSnapshot = {
   lastUpdatedAt: null,
 };
 
-export class HandTracker {
+/**
+ * Converts a Worker's raw MediaPipe output into the existing gesture input shape.
+ *
+ * Visual identity assignment and smoothing intentionally remain on the main thread so moving
+ * inference off-thread cannot change hand pairing, smoothing history, or gesture semantics.
+ */
+export class HandTrackingResultProcessor {
   private readonly pairer = new GestureInputFramePairer();
 
-  private constructor(private readonly landmarker: HandLandmarker) {}
-
-  static async create(fileset: VisionFileset): Promise<HandTracker> {
-    let landmarker: HandLandmarker;
-
-    try {
-      landmarker = await createHandLandmarker(fileset, PREFERRED_HAND_DELEGATE);
-    } catch (error) {
-      console.warn(
-        '[hand-tracker] GPU delegate unavailable; falling back to CPU.',
-        error,
-      );
-      landmarker = await createHandLandmarker(fileset, FALLBACK_HAND_DELEGATE);
-    }
-
-    return new HandTracker(landmarker);
-  }
-
-  detect(video: HTMLVideoElement, timestamp: number): HandTrackingSnapshot {
-    const result = this.landmarker.detectForVideo(video, timestamp);
-
-    if (result.landmarks.length === 0) {
+  process(
+    workerHands: readonly RawWorkerHand[],
+    timestamp: number,
+  ): HandTrackingSnapshot {
+    if (workerHands.length === 0) {
       this.pairer.reset();
       return {
         ...EMPTY_HANDS_SNAPSHOT,
@@ -62,70 +37,36 @@ export class HandTracker {
       };
     }
 
-    // Build raw (unsmoothed) hands, then assign visual identity and smooth per visual slot, so a
-    // MediaPipe handedness flip during a hand crossing cannot swap smoother history.
     const rawHands: TrackedHand[] = [];
 
-    result.landmarks.forEach((landmarks, index) => {
-      const category = result.handedness[index]?.[0];
-      const side = normalizeHandSide(category);
-      const worldLandmarks =
-        result.worldLandmarks[index]?.map(toNormalizedPoint) ?? null;
+    for (const workerHand of workerHands) {
       const hand = buildTrackedHand(
-        landmarks.map(toNormalizedPoint),
-        side,
-        category?.score ?? 0,
-        worldLandmarks,
+        workerHand.landmarks,
+        workerHand.side,
+        workerHand.handednessScore,
+        workerHand.worldLandmarks,
       );
 
       if (hand) {
         rawHands.push(hand);
       }
-    });
+    }
 
+    // Assign visual identity before smoothing, per the existing gesture-input invariant.
     const hands = this.pairer.stabilize(rawHands);
-    const left = chooseBestHand(hands, 'left');
-    const right = chooseBestHand(hands, 'right');
 
     return {
       detectedHands: hands.length,
-      left,
-      right,
+      left: chooseBestHand(hands, 'left'),
+      right: chooseBestHand(hands, 'right'),
       hands,
       lastUpdatedAt: timestamp,
     };
   }
 
-  close(): void {
-    this.landmarker.close();
+  reset(): void {
+    this.pairer.reset();
   }
-}
-
-async function createHandLandmarker(
-  fileset: VisionFileset,
-  delegate: 'CPU' | 'GPU',
-): Promise<HandLandmarker> {
-  return HandLandmarker.createFromOptions(fileset, {
-    baseOptions: {
-      modelAssetPath: HAND_LANDMARKER_MODEL_URL,
-      delegate,
-    },
-    runningMode: 'VIDEO',
-    numHands: 2,
-    minHandDetectionConfidence: MIN_HAND_DETECTION_CONFIDENCE,
-    minHandPresenceConfidence: MIN_HAND_PRESENCE_CONFIDENCE,
-    minTrackingConfidence: MIN_HAND_TRACKING_CONFIDENCE,
-  });
-}
-
-function normalizeHandSide(category: Category | undefined): TrackedHandSide {
-  const name = category?.categoryName.toLowerCase();
-
-  if (name === 'left' || name === 'right') {
-    return name;
-  }
-
-  return 'unknown';
 }
 
 function chooseBestHand(
@@ -135,13 +76,4 @@ function chooseBestHand(
   return hands
     .filter((hand) => hand.side === side)
     .sort((a, b) => b.handednessScore - a.handednessScore)[0] ?? null;
-}
-
-function toNormalizedPoint(landmark: NormalizedLandmark): NormalizedPoint {
-  return {
-    x: landmark.x,
-    y: landmark.y,
-    z: landmark.z,
-    visibility: landmark.visibility,
-  };
 }

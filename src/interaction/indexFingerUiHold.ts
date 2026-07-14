@@ -1,14 +1,14 @@
 import { mapNormalizedToStagePixel, type PreviewLayout } from './coordinateMapping';
 import type { TrackedHand } from '../utils/types';
 
-export interface PlanetReturnButtonStageRect {
+export interface UiButtonStageRect {
   x: number;
   y: number;
   width: number;
   height: number;
 }
 
-export interface PlanetReturnButtonFingerHit {
+export interface IndexFingerUiHit {
   handKey: string;
   point: {
     x: number;
@@ -17,35 +17,35 @@ export interface PlanetReturnButtonFingerHit {
   hitScore: number;
 }
 
-export interface PlanetReturnButtonHoldState {
+export interface IndexFingerUiHoldState {
   startedAt: number | null;
   handKey: string | null;
 }
 
-export interface PlanetReturnButtonHoldUpdate {
-  hold: PlanetReturnButtonHoldState;
-  hit: PlanetReturnButtonFingerHit | null;
+export interface IndexFingerUiHoldUpdate {
+  hold: IndexFingerUiHoldState;
+  hit: IndexFingerUiHit | null;
   elapsedMs: number;
   progress: number;
   triggered: boolean;
   reason: 'inactive' | 'invalid-rect' | 'waiting-for-index-finger' | 'charging' | 'charged';
 }
 
-export const EMPTY_PLANET_RETURN_BUTTON_HOLD: PlanetReturnButtonHoldState = {
+export const EMPTY_INDEX_FINGER_UI_HOLD: IndexFingerUiHoldState = {
   startedAt: null,
   handKey: null,
 };
 
-export function updatePlanetReturnButtonHold(input: {
+export function updateIndexFingerUiHold(input: {
   active: boolean;
   hands: readonly TrackedHand[];
   layout: PreviewLayout;
-  rect: PlanetReturnButtonStageRect | null;
-  previous: PlanetReturnButtonHoldState;
+  rect: UiButtonStageRect | null;
+  previous: IndexFingerUiHoldState;
   requiredMs: number;
   timestamp: number;
   hitSlopPx?: number;
-}): PlanetReturnButtonHoldUpdate {
+}): IndexFingerUiHoldUpdate {
   if (!input.active) {
     return createEmptyHoldUpdate('inactive');
   }
@@ -54,7 +54,7 @@ export function updatePlanetReturnButtonHold(input: {
     return createEmptyHoldUpdate('invalid-rect');
   }
 
-  const hit = findPlanetReturnButtonIndexFingerHit({
+  const hit = findIndexFingerUiHit({
     hands: input.hands,
     layout: input.layout,
     rect: input.rect,
@@ -65,7 +65,11 @@ export function updatePlanetReturnButtonHold(input: {
     return createEmptyHoldUpdate('waiting-for-index-finger');
   }
 
-  const startedAt = input.previous.startedAt ?? input.timestamp;
+  const sameHandContinues = input.previous.handKey === hit.handKey;
+  const startedAt =
+    sameHandContinues && input.previous.startedAt !== null
+      ? input.previous.startedAt
+      : input.timestamp;
   const elapsedMs = Math.max(0, input.timestamp - startedAt);
   const progress = Math.min(1, elapsedMs / input.requiredMs);
   const triggered = progress >= 1;
@@ -83,12 +87,12 @@ export function updatePlanetReturnButtonHold(input: {
   };
 }
 
-export function findPlanetReturnButtonIndexFingerHit(input: {
+export function findIndexFingerUiHit(input: {
   hands: readonly TrackedHand[];
   layout: PreviewLayout;
-  rect: PlanetReturnButtonStageRect;
+  rect: UiButtonStageRect;
   hitSlopPx?: number;
-}): PlanetReturnButtonFingerHit | null {
+}): IndexFingerUiHit | null {
   const hitSlopPx = input.hitSlopPx ?? 0;
   const left = input.rect.x - hitSlopPx;
   const right = input.rect.x + input.rect.width + hitSlopPx;
@@ -96,8 +100,11 @@ export function findPlanetReturnButtonIndexFingerHit(input: {
   const bottom = input.rect.y + input.rect.height + hitSlopPx;
   const centerX = input.rect.x + input.rect.width / 2;
   const centerY = input.rect.y + input.rect.height / 2;
-  const maxDistance = Math.max(Math.hypot(input.rect.width, input.rect.height) / 2, 1);
-  let bestHit: PlanetReturnButtonFingerHit | null = null;
+  const maxDistance = Math.max(
+    Math.hypot(input.rect.width, input.rect.height) / 2,
+    1,
+  );
+  let bestHit: IndexFingerUiHit | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
 
   input.hands.forEach((hand, index) => {
@@ -130,10 +137,10 @@ export function findPlanetReturnButtonIndexFingerHit(input: {
 }
 
 function createEmptyHoldUpdate(
-  reason: PlanetReturnButtonHoldUpdate['reason'],
-): PlanetReturnButtonHoldUpdate {
+  reason: IndexFingerUiHoldUpdate['reason'],
+): IndexFingerUiHoldUpdate {
   return {
-    hold: EMPTY_PLANET_RETURN_BUTTON_HOLD,
+    hold: EMPTY_INDEX_FINGER_UI_HOLD,
     hit: null,
     elapsedMs: 0,
     progress: 0,

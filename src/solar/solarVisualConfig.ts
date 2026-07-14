@@ -8,6 +8,10 @@ export const AE_RIFT_VERTICAL_TILT_DEGREES = 66.66;
 export const UNIVERSE_RIFT_WIDTH = 10.5;
 export const UNIVERSE_RIFT_HEIGHT = 9.2;
 export const UNIVERSE_RIFT_BACKGROUND_OPACITY = 0.8;
+// Overview background presentation only: rift/starfield/nebula, edge sparks, stardust/trails,
+// and the DOM room glow render at 68% of their previous alpha. Celestial bodies, Saturn's ring,
+// orbit lines, labels, and control endpoints do not consume this value and remain unchanged.
+export const SOLAR_BACKGROUND_OPACITY_SCALE = 0.68;
 
 const AE_RIFT_PROJECTED_HEIGHT_RATIO =
   (AE_RIFT_BORDER_SOURCE_HEIGHT / AE_RIFT_BORDER_SOURCE_WIDTH) *

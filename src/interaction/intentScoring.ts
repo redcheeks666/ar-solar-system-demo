@@ -403,17 +403,44 @@ export function matchEndpoints(
 }
 
 export function computePinchPenalty(pair: TrackedHandPair): number {
-  const leftPinch = isPinching(pair.left);
-  const rightPinch = isPinching(pair.right);
-
-  if (leftPinch && rightPinch) {
-    return PINCH_PENALTY_BOTH;
-  }
-
-  return leftPinch || rightPinch ? PINCH_PENALTY_SINGLE : 0;
+  return computePinchPenaltySnapshot(pair).penalty;
 }
 
-function isPinching(hand: TrackedHand): boolean {
+export interface PinchPenaltySnapshot {
+  leftRatio: number | null;
+  rightRatio: number | null;
+  penalty: number;
+}
+
+/**
+ * Captures the exact scale-invariant ratios behind the legacy whole-system pinch penalty so a
+ * recorded failure can explain the resulting confidence score. The product endpoint controller
+ * does not consume this diagnostic; it remains useful when auditing accidental pinch intent.
+ */
+export function computePinchPenaltySnapshot(
+  pair: TrackedHandPair,
+): PinchPenaltySnapshot {
+  const leftRatio = computePinchRatio(pair.left);
+  const rightRatio = computePinchRatio(pair.right);
+  const leftPinch = leftRatio !== null && leftRatio <= PINCH_RATIO_THRESHOLD;
+  const rightPinch = rightRatio !== null && rightRatio <= PINCH_RATIO_THRESHOLD;
+
+  if (leftPinch && rightPinch) {
+    return {
+      leftRatio,
+      rightRatio,
+      penalty: PINCH_PENALTY_BOTH,
+    };
+  }
+
+  return {
+    leftRatio,
+    rightRatio,
+    penalty: leftPinch || rightPinch ? PINCH_PENALTY_SINGLE : 0,
+  };
+}
+
+export function computePinchRatio(hand: TrackedHand): number | null {
   // Prefer metric world landmarks: pinch is depth-sensitive, where image z is noisiest. The ratio
   // (thumb-index gap / palm size) is scale-invariant, so the same threshold works in either space.
   const world = hand.worldLandmarks;
@@ -432,17 +459,14 @@ function isPinching(hand: TrackedHand): boolean {
       );
 
       if (palmScale > 0) {
-        return distance3d(thumbTip, indexTip) / palmScale <= PINCH_RATIO_THRESHOLD;
+        return distance3d(thumbTip, indexTip) / palmScale;
       }
     }
   }
 
   if (hand.palmScale <= 0) {
-    return false;
+    return null;
   }
 
-  return (
-    distance3d(hand.thumbTip, hand.indexFingerTip) / hand.palmScale <=
-    PINCH_RATIO_THRESHOLD
-  );
+  return distance3d(hand.thumbTip, hand.indexFingerTip) / hand.palmScale;
 }

@@ -57,6 +57,7 @@ export interface CelestialRingDefinition {
 export interface CelestialBodyDefinition {
   id: CelestialBodyId;
   name: string;
+  nameZh: string;
   label: string;
   radius: number;
   orbitRadius: number;
@@ -91,6 +92,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'sun',
     name: 'Sun',
+    nameZh: '太阳',
     label: 'Sun',
     radius: 0.7,
     orbitRadius: 0,
@@ -110,6 +112,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'mercury',
     name: 'Mercury',
+    nameZh: '水星',
     label: 'Mercury',
     radius: 0.15,
     orbitRadius: 0.74,
@@ -129,6 +132,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'venus',
     name: 'Venus',
+    nameZh: '金星',
     label: 'Venus',
     radius: 0.22,
     orbitRadius: 1.12,
@@ -148,6 +152,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'earth',
     name: 'Earth',
+    nameZh: '地球',
     label: 'Earth',
     radius: 0.23,
     orbitRadius: 1.48,
@@ -167,6 +172,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'moon',
     name: 'Moon',
+    nameZh: '月球',
     label: 'Moon',
     radius: 0.095,
     orbitRadius: 0.38,
@@ -186,6 +192,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'mars',
     name: 'Mars',
+    nameZh: '火星',
     label: 'Mars',
     radius: 0.19,
     orbitRadius: 1.88,
@@ -205,6 +212,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'jupiter',
     name: 'Jupiter',
+    nameZh: '木星',
     label: 'Jupiter',
     radius: 0.43,
     orbitRadius: 2.05,
@@ -224,6 +232,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'saturn',
     name: 'Saturn',
+    nameZh: '土星',
     label: 'Saturn',
     radius: 0.39,
     orbitRadius: 2.58,
@@ -249,6 +258,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'uranus',
     name: 'Uranus',
+    nameZh: '天王星',
     label: 'Uranus',
     radius: 0.3,
     orbitRadius: 2.98,
@@ -268,6 +278,7 @@ export const CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefinition[] = [
   {
     id: 'neptune',
     name: 'Neptune',
+    nameZh: '海王星',
     label: 'Neptune',
     radius: 0.29,
     orbitRadius: 3.34,
@@ -308,7 +319,7 @@ export const INTERACTIVE_CELESTIAL_BODY_DEFINITIONS: readonly CelestialBodyDefin
   INTERACTIVE_CELESTIAL_BODY_IDS.map((id) => getCelestialBodyDefinition(id));
 
 export function isInteractiveCelestialBodyId(
-  id: CelestialBodyId,
+  id: string,
 ): id is InteractiveCelestialBodyId {
   return INTERACTIVE_CELESTIAL_BODY_IDS.includes(id as InteractiveCelestialBodyId);
 }
@@ -323,6 +334,12 @@ export function getCelestialBodyDefinition(
   }
 
   return definition;
+}
+
+export function getCelestialBodyDisplayName(id: CelestialBodyId): string {
+  const definition = getCelestialBodyDefinition(id);
+
+  return `${definition.nameZh}（${definition.name}）`;
 }
 
 export function getInteractiveCelestialBodyDefinition(

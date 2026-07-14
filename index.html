@@ -52,41 +52,124 @@
             双手在画面任意位置合拢，再向两侧拉开
           </p>
 
-          <button
-            id="planet-return-button"
-            class="planet-return-button"
-            type="button"
-            aria-label="长按返回太阳系"
-            tabindex="-1"
+          <section
+            id="planet-focus-controls"
+            class="planet-focus-controls"
+            aria-label="星球视角控制"
             hidden
           >
-            <span class="planet-return-button-reactor" aria-hidden="true">
-              <span class="planet-return-button-ring"></span>
-              <span class="planet-return-button-icon">↩</span>
-            </span>
-            <span class="planet-return-button-label">长按返回太阳系</span>
-            <span class="planet-return-button-charge" aria-hidden="true"></span>
-          </button>
+            <p
+              id="planet-focus-hud-tag"
+              class="planet-focus-hud-tag"
+              aria-hidden="true"
+            >
+              FOCUS CONTROL // EARTH
+            </p>
+
+            <button
+              id="planet-focus-switch-button"
+              class="planet-focus-action-card planet-focus-switch-button"
+              type="button"
+              aria-label="长按切换月球视角"
+              tabindex="-1"
+              hidden
+            >
+              <span class="planet-focus-action-card-corners" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-edge" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-fill" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-scan" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-reactor" aria-hidden="true">
+                <span class="planet-focus-action-card-ring"></span>
+                <span class="planet-focus-action-card-ring-progress"></span>
+                <svg
+                  class="planet-focus-action-card-icon"
+                  viewBox="0 0 32 32"
+                  focusable="false"
+                >
+                  <path d="M21 17.2A7.4 7.4 0 1 1 13.2 7 5.9 5.9 0 0 0 21 17.2z"></path>
+                </svg>
+              </span>
+              <span class="planet-focus-action-card-copy">
+                <span
+                  id="planet-focus-switch-label"
+                  class="planet-focus-action-card-label"
+                >
+                  长按切换月球视角
+                </span>
+                <span
+                  id="planet-focus-switch-context"
+                  class="planet-focus-action-card-hint"
+                >
+                  VIEW · EARTH → MOON
+                </span>
+              </span>
+              <span class="planet-focus-action-card-readout" aria-hidden="true">
+                <span class="planet-focus-action-card-duration">T-0.5s</span>
+                <span class="planet-focus-action-card-state">
+                  <span class="planet-focus-action-card-state-ready">READY</span>
+                  <span class="planet-focus-action-card-state-charging">CHARGING</span>
+                </span>
+              </span>
+            </button>
+          </section>
+
+          <aside
+            id="interaction-summary"
+            class="interaction-summary"
+            aria-label="当前交互状态说明"
+            aria-live="polite"
+          ></aside>
 
           <button
-            id="planet-focus-switch-button"
-            class="planet-return-button planet-focus-switch-button"
+            id="demo-hand-model-button"
+            class="planet-focus-action-card demo-hand-model-button"
             type="button"
-            aria-label="长按切换月球视角"
+            aria-label="长按显示手部模型"
+            aria-pressed="false"
             tabindex="-1"
             hidden
           >
-            <span class="planet-return-button-reactor" aria-hidden="true">
-              <span class="planet-return-button-ring"></span>
-              <span class="planet-return-button-icon">◐</span>
+            <span class="planet-focus-action-card-corners" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-edge" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-fill" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-scan" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-reactor" aria-hidden="true">
+              <span class="planet-focus-action-card-ring"></span>
+              <span class="planet-focus-action-card-ring-progress"></span>
+              <svg
+                class="planet-focus-action-card-icon"
+                viewBox="0 0 32 32"
+                focusable="false"
+              >
+                <path d="M16 24V9"></path>
+                <path d="m16 14-5-6"></path>
+                <path d="m16 14 5-7"></path>
+                <path d="m16 17-8-3"></path>
+                <path d="m16 18 8-2"></path>
+                <circle cx="16" cy="25" r="2.5"></circle>
+              </svg>
             </span>
-            <span
-              id="planet-focus-switch-label"
-              class="planet-return-button-label"
-            >
-              长按切换月球视角
+            <span class="planet-focus-action-card-copy">
+              <span
+                id="demo-hand-model-label"
+                class="planet-focus-action-card-label"
+              >
+                长按显示手部模型
+              </span>
+              <span
+                id="demo-hand-model-context"
+                class="planet-focus-action-card-hint"
+              >
+                HAND SKELETON · OFF
+              </span>
             </span>
-            <span class="planet-return-button-charge" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-readout" aria-hidden="true">
+              <span class="planet-focus-action-card-duration">T-0.5s</span>
+              <span class="planet-focus-action-card-state">
+                <span class="planet-focus-action-card-state-ready">READY</span>
+                <span class="planet-focus-action-card-state-charging">CHARGING</span>
+              </span>
+            </span>
           </button>
         </div>
       </section>
@@ -100,13 +183,6 @@
       >
         Debug
       </button>
-
-      <aside
-        id="interaction-summary"
-        class="interaction-summary"
-        aria-label="当前交互状态说明"
-        aria-live="polite"
-      ></aside>
 
       <div id="debug-recorder" class="debug-recorder" hidden>
         <button id="debug-record-toggle" type="button">Record</button>

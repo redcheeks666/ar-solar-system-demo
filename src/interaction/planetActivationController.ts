@@ -366,8 +366,8 @@ export class PlanetActivationController {
       const snapshot = this.createSnapshot({
         hoverCandidate: lockedHover,
         pinchMetrics,
-        pinchState: 'closed',
-        reason: 'double-close-enter-focus',
+        pinchState: 'open',
+        reason: 'double-close-release-enter-focus',
       });
       this.snapshot = snapshot;
       return { snapshot, nextState: 'PlanetFocusView' };
@@ -377,7 +377,9 @@ export class PlanetActivationController {
       hoverCandidate: lockedHover,
       pinchMetrics,
       pinchState:
-        doubleClose === 'first-close'
+        doubleClose === 'first-close' ||
+        doubleClose === 'second-close' ||
+        this.closedLatched
           ? 'closed'
           : this.openReady
             ? 'close-ready'
@@ -387,6 +389,8 @@ export class PlanetActivationController {
       reason:
         doubleClose === 'first-close'
           ? 'double-close-first-close'
+          : doubleClose === 'second-close' || this.doubleCloseCount === 2
+            ? 'double-close-second-close-waiting-for-release'
           : this.openReady
             ? 'double-close-open-ready'
             : isPinchHeld(pinchMetrics)
@@ -540,7 +544,7 @@ export class PlanetActivationController {
     metrics: PinchMetrics,
     timestamp: number,
     activatedAtMs: number,
-  ): 'first-close' | 'focus-entry' | null {
+  ): 'first-close' | 'second-close' | 'focus-entry' | null {
     if (
       timestamp < this.focusCooldownUntil ||
       timestamp - activatedAtMs < DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS
@@ -570,6 +574,15 @@ export class PlanetActivationController {
         if (timestamp - this.reopenStableSince >= DOUBLE_CLOSE_MIN_OPEN_GAP_MS) {
           this.closedLatched = false;
           this.closeStableSince = null;
+
+          if (this.doubleCloseCount === 2) {
+            this.openReady = false;
+            this.reopenStableSince = null;
+            this.focusCooldownUntil =
+              timestamp + DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS;
+            return 'focus-entry';
+          }
+
           this.openReady = true;
         }
       } else {
@@ -628,9 +641,11 @@ export class PlanetActivationController {
     ) {
       this.doubleCloseCount = 2;
       this.closedLatched = true;
-      this.focusCooldownUntil =
-        timestamp + DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS;
-      return 'focus-entry';
+      this.openReady = false;
+      this.latchedCloseMetrics = metrics;
+      this.reopenPeakMetrics = null;
+      this.reopenStableSince = null;
+      return 'second-close';
     }
 
     this.resetDoubleClose();

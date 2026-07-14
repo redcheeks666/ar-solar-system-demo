@@ -4,6 +4,7 @@ import {
   CELESTIAL_BODY_REGISTRY,
   INTERACTIVE_CELESTIAL_BODY_DEFINITIONS,
   INTERACTIVE_CELESTIAL_BODY_IDS,
+  getCelestialBodyDisplayName,
   getInteractiveCelestialBodyDefinition,
   getOriginalOrbitTransform,
   isInteractiveCelestialBodyId,
@@ -40,8 +41,16 @@ describe('solar system body registry', () => {
     CELESTIAL_BODY_DEFINITIONS.forEach((body) => {
       expect(CELESTIAL_BODY_REGISTRY.get(body.id)).toBe(body);
       expect(body.name.length).toBeGreaterThan(0);
+      expect(body.nameZh.length).toBeGreaterThan(0);
       expect(body.label.length).toBeGreaterThan(0);
     });
+  });
+
+  it('provides the bilingual display names used by the demo operation HUD', () => {
+    expect(getCelestialBodyDisplayName('mercury')).toBe('水星（Mercury）');
+    expect(getCelestialBodyDisplayName('earth')).toBe('地球（Earth）');
+    expect(getCelestialBodyDisplayName('moon')).toBe('月球（Moon）');
+    expect(getCelestialBodyDisplayName('neptune')).toBe('海王星（Neptune）');
   });
 
   it('provides activation, focus, and return metadata for each interactive body', () => {

@@ -13,10 +13,10 @@ camera on → initial empty AR scene
 → solar system free-hovers at the released position (fixed oblique visual angle)
 → both hands re-grip left/right endpoints for handle control, place-down, or reverse collapse
 → hover + pinch activates a body (8 overview entries; Moon maps to the Earth-Moon group)
-→ same activating hand thumb/index DoubleClose enters single-planet focus view
+→ same activating hand thumb/index DoubleClose, then the second close's stable reopen, enters single-planet focus view
 → heat-zone dwell (1s) enters single-hand follow; two-hand dwell follows + scales by hand distance
 → following-hand PinchTap places the body down floating in the focus view
-→ index fingertip held 1s on the top-left "长按返回太阳系" glass button returns it to orbit
+→ once floating settles, one coherent fast open-hand throw toward either upper display corner returns it to orbit
 ```
 
 ## Source of Truth
@@ -39,7 +39,7 @@ Web Demo only. Do not introduce Electron, Tauri, TouchDesigner, Unity, Unreal, X
 
 ## Tech Stack
 
-- Vite + TypeScript, Three.js for 3D, MediaPipe Tasks Vision for hand/pose landmarks, browser MediaDevices for webcam, requestAnimationFrame render loop, lightweight CSS for UI/debug panels.
+- Vite + TypeScript, Three.js for 3D, MediaPipe Tasks Vision for hand/pose landmarks, browser MediaDevices for webcam, a dedicated Web Worker for hand inference, requestAnimationFrame render loop, lightweight CSS for UI/debug panels.
 - Prefer Three.js built-ins (`Raycaster`/`unproject`, `Quaternion`/`slerp`) — see "Reuse vs. Custom" below.
 - No React, GSAP, or other frameworks unless native approaches become insufficient and the user agrees.
 
@@ -53,7 +53,7 @@ These rules must not be broken without explicit user approval and doc updates.
 
 ### Initial Empty Scene
 
-At startup and before pull-open: webcam video, minimal 2D instruction text, and debug landmarks (debug mode only). No 3D sun, planet, orbit, nebula, star dust, singularity, or decorative object. The dev-only `?solarPreview=1` route may show placeholder visuals for testing but must not change the normal startup path.
+At startup and before pull-open: webcam video, minimal 2D instruction text, and hand landmarks only when explicitly enabled (the default-route Debug toggle or the demo-route hand-model hold card). No 3D sun, planet, orbit, nebula, star dust, singularity, or decorative object. The dev-only `?solarPreview=1` route may show placeholder visuals for testing but must not change the normal startup path.
 
 ### Hand-Only Startup
 
@@ -77,7 +77,7 @@ The solar system appears only after a valid two-hand closed-to-pull gesture — 
 
 - Control affordance = two independent 3D control endpoints on the solar system's left/right edges (no connected joystick/rod visual).
 - Post-opening handle control requires both hands to stably hit the endpoints ~0.5s (`ENDPOINT_ENTER_STABLE_MS`) to enter `SolarHandleControl`; the same 0.5s endpoint dwell re-grips from `SolarFreeHover`. Endpoint proximity, not hand pose, is the re-grip gate.
-- While controlled, the system stays hand-attached; leaving the endpoints is NOT place-down. Place-down comes only from: (1) both hands fist→reopen (armed fist freezes transform; timeout `PLACE_DOWN_ARMED_TIMEOUT_MS` resumes follow), (2) auto place-down when the two-hand screen-x span reaches `MAX_VISUAL_WIDTH_SCREEN_FRACTION`, (3) sustained full loss of both hands (`HANDLE_HAND_LOSS_RELEASE_MS`); a one-frame gap must not place down.
+- While controlled, the system stays hand-attached; leaving the endpoints is NOT place-down. Place-down comes only from: (1) both hands fist→reopen (armed fist freezes transform; timeout `PLACE_DOWN_ARMED_TIMEOUT_MS` resumes follow), (2) auto place-down after the two-hand screen-x span crosses `MAX_VISUAL_WIDTH_ENTER_SCREEN_FRACTION` and remains above the hysteresis exit for `MAX_VISUAL_WIDTH_STABLE_MS`, (3) sustained full loss of both hands (`HANDLE_HAND_LOSS_RELEASE_MS`); a one-frame gap or span spike must not place down.
 - Gripped hands moving inward reverse-collapse the system; fully closed returns to the empty scene.
 - Handle gestures must remain separate from planet pinch activation; strong pinch intent lowers whole-system control confidence.
 
@@ -88,11 +88,11 @@ Overview entries: Mercury, Venus, Earth-Moon group, Mars, Jupiter, Saturn, Uranu
 ### Activation, Focus, Follow, Return
 
 - Pinch near a hovered body enters `PlanetActivated`: that body stops orbiting but keeps self-rotation; others continue normally. Earth-Moon exception: Earth's solar orbit pauses while Moon may keep orbiting Earth. Switching activation to another body immediately resumes the previous body's orbit.
-- Two closeDown events from the same activating hand's thumb/index pair enter `PlanetFocusView` (the initial activation pinch does not count; a long hold is not two events; the reopen between them is a small click reopen, not a full pinch release). Brief same-hand heat-zone exits keep selection; ~1s away while open cancels. Passing over another body while open must not switch selection.
+- Two closeDown events from the same activating hand's thumb/index pair arm focus entry; `PlanetFocusView` begins only after the second close reopens stably for the existing 70ms release gate. The initial activation pinch does not count; a long hold is not two events; the reopen between closes and the final reopen may be small click reopens rather than full pinch releases. Brief same-hand heat-zone exits keep selection; ~1s away while open cancels. Passing over another body while open must not switch selection.
 - Focus view: background solar system dims by directly lowering object opacity (no camera-covering mask), stays interaction-locked but keeps basic motion. One unified focused-body overlay driven by body metadata. Focus entry animates from the body's original position/scale over ~0.3s; the focused sphere is vertically centered at ~1/2–2/3 screen height, unlit (no spotlight glare), and keeps self-rotating throughout.
 - Follow gating: after the intro centers the body, hands already in the heat zone must leave and re-enter before any dwell can begin. One hand dwelling 1s in the heat zone → single-hand follow (body tracks that hand's thumb+index midpoint, clamped on-screen). Two hands dwelling 1s → two-hand follow (midpoint tracking; size driven ONLY by the distance between the two hands, never by a hand's own pinch). An off hand appearing outside the heat zone must not drop single-hand follow (spatial-continuity re-acquisition). One hand leaving two-hand follow downgrades to move-only single-hand follow with the staying hand.
 - `PinchTap` (thumb-to-any-finger close-open) by a following hand places the body down → `PlanetFocusFloating` (still in focus view, not back to orbit). After place-down, all hands must leave the heat zone before re-selection. A floating body never auto-returns to orbit.
-- Return is UI-driven only: a top-left transparent glass button (return icon + "长按返回太阳系") shown in all focus states; the tracked index fingertip held on it 1 second fills a progress bar and enters `BodyReturning` — mouse/DOM clicks are not the product path. The Earth-Moon focus additionally shows a second glass button ("长按切换月球视角"/"长按切换地球视角", 0.5s hold) to swap the focused overlay; it must not appear in other focus views. Return animates ~0.5s back to the original orbit position/scale, restores background opacity, unlocks interaction, and exits to the solar-system view.
+- Return has one intentional path and no on-screen return button. It is available in `PlanetFocusView` and `PlanetFocusFloating`, disabled in `PlanetFocusControlled`, and requires a visible focused-body screen target. `PlanetFocusFloating` keeps a 250ms post-place-down delay; `PlanetFocusView` has no extra preparation timer. The same spatial hand trajectory needs at least three observations, peak speed >=3.0 preview-short-sides/s (including a validated cross-gap step), net displacement >=0.35, meaningful horizontal and upward components (each >=0.32), a start outside the body's `hitRadius × 1.2`, a recent body-distance trend that ends moving away outside the hit zone, and a broad non-pinch/non-fist sanity score. Only the start observes the 8% screen inset; an endpoint may cross or leave the frame. Hand identity ignores MediaPipe handedness and may bridge up to 150ms using `0.15 + 12 × gapSeconds` spatial allowance plus reciprocal ~0.60–1.67 palm-scale and <90° direction checks. Ordinary open hands, slow reaches toward the body, horizontal/vertical/downward movement, unvalidated re-detection spikes, and follow-state movement never return the body. The Earth-Moon focus alone shows a glass switch card ("长按切换月球视角"/"长按切换地球视角", 0.5s hold) to swap the focused overlay. It uses the approved cyan accent (`127, 216, 255`) with the existing glass/border/scan/charge styling, keeps a compact ~344px two-column layout with the progress reactor on the left and copy/readout stacked on the right, and must not appear in other focus views. Return animates ~0.5s back to the original orbit position/scale, restores background opacity, unlocks interaction, and exits to the solar-system view.
 
 ### Retired Semantics (do not reintroduce)
 
@@ -101,7 +101,7 @@ Retired by explicit user decision; do not re-implement unless the user explicitl
 - M5.5 one-hand solar inspection after `SolarFreeHover`: spread-zoom, contract-shrink, fist-hold reset, push-pan.
 - Whole-system gesture rotation, palms-up rotation, palm-forward "sliding glass" scaling, two-hand distance zoom of the released overview.
 - Open-hand release / palms-up hold-protection / release-latch as the product place-down (protocol/debug-only now).
-- Pinch-and-throw return and the palm-facing open-hand return gesture.
+- Pinch-and-throw return and the old static palm-facing/open-hand return gesture. The explicitly approved dynamic upper-corner throw in `PlanetFocusView` / `PlanetFocusFloating` is distinct and must retain its peak-motion, body-relative, and spatial-continuity gates.
 - Old one-hand zoom/pan/reset inside planet focus.
 - Moon as a separate overview activation entry.
 - The `verify:m5.5` script and its harness.
@@ -124,20 +124,21 @@ Debug labels distinguish `Startup state` (closed-to-pull startup) from `Whole co
 ## Coordinate and Smoothing Rules
 
 - Normalized camera coordinates are the tracking input, mapped into the Three.js scene through `coordinateMapping.ts` only.
-- Low-pass filter hand positions; short hold windows for missing hands during startup and activation/focus; hysteresis for pinch start/end; stable index-fingertip timing for button holds.
+- Low-pass filter hand positions; short hold windows for missing hands during startup and activation/focus; hysteresis for pinch start/end; stable index-fingertip timing for the Earth-Moon switch-card hold and the demo hand-model toggle. Both 0.5s UI holds require the fingertip to leave the card before they can trigger again.
 - Reject abrupt endpoint-geometry outliers before updating solar position/scale: fast withdrawal, edge-of-frame partial tracking, or one-frame mis-detection must hold the last stable transform.
 - Run interaction controllers only on fresh MediaPipe detection frames (`freshFrameGate.ts`, fed the detection timestamp); rendering still runs every rAF. UI-only long-press progress may run on render frames.
+- Preserve the render-loop detection schedule (33ms with hands; throttled to ~120ms after at least 2s without hands) and rAF detection timestamps; allow only one transferable `ImageBitmap` in flight and drop busy frames instead of queuing latency. Keep raw landmark conversion, visual hand pairing, and smoothing on the main thread before the fresh-frame gate.
 - Assign visual-left/right hand identity from the previous frame's trajectory BEFORE smoothing, per visual slot (`gestureInputFrame.ts`) — never smooth per MediaPipe handedness.
 - Screen-plane gesture distances (close/pull/endpoint/hover/support) use 2D x/y only — never MediaPipe image-landmark z. Hand-shape scoring (open/fist/pinch) prefers world landmarks.
 - No single-frame state flips for important gesture actions.
 
 ## Debug and Recording
 
-Keep a debug panel behind a toggle: FPS, camera/tracking status, interaction state, hand positions/distance/velocity, whole-system protocol state and confidences, endpoints and match state, calibration thresholds, pinch state, hovered/activated/focused body, focus-controller snapshot (control mode, heat-zone distances, dwell timers, PinchTap state, return-button progress), display/canvas dimensions, and performance costs. Include a concise Chinese status summary stating the current interpreted intent, reason, and key parameters.
+Keep a debug panel behind a toggle: FPS, camera/tracking status, interaction state, hand positions/distance/velocity, whole-system protocol state and confidences, endpoints and match state, calibration thresholds, pinch state, hovered/activated/focused body, focus-controller snapshot (control mode, heat-zone distances, dwell timers, PinchTap state), return-wave state/spatial hand/frames/peak speed/net displacement/upper-corner components/start and end body distance/recent distance trend/hit radius/open-hand sanity/scale/reason, display/canvas dimensions, and performance costs. Include a concise Chinese status summary stating the current interpreted intent, reason, and key parameters.
 
 The debug gesture recorder exports structured landmarks, primitives, calibration values, intent scores, states, and transition reasons as JSON (including the `planetFocus` snapshot in focus flows). Never record raw webcam video or upload data. Each recording start opens a fresh session.
 
-Demo mode (`?demo=1`) is the presentation route: it hides the top-right Debug toggle, the Chinese status summary card, and the bottom gesture guidance text without changing interaction behavior. The default route keeps all debug UI.
+Demo mode (`?demo=1`) is the presentation route: it hides the top-right Debug toggle, the full Chinese status summary, and the bottom gesture guidance text without changing interaction behavior. It replaces the full summary with a compact cyan operation HUD that shows only the current operation title (no state description, reason, parameters, or endpoint diagnostics). In `PlanetFocusView` that title is the current bilingual body name (`中文（English）`, including live Earth/Moon switching); after place-down it reads `星球悬浮中`. A separate cyan card toggles the hand-landmark skeleton after a stable 0.5s index-fingertip hold; the skeleton starts hidden, renders hands only, and requires the fingertip to leave before another toggle. The two 344px desktop cards share one right edge and spacing reference inside the 16:9 preview rather than the browser viewport, with a single-column narrow-screen fallback. The operation card, hand-model card, and Earth-Moon switch card share cyan border/corner/text/reactor glow; UI-hold charging intensifies the glow and scan without applying a filter or dimming layer to the camera feed. The default route keeps the full debug UI and does not show this demo-only card.
 
 ## Development Workflow
 
@@ -147,7 +148,7 @@ Work milestone by milestone; make the smallest useful change; inspect existing f
 
 Visual-effects work (materials, textures, lighting, glow, particles, labels, UI polish, performance) sits ON TOP of tested interaction behavior. Do not modify gesture state machines, thresholds, hand pairing, fresh-frame gating, coordinate mapping, opening/release/re-grip/collapse semantics, activation/focus/follow/return semantics, or the object visibility lifecycle unless the user explicitly requests it. If a visual goal appears to require an interaction change, pause and state the proposed change and risk first.
 
-The AE rift boundary halo must stay close to the approved PNG look: keep the dark support pass + additive AE border pass; no extra runtime glow passes, global bloom, independent halo rotation/scale, or autoplaying visual lifecycles without explicit approval. Approved 2026-07: the selective bloom pass (`selectiveBloom.ts`, emissive-only layer), rift edge sparks, tear arcs, the sun-positioned DOM room glow, and the autoplaying solar prominence/flare + comet lifecycles.
+The AE rift boundary halo must stay close to the approved PNG look: keep the dark support pass + additive AE border pass; no extra runtime glow passes, global bloom, independent halo rotation/scale, or autoplaying visual lifecycles without explicit approval. Approved 2026-07: the selective bloom pass (`selectiveBloom.ts`, emissive-only layer), rift edge sparks, tear arcs, the sun-positioned DOM room glow (without camera-feed dimming or a fullscreen vignette), and the autoplaying solar prominence/flare + comet lifecycles.
 
 ### Manual Verification
 
@@ -203,7 +204,7 @@ Requirement fit first: don't force-fit a library call, and don't rewrite working
 
 - Do not turn this into a generic 3D solar-system viewer.
 - Do not show any 3D object in the initial empty scene, or auto-play opening independent of hand distance.
-- Do not let PinchTap, pinch relaxation, tracking loss, or ordinary open-hand motion return a body to orbit (return is the 1s button hold only).
+- Do not let PinchTap, pinch relaxation, tracking loss by itself, ordinary open-hand motion, reaching toward the body, or `PlanetFocusControlled` follow movement return a body to orbit. Only the qualified multi-frame fast open-hand throw toward the display's upper-left or upper-right corner in `PlanetFocusView` or `PlanetFocusFloating` may return it; do not reintroduce an on-screen return button without explicit approval.
 - Do not reintroduce retired semantics (see list above).
 - Do not add backend, login, database, payments, analytics, deployment, or non-web engines for the MVP.
 - Do not leave docs stale after a requirement change.

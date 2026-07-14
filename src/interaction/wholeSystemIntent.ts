@@ -56,7 +56,7 @@ import {
   computeCollapseIntentScore,
   computeControlConfidence,
   computeGripHoldActive,
-  computePinchPenalty,
+  computePinchPenaltySnapshot,
   computeReGripConfidence,
   computeReleaseBlockReason,
   computeReleaseConfidence,
@@ -76,6 +76,9 @@ export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
   releaseConfidence: 0,
   reGripConfidence: 0,
   endpointHitScore: 0,
+  leftPinchRatio: null,
+  rightPinchRatio: null,
+  pinchPenalty: 0,
   trackingConfidence: 0,
   scaleIntent: 'none',
   scaleIntentScore: 0,
@@ -120,8 +123,9 @@ export const EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT: WholeSystemIntentSnapshot = {
  *     -> ReleaseCandidate -> SolarFreeHover -> ReGripCandidate -> SolarHandleControl
  *     -> SolarClosing -> Inactive
  *
- * It must not render any 3D content; it only produces a WholeSystemIntentSnapshot for the future
- * SolarSystemController (M4+).
+ * It must not render any 3D content. Its protocol fields are legacy diagnostics; the product
+ * endpoint lifecycle that moves between SolarFreeHover and SolarHandleControl lives in
+ * SolarOpeningController. Keep the two data sources visibly distinct in logs and replay reports.
  */
 export class WholeSystemIntentController {
   private controlState: WholeSystemControlState = 'Inactive';
@@ -226,7 +230,10 @@ export class WholeSystemIntentController {
     );
     this.updateReleaseLatchFromEndpointExit(handPair, thresholds);
 
-    const pinchPenalty = trackedPair ? computePinchPenalty(trackedPair) : 0;
+    const pinchSnapshot = trackedPair
+      ? computePinchPenaltySnapshot(trackedPair)
+      : { leftRatio: null, rightRatio: null, penalty: 0 };
+    const pinchPenalty = pinchSnapshot.penalty;
     const palmFacingScore = averageNullable(
       leftPalm.facingCameraScore,
       rightPalm.facingCameraScore,
@@ -331,6 +338,9 @@ export class WholeSystemIntentController {
       releaseConfidence,
       reGripConfidence,
       endpointHitScore: endpointMatch.score,
+      leftPinchRatio: pinchSnapshot.leftRatio,
+      rightPinchRatio: pinchSnapshot.rightRatio,
+      pinchPenalty,
       trackingConfidence,
       scaleIntent,
       scaleIntentScore,
@@ -789,4 +799,3 @@ function isActiveControlState(state: WholeSystemControlState): boolean {
     state === 'SolarClosing'
   );
 }
-

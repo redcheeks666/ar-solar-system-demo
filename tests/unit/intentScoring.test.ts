@@ -3,6 +3,7 @@ import {
   computeCollapseIntentScore,
   computeControlConfidence,
   computePinchPenalty,
+  computePinchPenaltySnapshot,
   computeReleaseConfidence,
   computeReGripConfidence,
   computeScaleIntentScore,
@@ -230,5 +231,8 @@ describe('scale, rotation, collapse, and pinch scoring', () => {
     expect(computePinchPenalty({ left: open, right: open })).toBe(0);
     expect(computePinchPenalty({ left: pinching, right: open })).toBe(0.18);
     expect(computePinchPenalty({ left: pinching, right: pinching })).toBe(0.28);
+    const snapshot = computePinchPenaltySnapshot({ left: pinching, right: open });
+    expect(snapshot.leftRatio).toBeCloseTo(0.05);
+    expect(snapshot.penalty).toBe(0.18);
   });
 });

@@ -10,7 +10,9 @@ import type { RenderFrameSnapshot } from '../utils/types';
 import { BACKGROUND_RENDER_LAYER, MAIN_RENDER_LAYER } from './renderLayers';
 import { SelectiveBloomPipeline } from './selectiveBloom';
 
-const MAX_DEVICE_PIXEL_RATIO = 2;
+const MAX_DEVICE_PIXEL_RATIO = 1.5;
+const MIN_DEVICE_PIXEL_RATIO_OVERRIDE = 1;
+const MAX_DEVICE_PIXEL_RATIO_OVERRIDE = 2;
 export const CAMERA_FOV = 45;
 const CAMERA_NEAR = 0.1;
 const CAMERA_FAR = 100;
@@ -30,17 +32,27 @@ export class TransparentSceneRenderer {
   );
   private readonly renderer: WebGLRenderer;
   private readonly bloom = new SelectiveBloomPipeline();
+  private readonly maxDevicePixelRatio: number;
   private animationFrameId: number | null = null;
   private lastFrameTime = 0;
   private lastRenderMs: number | null = null;
+  private sceneContentVisible = false;
+  private renderedSceneContent = false;
   private smoothedFps = 0;
   private readonly canvasSize = new Vector2();
   private readonly drawingBufferSize = new Vector2();
   private readonly resizeObserver: ResizeObserver | null = null;
   private readonly handleResize = (): void => this.resize();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    maxDevicePixelRatio = MAX_DEVICE_PIXEL_RATIO,
+  ) {
     this.canvas = canvas;
+    this.maxDevicePixelRatio = Math.min(
+      MAX_DEVICE_PIXEL_RATIO_OVERRIDE,
+      Math.max(MIN_DEVICE_PIXEL_RATIO_OVERRIDE, maxDevicePixelRatio),
+    );
     this.renderer = new WebGLRenderer({
       canvas,
       alpha: true,
@@ -85,9 +97,19 @@ export class TransparentSceneRenderer {
         renderMs: this.lastRenderMs,
         timestampMs: time,
       });
-      const renderStartedAt = performance.now();
-      this.renderScene();
-      this.lastRenderMs = performance.now() - renderStartedAt;
+      if (this.sceneContentVisible) {
+        const renderStartedAt = performance.now();
+        this.renderScene();
+        this.lastRenderMs = performance.now() - renderStartedAt;
+        this.renderedSceneContent = true;
+      } else if (this.renderedSceneContent) {
+        const renderStartedAt = performance.now();
+        this.renderer.clear(true, true, true);
+        this.lastRenderMs = performance.now() - renderStartedAt;
+        this.renderedSceneContent = false;
+      } else {
+        this.lastRenderMs = 0;
+      }
 
       this.animationFrameId = window.requestAnimationFrame(tick);
     };
@@ -113,6 +135,14 @@ export class TransparentSceneRenderer {
    */
   setBloomActive(active: boolean): void {
     this.bloom.setActive(active);
+  }
+
+  /**
+   * Keeps the rAF loop alive while allowing an empty transparent canvas to skip all WebGL passes.
+   * The first hidden frame after visible content still clears the previous drawing once.
+   */
+  setSceneContentVisible(visible: boolean): void {
+    this.sceneContentVisible = visible;
   }
 
   getCanvasSize(): { width: number; height: number } {
@@ -161,7 +191,7 @@ export class TransparentSceneRenderer {
     const height = Math.max(1, Math.round(bounds.height));
 
     this.renderer.setPixelRatio(
-      Math.min(window.devicePixelRatio, MAX_DEVICE_PIXEL_RATIO),
+      Math.min(window.devicePixelRatio, this.maxDevicePixelRatio),
     );
     this.renderer.setSize(width, height, false);
     this.renderer.getDrawingBufferSize(this.drawingBufferSize);

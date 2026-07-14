@@ -1,7 +1,11 @@
 import './styles.css';
 import { startCamera, stopCamera } from './camera/camera';
 import { GestureCalibrationController, getDefaultGestureCalibrationSnapshot } from './interaction/gestureCalibration';
-import { GestureDebugRecorder } from './interaction/gestureDebugRecorder';
+import {
+  captureReplayCamera,
+  GestureDebugRecorder,
+  type GestureReplayFrameContext,
+} from './interaction/gestureDebugRecorder';
 import { isFreshTrackingFrame } from './interaction/freshFrameGate';
 import { EMPTY_HAND_PRIMITIVES, HandPrimitiveController } from './interaction/handPrimitives';
 import { HandStartupGestureController } from './interaction/handStartupGesture';
@@ -15,6 +19,10 @@ import {
   PlanetFocusController,
   type PlanetFocusSnapshot,
 } from './interaction/planetFocusController';
+import {
+  EMPTY_PLANET_RETURN_WAVE_SNAPSHOT,
+  PlanetReturnWaveController,
+} from './interaction/planetReturnWave';
 import { InteractionStateMachine } from './interaction/stateMachine';
 import {
   EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
@@ -25,11 +33,11 @@ import {
   type SolarOpeningSnapshot,
 } from './interaction/solarOpeningController';
 import {
-  EMPTY_PLANET_RETURN_BUTTON_HOLD,
-  updatePlanetReturnButtonHold,
-  type PlanetReturnButtonHoldState,
-  type PlanetReturnButtonStageRect,
-} from './interaction/planetReturnButton';
+  EMPTY_INDEX_FINGER_UI_HOLD,
+  updateIndexFingerUiHold,
+  type IndexFingerUiHoldState,
+  type UiButtonStageRect,
+} from './interaction/indexFingerUiHold';
 import { DebugOverlay } from './rendering/debugOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
@@ -68,24 +76,41 @@ const debugRecorderControls = getElement<HTMLElement>('debug-recorder');
 const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
 const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
 const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
-const planetReturnButton = getElement<HTMLButtonElement>('planet-return-button');
+const planetFocusControls = getElement<HTMLElement>('planet-focus-controls');
+const planetFocusHudTag = getElement<HTMLElement>('planet-focus-hud-tag');
 const planetFocusSwitchButton = getElement<HTMLButtonElement>(
   'planet-focus-switch-button',
 );
 const planetFocusSwitchLabel = getElement<HTMLElement>(
   'planet-focus-switch-label',
 );
+const planetFocusSwitchContext = getElement<HTMLElement>(
+  'planet-focus-switch-context',
+);
+const demoHandModelButton = getElement<HTMLButtonElement>(
+  'demo-hand-model-button',
+);
+const demoHandModelLabel = getElement<HTMLElement>('demo-hand-model-label');
+const demoHandModelContext = getElement<HTMLElement>(
+  'demo-hand-model-context',
+);
 const sunRoomGlow = getElement<HTMLElement>('sun-room-glow');
 
 const interaction = new InteractionStateMachine();
-const renderer = new TransparentSceneRenderer(canvasElement);
 const urlParams = new URLSearchParams(window.location.search);
+const renderer = new TransparentSceneRenderer(
+  canvasElement,
+  parseDevicePixelRatioOverride(urlParams.get('dpr')),
+);
 const solarPreviewEnabled = urlParams.get('solarPreview') === '1';
-// 纯演示模式：隐藏右上角 Debug 按钮与状态说明卡，以及底部手势提示文字。
+// 演示模式：隐藏 Debug/底部说明，保留精简操作 HUD，并提供骨架显示开关。
 const demoModeEnabled = urlParams.get('demo') === '1';
 const placeholderSolarSystem = new CodePlaceholderSolarSystem();
 const debugOverlay = new DebugOverlay(debugPanel, debugToggle);
-const statusSummary = new InteractionStatusSummary(interactionSummary);
+const statusSummary = new InteractionStatusSummary(
+  interactionSummary,
+  demoModeEnabled ? 'operation-only' : 'full',
+);
 const landmarkOverlay = new LandmarkOverlay(landmarkCanvas, videoElement);
 const sunRoomGlowEffect = new SunRoomGlow(sunRoomGlow);
 const tracking = new MediaPipeTrackingController();
@@ -97,9 +122,10 @@ const wholeSystemIntent = new WholeSystemIntentController();
 const solarOpening = new SolarOpeningController();
 const planetActivation = new PlanetActivationController();
 const planetFocus = new PlanetFocusController();
-const PLANET_RETURN_HOLD_MS = 1000;
+const planetReturnWave = new PlanetReturnWaveController();
 const EARTH_MOON_SWITCH_HOLD_MS = 500;
-const PLANET_RETURN_FINGER_HIT_SLOP_PX = 12;
+const DEMO_HAND_MODEL_HOLD_MS = 500;
+const UI_BUTTON_FINGER_HIT_SLOP_PX = 12;
 type EarthMoonFocusBodyId = Extract<
   InteractiveCelestialBodyId,
   'earth' | 'moon'
@@ -111,11 +137,14 @@ let latestTracking = tracking.getSnapshot();
 let returningFocusedBody: InteractiveCelestialBodyId | null = null;
 let latestPlanetActivationSnapshot: PlanetActivationSnapshot =
   EMPTY_PLANET_ACTIVATION_SNAPSHOT;
-let returnButtonHold: PlanetReturnButtonHoldState = EMPTY_PLANET_RETURN_BUTTON_HOLD;
 let earthMoonFocusBody: EarthMoonFocusBodyId = 'earth';
-let earthMoonSwitchButtonHold: PlanetReturnButtonHoldState =
-  EMPTY_PLANET_RETURN_BUTTON_HOLD;
+let earthMoonSwitchButtonHold: IndexFingerUiHoldState =
+  EMPTY_INDEX_FINGER_UI_HOLD;
 let earthMoonSwitchNeedsClear = false;
+let demoHandModelButtonHold: IndexFingerUiHoldState =
+  EMPTY_INDEX_FINGER_UI_HOLD;
+let demoHandModelNeedsClear = false;
+let demoHandSkeletonVisible = false;
 // Detection timestamp of the last tracking frame fed to the interaction controllers.
 let lastGestureInputAt: number | null = null;
 let perfFreshTrackingFrames = 0;
@@ -123,6 +152,12 @@ let perfStaleRenderFrames = 0;
 let lastControllerMs: number | null = null;
 let lastRecorderMs: number | null = null;
 let lastSolarUpdateMs: number | null = null;
+let lastRecorderControlsRecording: boolean | null = null;
+let lastRecorderControlsFrameCount: number | null = null;
+let lastPlanetFocusSwitchButtonProgress: string | null = null;
+let lastDemoHandModelButtonProgress: string | null = null;
+let lastPlanetFocusHudBody: InteractiveCelestialBodyId | null = null;
+let latestGestureReplayContext: GestureReplayFrameContext | null = null;
 
 renderer.addObject3D(placeholderSolarSystem.group);
 placeholderSolarSystem.setVisible(solarPreviewEnabled);
@@ -139,7 +174,12 @@ if (solarPreviewEnabled) {
 
 if (demoModeEnabled) {
   debugToggle.hidden = true;
-  interactionSummary.hidden = true;
+  interactionSummary.classList.add(
+    'planet-focus-action-card',
+    'demo-operation-hud',
+  );
+  demoHandModelButton.hidden = false;
+  updateDemoHandModelButtonLabel();
 }
 
 const debugSnapshot: DebugSnapshot = {
@@ -186,11 +226,13 @@ const debugSnapshot: DebugSnapshot = {
   solarReason: solarPreviewEnabled ? 'dev-preview' : 'inactive',
   solarStartDistance: null,
   solarTargetDistance: null,
+  solarEndpoint: solarOpening.getEndpointDebugSnapshot(),
   hoveredBody: null,
   activatedBody: null,
   pinchState: 'idle',
   planetActivation: EMPTY_PLANET_ACTIVATION_SNAPSHOT,
   planetFocus: EMPTY_PLANET_FOCUS_SNAPSHOT,
+  planetReturnWave: EMPTY_PLANET_RETURN_WAVE_SNAPSHOT,
   throwVelocity: null,
   wholeSystem: EMPTY_WHOLE_SYSTEM_INTENT_SNAPSHOT,
   rendererReady: true,
@@ -220,7 +262,7 @@ const debugSnapshot: DebugSnapshot = {
 };
 
 debugOverlay.onVisibilityChange((visible) => {
-  landmarkOverlay.setVisible(visible);
+  syncLandmarkOverlayVisibility();
   debugRecorderControls.hidden = !visible;
 });
 
@@ -255,7 +297,9 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
   const solarUpdateStartedAt = performance.now();
   placeholderSolarSystem.update(deltaSeconds);
   lastSolarUpdateMs = performance.now() - solarUpdateStartedAt;
-  renderer.setBloomActive(placeholderSolarSystem.group.visible);
+  const solarSystemVisible = placeholderSolarSystem.group.visible;
+  renderer.setSceneContentVisible(solarSystemVisible);
+  renderer.setBloomActive(solarSystemVisible);
   updateSunRoomGlow(canvasSize, deltaSeconds);
   completeBodyReturnIfReady();
 
@@ -270,9 +314,14 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
     trackingUpdateMs,
     freshTrackingFrame,
   });
-  if (recordGestureAt !== null) {
+  if (recordGestureAt !== null && latestGestureReplayContext) {
     const recorderStartedAt = performance.now();
-    gestureRecorder.record(recordGestureAt, latestTracking, debugSnapshot);
+    gestureRecorder.record(
+      recordGestureAt,
+      latestTracking,
+      debugSnapshot,
+      latestGestureReplayContext,
+    );
     lastRecorderMs = performance.now() - recorderStartedAt;
     debugSnapshot.performance.recorderMs = lastRecorderMs;
   }
@@ -282,14 +331,16 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
   }
   landmarkOverlay.draw(
     latestTracking,
-    debugSnapshot.wholeSystem,
+    demoModeEnabled && demoHandSkeletonVisible
+      ? undefined
+      : debugSnapshot.wholeSystem,
     interaction.state,
   );
   debugSnapshot.gestureRecording = gestureRecorder.getStatus();
   updateRecorderControls();
   statusSummary.update(debugSnapshot);
   debugOverlay.update(debugSnapshot);
-  updatePlanetReturnButtonVisibility();
+  updatePlanetFocusControlsVisibility();
   updatePlanetFocusSwitchButtonVisibility();
 });
 
@@ -307,8 +358,9 @@ window.addEventListener('beforeunload', () => {
   solarOpening.reset();
   planetActivation.reset();
   planetFocus.reset();
-  cancelPlanetReturnHold();
+  planetReturnWave.reset();
   cancelEarthMoonSwitchHold();
+  cancelDemoHandModelHold();
   renderer.removeObject3D(placeholderSolarSystem.group);
   placeholderSolarSystem.dispose();
   renderer.dispose();
@@ -362,6 +414,7 @@ function updateGestureControllers(
   timestamp: number,
   canvasSize: { width: number; height: number },
 ): void {
+  latestGestureReplayContext = null;
   const primitiveSnapshot = handPrimitives.update(
     tracking,
     gestureCalibration.getSnapshot().thresholds,
@@ -403,16 +456,29 @@ function updateGestureControllers(
   }
 
   const previewLayout = createPreviewLayout(canvasSize);
+  updateDemoHandModelButtonHandHold(tracking, timestamp, previewLayout);
   const camera = renderer.getCamera();
+  const solarInteractionState = interaction.state;
   const solarOpeningUpdate = solarOpening.update({
     tracking,
-    interactionState: interaction.state,
+    interactionState: solarInteractionState,
     thresholds: debugSnapshot.gestureCalibration.thresholds,
     layout: previewLayout,
     camera,
     planeZ: INTERACTION_PLANE_Z,
     timestamp,
   });
+  latestGestureReplayContext = {
+    solar: {
+      interactionState: solarInteractionState,
+      layout: previewLayout,
+      camera: captureReplayCamera(camera),
+      planeZ: INTERACTION_PLANE_Z,
+      snapshot: solarOpeningUpdate.snapshot,
+      endpoint: solarOpening.getEndpointDebugSnapshot(),
+    },
+    planetFocus: null,
+  };
 
   if (solarOpeningUpdate.nextState) {
     interaction.transition(solarOpeningUpdate.nextState);
@@ -422,8 +488,9 @@ function updateGestureControllers(
   applySolarOpeningSnapshot(solarOpeningUpdate.snapshot);
 
   if (interaction.state === 'BodyReturning') {
-    cancelPlanetReturnHold();
     cancelEarthMoonSwitchHold();
+    planetReturnWave.reset();
+    debugSnapshot.planetReturnWave = EMPTY_PLANET_RETURN_WAVE_SNAPSHOT;
     return;
   }
 
@@ -448,15 +515,22 @@ function updateGestureControllers(
   const activatedBody = planetActivationUpdate.snapshot.activatedBody;
   const focusedBody = getFocusDisplayBody(activatedBody);
   if (isPlanetFocusState(interaction.state) && activatedBody && focusedBody) {
+    const focusInteractionState = interaction.state;
+    const focusTarget = placeholderSolarSystem.getFocusedBodyScreenTarget(
+      focusedBody,
+      camera,
+      previewLayout,
+    );
+    latestGestureReplayContext.planetFocus = {
+      interactionState: focusInteractionState,
+      focusedBody,
+      target: focusTarget,
+    };
     const planetFocusUpdate = planetFocus.update({
       tracking,
-      interactionState: interaction.state,
+      interactionState: focusInteractionState,
       focusedBody,
-      target: placeholderSolarSystem.getFocusedBodyScreenTarget(
-        focusedBody,
-        camera,
-        previewLayout,
-      ),
+      target: focusTarget,
       layout: previewLayout,
       timestamp,
     });
@@ -470,18 +544,32 @@ function updateGestureControllers(
     }
 
     applyPlanetFocusSnapshot(planetFocusUpdate.snapshot, camera, previewLayout);
-    updatePlanetReturnButtonVisibility();
-    updatePlanetReturnButtonHandHold(tracking, timestamp, previewLayout);
+    const returnWaveUpdate = planetReturnWave.update({
+      tracking,
+      interactionState: interaction.state,
+      target: focusTarget,
+      layout: previewLayout,
+      timestamp,
+    });
+    debugSnapshot.planetReturnWave = returnWaveUpdate.snapshot;
+
+    if (returnWaveUpdate.triggered) {
+      triggerPlanetReturn();
+      return;
+    }
+
+    updatePlanetFocusControlsVisibility();
     updatePlanetFocusSwitchButtonVisibility();
     updateEarthMoonSwitchButtonHandHold(tracking, timestamp, previewLayout);
     return;
   }
 
-  cancelPlanetReturnHold();
   cancelEarthMoonSwitchHold();
   resetEarthMoonFocusBody();
   planetFocus.reset();
+  planetReturnWave.reset();
   debugSnapshot.planetFocus = EMPTY_PLANET_FOCUS_SNAPSHOT;
+  debugSnapshot.planetReturnWave = EMPTY_PLANET_RETURN_WAVE_SNAPSHOT;
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -492,6 +580,18 @@ function getElement<T extends HTMLElement>(id: string): T {
   }
 
   return element as T;
+}
+
+function parseDevicePixelRatioOverride(value: string | null): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) && parsed >= 1 && parsed <= 2
+    ? parsed
+    : undefined;
 }
 
 function updateSunRoomGlow(
@@ -566,6 +666,8 @@ function createEmptyPerformanceSnapshot(): DebugSnapshot['performance'] {
     detectMs: null,
     handDetectMs: null,
     poseDetectMs: null,
+    workerRoundTripMs: null,
+    handDelegate: null,
     controllerMs: null,
     recorderMs: null,
     solarUpdateMs: null,
@@ -577,6 +679,7 @@ function createEmptyPerformanceSnapshot(): DebugSnapshot['performance'] {
     freshTrackingFrames: 0,
     staleRenderFrames: 0,
     detectionFrameCount: 0,
+    droppedVideoFrameCount: 0,
     repeatedVideoFrameCount: 0,
     videoCurrentTimeMs: null,
     videoFrameDeltaMs: null,
@@ -619,6 +722,7 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
   debugSnapshot.solarReason = snapshot.reason;
   debugSnapshot.solarStartDistance = snapshot.startDistance;
   debugSnapshot.solarTargetDistance = snapshot.targetDistance;
+  debugSnapshot.solarEndpoint = solarOpening.getEndpointDebugSnapshot();
 
   placeholderSolarSystem.setVisible(snapshot.visible);
   placeholderSolarSystem.setClosingActive(interaction.state === 'SolarClosing');
@@ -637,17 +741,20 @@ function applySolarOpeningSnapshot(snapshot: SolarOpeningSnapshot): void {
 function applyPlanetActivationSnapshot(
   snapshot: PlanetActivationSnapshot,
 ): void {
+  const focusedBody = isFocusVisualState(interaction.state)
+    ? getFocusDisplayBody(snapshot.activatedBody)
+    : null;
+
   latestPlanetActivationSnapshot = snapshot;
   debugSnapshot.hoveredBody = snapshot.hoveredBody;
   debugSnapshot.activatedBody = snapshot.activatedBody;
   debugSnapshot.pinchState = snapshot.pinchState;
   debugSnapshot.planetActivation = snapshot;
+  updatePlanetFocusHudTag(focusedBody);
   placeholderSolarSystem.applyBodyInteractionState({
     hoveredBody: snapshot.hoveredBody,
     activatedBody: snapshot.activatedBody,
-    focusedBody: isFocusVisualState(interaction.state)
-      ? getFocusDisplayBody(snapshot.activatedBody)
-      : null,
+    focusedBody,
   });
 }
 
@@ -737,6 +844,16 @@ function updateStartupGestureDebugMetrics(
 function updateRecorderControls(): void {
   const status = gestureRecorder.getStatus();
 
+  if (
+    status.recording === lastRecorderControlsRecording &&
+    status.frameCount === lastRecorderControlsFrameCount
+  ) {
+    return;
+  }
+
+  lastRecorderControlsRecording = status.recording;
+  lastRecorderControlsFrameCount = status.frameCount;
+
   debugRecordToggle.textContent = status.recording
     ? `Stop (${status.frameCount})`
     : 'Record';
@@ -781,7 +898,7 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'PlanetActivated') {
-    guidance.textContent = '目标已激活，用选中这只手的拇指和食指连续闭合两次进入单个星球界面';
+    guidance.textContent = '目标已激活，用选中这只手的拇指和食指连续点捏两次，第二次松开后进入单个星球界面';
     return;
   }
 
@@ -791,12 +908,12 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'PlanetFocusControlled') {
-    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；左上角按钮可返回或切换地月视角';
+    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；地月界面可长按切换视角';
     return;
   }
 
   if (state === 'PlanetFocusFloating') {
-    guidance.textContent = '星球已放下悬浮；手先离开热区，再重新碰触停留 1 秒可跟手；左上角按钮可返回或切换地月视角';
+    guidance.textContent = '星球已放下悬浮；朝左上角或右上角快速张手挥出可返回太阳系，或重新碰触停留 1 秒跟手；地月界面可长按切换视角';
     return;
   }
 
@@ -835,39 +952,111 @@ function getFocusDisplayBody(
   return activatedBody;
 }
 
-function updatePlanetReturnButtonHandHold(
+function updateDemoHandModelButtonHandHold(
   tracking: TrackingSnapshot,
   timestamp: number,
   layout: PreviewLayout,
 ): void {
-  const focusedBody = getActiveFocusedBody();
-  const active = isPlanetFocusState(interaction.state) && focusedBody !== null;
-  const holdUpdate = updatePlanetReturnButtonHold({
+  const active = demoModeEnabled && !demoHandModelButton.hidden;
+  const rect = getButtonStageRect(demoHandModelButton, layout);
+
+  if (demoHandModelNeedsClear) {
+    const clearProbe = updateIndexFingerUiHold({
+      active,
+      hands: tracking.hands.hands,
+      layout,
+      rect,
+      previous: EMPTY_INDEX_FINGER_UI_HOLD,
+      requiredMs: DEMO_HAND_MODEL_HOLD_MS,
+      timestamp,
+      hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
+    });
+
+    if (!active || clearProbe.hit === null) {
+      demoHandModelNeedsClear = false;
+    }
+
+    cancelDemoHandModelHold();
+    return;
+  }
+
+  const holdUpdate = updateIndexFingerUiHold({
     active,
     hands: tracking.hands.hands,
     layout,
-    rect: getPlanetReturnButtonStageRect(layout),
-    previous: returnButtonHold,
-    requiredMs: PLANET_RETURN_HOLD_MS,
+    rect,
+    previous: demoHandModelButtonHold,
+    requiredMs: DEMO_HAND_MODEL_HOLD_MS,
     timestamp,
-    hitSlopPx: PLANET_RETURN_FINGER_HIT_SLOP_PX,
+    hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
   });
 
-  returnButtonHold = holdUpdate.hold;
-  setPlanetReturnButtonProgress(holdUpdate.progress);
-  planetReturnButton.classList.toggle('is-charging', holdUpdate.hit !== null);
-
-  debugSnapshot.planetFocus = {
-    ...debugSnapshot.planetFocus,
-    returnGestureMs: Math.round(holdUpdate.elapsedMs),
-    returnGestureRequiredMs: active ? PLANET_RETURN_HOLD_MS : 0,
-    returnGestureScore: holdUpdate.hit?.hitScore ?? 0,
-    returnGestureHandKey: holdUpdate.hold.handKey,
-  };
+  demoHandModelButtonHold = holdUpdate.hold;
+  setDemoHandModelButtonProgress(holdUpdate.progress);
+  demoHandModelButton.classList.toggle(
+    'is-charging',
+    holdUpdate.hit !== null,
+  );
 
   if (holdUpdate.triggered) {
-    triggerPlanetReturnFromButton(holdUpdate.hold.handKey);
+    toggleDemoHandSkeleton();
   }
+}
+
+function toggleDemoHandSkeleton(): void {
+  if (!demoModeEnabled) {
+    cancelDemoHandModelHold();
+    return;
+  }
+
+  demoHandSkeletonVisible = !demoHandSkeletonVisible;
+  demoHandModelNeedsClear = true;
+  cancelDemoHandModelHold({ keepProgress: true });
+  updateDemoHandModelButtonLabel();
+  syncLandmarkOverlayVisibility();
+}
+
+function cancelDemoHandModelHold(
+  options: { keepProgress?: boolean } = {},
+): void {
+  demoHandModelButtonHold = EMPTY_INDEX_FINGER_UI_HOLD;
+  demoHandModelButton.classList.remove('is-charging');
+
+  if (!options.keepProgress) {
+    setDemoHandModelButtonProgress(0);
+  }
+}
+
+function setDemoHandModelButtonProgress(progress: number): void {
+  const value = progress.toFixed(3);
+
+  if (value === lastDemoHandModelButtonProgress) {
+    return;
+  }
+
+  lastDemoHandModelButtonProgress = value;
+  demoHandModelButton.style.setProperty('--focus-action-progress', value);
+}
+
+function updateDemoHandModelButtonLabel(): void {
+  const action = demoHandSkeletonVisible ? '隐藏' : '显示';
+  const label = `长按${action}手部模型`;
+
+  demoHandModelLabel.textContent = label;
+  demoHandModelContext.textContent = `HAND SKELETON · ${
+    demoHandSkeletonVisible ? 'ON' : 'OFF'
+  }`;
+  demoHandModelButton.setAttribute('aria-label', label);
+  demoHandModelButton.setAttribute(
+    'aria-pressed',
+    demoHandSkeletonVisible ? 'true' : 'false',
+  );
+}
+
+function syncLandmarkOverlayVisibility(): void {
+  landmarkOverlay.setVisible(
+    debugOverlay.isVisible || (demoModeEnabled && demoHandSkeletonVisible),
+  );
 }
 
 function updateEarthMoonSwitchButtonHandHold(
@@ -879,15 +1068,15 @@ function updateEarthMoonSwitchButtonHandHold(
   const rect = getPlanetFocusSwitchButtonStageRect(layout);
 
   if (earthMoonSwitchNeedsClear) {
-    const clearProbe = updatePlanetReturnButtonHold({
+    const clearProbe = updateIndexFingerUiHold({
       active,
       hands: tracking.hands.hands,
       layout,
       rect,
-      previous: EMPTY_PLANET_RETURN_BUTTON_HOLD,
+      previous: EMPTY_INDEX_FINGER_UI_HOLD,
       requiredMs: EARTH_MOON_SWITCH_HOLD_MS,
       timestamp,
-      hitSlopPx: PLANET_RETURN_FINGER_HIT_SLOP_PX,
+      hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
     });
 
     if (!active || clearProbe.hit === null) {
@@ -898,7 +1087,7 @@ function updateEarthMoonSwitchButtonHandHold(
     return;
   }
 
-  const holdUpdate = updatePlanetReturnButtonHold({
+  const holdUpdate = updateIndexFingerUiHold({
     active,
     hands: tracking.hands.hands,
     layout,
@@ -906,7 +1095,7 @@ function updateEarthMoonSwitchButtonHandHold(
     previous: earthMoonSwitchButtonHold,
     requiredMs: EARTH_MOON_SWITCH_HOLD_MS,
     timestamp,
-    hitSlopPx: PLANET_RETURN_FINGER_HIT_SLOP_PX,
+    hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
   });
 
   earthMoonSwitchButtonHold = holdUpdate.hold;
@@ -921,12 +1110,11 @@ function updateEarthMoonSwitchButtonHandHold(
   }
 }
 
-function triggerPlanetReturnFromButton(handKey: string | null): void {
+function triggerPlanetReturn(): void {
   const focusedBody = getActiveFocusedBody();
-  cancelPlanetReturnHold({ keepProgress: true });
+  cancelEarthMoonSwitchHold();
 
   if (!focusedBody || !isPlanetFocusState(interaction.state)) {
-    setPlanetReturnButtonProgress(0);
     return;
   }
 
@@ -934,41 +1122,22 @@ function triggerPlanetReturnFromButton(handKey: string | null): void {
   debugSnapshot.planetFocus = {
     ...debugSnapshot.planetFocus,
     focusedBody,
-    returnGestureMs: PLANET_RETURN_HOLD_MS,
-    returnGestureRequiredMs: PLANET_RETURN_HOLD_MS,
-    returnGestureScore: 1,
-    returnGestureHandKey: handKey ?? 'index-finger',
-    transitionReason: 'index-finger-return-button-hold',
+    transitionReason: 'fast-upper-corner-throw-return',
   };
   interaction.transition('BodyReturning');
   startBodyReturn(focusedBody);
   updateGuidanceForState(interaction.state);
-  updatePlanetReturnButtonVisibility();
+  updatePlanetFocusControlsVisibility();
+  updatePlanetFocusSwitchButtonVisibility();
 }
 
-function cancelPlanetReturnHold(options: { keepProgress?: boolean } = {}): void {
-  returnButtonHold = EMPTY_PLANET_RETURN_BUTTON_HOLD;
-  planetReturnButton.classList.remove('is-charging');
-
-  if (!options.keepProgress) {
-    setPlanetReturnButtonProgress(0);
-  }
-}
-
-function setPlanetReturnButtonProgress(progress: number): void {
-  planetReturnButton.style.setProperty(
-    '--return-progress',
-    progress.toFixed(3),
-  );
-}
-
-function updatePlanetReturnButtonVisibility(): void {
+function updatePlanetFocusControlsVisibility(): void {
   const visible =
     isPlanetFocusState(interaction.state) && getActiveFocusedBody() !== null;
-  planetReturnButton.hidden = !visible;
+  const hidden = !visible;
 
-  if (!visible) {
-    cancelPlanetReturnHold();
+  if (planetFocusControls.hidden !== hidden) {
+    planetFocusControls.hidden = hidden;
   }
 }
 
@@ -981,7 +1150,6 @@ function triggerEarthMoonFocusSwitch(): void {
   earthMoonFocusBody = earthMoonFocusBody === 'earth' ? 'moon' : 'earth';
   earthMoonSwitchNeedsClear = true;
   cancelEarthMoonSwitchHold({ keepProgress: true });
-  cancelPlanetReturnHold();
   updatePlanetFocusSwitchButtonLabel();
   applyPlanetActivationSnapshot(latestPlanetActivationSnapshot);
   debugSnapshot.planetFocus = {
@@ -994,7 +1162,7 @@ function triggerEarthMoonFocusSwitch(): void {
 function cancelEarthMoonSwitchHold(
   options: { keepProgress?: boolean } = {},
 ): void {
-  earthMoonSwitchButtonHold = EMPTY_PLANET_RETURN_BUTTON_HOLD;
+  earthMoonSwitchButtonHold = EMPTY_INDEX_FINGER_UI_HOLD;
   planetFocusSwitchButton.classList.remove('is-charging');
 
   if (!options.keepProgress) {
@@ -1003,15 +1171,23 @@ function cancelEarthMoonSwitchHold(
 }
 
 function setPlanetFocusSwitchButtonProgress(progress: number): void {
-  planetFocusSwitchButton.style.setProperty(
-    '--return-progress',
-    progress.toFixed(3),
-  );
+  const value = progress.toFixed(3);
+
+  if (value === lastPlanetFocusSwitchButtonProgress) {
+    return;
+  }
+
+  lastPlanetFocusSwitchButtonProgress = value;
+  planetFocusSwitchButton.style.setProperty('--focus-action-progress', value);
 }
 
 function updatePlanetFocusSwitchButtonVisibility(): void {
   const visible = isEarthMoonFocusSwitchActive();
-  planetFocusSwitchButton.hidden = !visible;
+  const hidden = !visible;
+
+  if (planetFocusSwitchButton.hidden !== hidden) {
+    planetFocusSwitchButton.hidden = hidden;
+  }
   updatePlanetFocusSwitchButtonLabel();
 
   if (!visible) {
@@ -1020,6 +1196,18 @@ function updatePlanetFocusSwitchButtonVisibility(): void {
 }
 
 let lastPlanetFocusSwitchLabel = '';
+
+function updatePlanetFocusHudTag(
+  focusedBody: InteractiveCelestialBodyId | null,
+): void {
+  if (focusedBody === null || focusedBody === lastPlanetFocusHudBody) {
+    return;
+  }
+
+  lastPlanetFocusHudBody = focusedBody;
+  const bodyName = placeholderSolarSystem.getBodyDefinition(focusedBody).name;
+  planetFocusHudTag.textContent = `FOCUS CONTROL // ${bodyName.toUpperCase()}`;
+}
 
 function updatePlanetFocusSwitchButtonLabel(): void {
   const targetBody = earthMoonFocusBody === 'earth' ? '月球' : '地球';
@@ -1031,6 +1219,10 @@ function updatePlanetFocusSwitchButtonLabel(): void {
 
   lastPlanetFocusSwitchLabel = label;
   planetFocusSwitchLabel.textContent = label;
+  planetFocusSwitchContext.textContent =
+    earthMoonFocusBody === 'earth'
+      ? 'VIEW · EARTH → MOON'
+      : 'VIEW · MOON → EARTH';
   planetFocusSwitchButton.setAttribute('aria-label', label);
 }
 
@@ -1047,22 +1239,16 @@ function resetEarthMoonFocusBody(): void {
   updatePlanetFocusSwitchButtonLabel();
 }
 
-function getPlanetReturnButtonStageRect(
-  layout: PreviewLayout,
-): PlanetReturnButtonStageRect | null {
-  return getButtonStageRect(planetReturnButton, layout);
-}
-
 function getPlanetFocusSwitchButtonStageRect(
   layout: PreviewLayout,
-): PlanetReturnButtonStageRect | null {
+): UiButtonStageRect | null {
   return getButtonStageRect(planetFocusSwitchButton, layout);
 }
 
 function getButtonStageRect(
   button: HTMLElement,
   layout: PreviewLayout,
-): PlanetReturnButtonStageRect | null {
+): UiButtonStageRect | null {
   if (button.hidden) {
     return null;
   }
@@ -1138,12 +1324,14 @@ function finishBodyReturn(): void {
   cancelEarthMoonSwitchHold();
   planetActivation.reset();
   planetFocus.reset();
+  planetReturnWave.reset();
   debugSnapshot.hoveredBody = null;
   debugSnapshot.activatedBody = null;
   debugSnapshot.pinchState = 'idle';
   debugSnapshot.planetActivation = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   latestPlanetActivationSnapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   debugSnapshot.planetFocus = EMPTY_PLANET_FOCUS_SNAPSHOT;
+  debugSnapshot.planetReturnWave = EMPTY_PLANET_RETURN_WAVE_SNAPSHOT;
   debugSnapshot.throwVelocity = null;
   placeholderSolarSystem.applyBodyInteractionState({
     hoveredBody: null,

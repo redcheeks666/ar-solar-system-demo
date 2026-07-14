@@ -130,6 +130,12 @@ export interface WholeSystemIntentSnapshot {
   releaseConfidence: number;
   reGripConfidence: number;
   endpointHitScore: number;
+  /** Ratio used by the legacy whole-system pinch diagnostic for the visual-left hand. */
+  leftPinchRatio: number | null;
+  /** Ratio used by the legacy whole-system pinch diagnostic for the visual-right hand. */
+  rightPinchRatio: number | null;
+  /** Exact penalty subtracted from the legacy control/re-grip confidence diagnostics. */
+  pinchPenalty: number;
   trackingConfidence: number;
   scaleIntent: WholeSystemScaleIntent;
   scaleIntentScore: number;
@@ -164,6 +170,25 @@ export interface GestureThresholds {
   releaseReGripClearRadius: number;
   collapseStartDistance: number;
   collapseCompleteDistance: number;
+}
+
+export type SolarEndpointDebugMode = 'inactive' | 'enter' | 'follow';
+
+/** Diagnostics from the endpoint gate that actually drives free-hover re-grip. */
+export interface SolarEndpointDebugSnapshot {
+  mode: SolarEndpointDebugMode;
+  reason: string;
+  handLeftWorld: NormalizedPoint | null;
+  handRightWorld: NormalizedPoint | null;
+  referenceLeftWorld: NormalizedPoint | null;
+  referenceRightWorld: NormalizedPoint | null;
+  leftDistanceWorld: number | null;
+  rightDistanceWorld: number | null;
+  radiusWorld: number | null;
+  score: number;
+  bothWithinRadius: boolean;
+  stableMs: number;
+  stableRequiredMs: number;
 }
 
 export interface HandPrimitiveSnapshot {
@@ -203,8 +228,11 @@ export interface MediaPipePerformanceSnapshot {
   detectMs: number | null;
   handDetectMs: number | null;
   poseDetectMs: number | null;
+  workerRoundTripMs: number | null;
+  handDelegate: 'GPU' | 'CPU' | null;
   trackingHz: number | null;
   detectionFrameCount: number;
+  droppedVideoFrameCount: number;
   repeatedVideoFrameCount: number;
   videoCurrentTimeMs: number | null;
   videoFrameDeltaMs: number | null;
@@ -269,11 +297,13 @@ export interface DebugSnapshot {
   solarReason: string;
   solarStartDistance: number | null;
   solarTargetDistance: number | null;
+  solarEndpoint: SolarEndpointDebugSnapshot;
   hoveredBody: string | null;
   activatedBody: string | null;
   pinchState: string;
   planetActivation: PlanetActivationDebugSnapshot;
   planetFocus: PlanetFocusDebugSnapshot;
+  planetReturnWave: PlanetReturnWaveDebugSnapshot;
   throwVelocity: number | null;
   wholeSystem: WholeSystemIntentSnapshot;
   rendererReady: boolean;
@@ -374,11 +404,60 @@ export interface PlanetFocusDebugSnapshot {
   pinchDistancePx: number | null;
   pinchRatio: number | null;
   pinchTapHandKey: string | null;
-  returnGestureMs: number;
-  returnGestureRequiredMs: number;
-  returnGestureScore: number;
-  returnGestureHandKey: string | null;
   transitionReason: string;
+}
+
+export type PlanetReturnWaveState =
+  | 'Inactive'
+  | 'Arming'
+  | 'Watching'
+  | 'Sweeping'
+  | 'Triggered';
+
+export type PlanetReturnWaveCornerDirection =
+  | 'upper-left'
+  | 'upper-right';
+
+export interface PlanetReturnWaveDebugSnapshot {
+  state: PlanetReturnWaveState;
+  handKey: string | null;
+  /** Visible time for diagnostics only; it is not a return-intent gate. */
+  handVisibleMs: number;
+  /** Whether the active candidate has the required multi-frame evidence. */
+  handReady: boolean;
+  elapsedMs: number;
+  stableFrames: number;
+  /** Net sweep displacement in preview-short-side units. */
+  displacement: number | null;
+  /** Median of the most recent sweep speeds, in preview-short-sides per second. */
+  medianSpeed: number | null;
+  /** Net displacement divided by elapsed time, in preview-short-sides per second. */
+  netSpeed: number | null;
+  /** Net displacement divided by path length; 1 is a perfectly coherent direction. */
+  coherence: number | null;
+  /** Absolute horizontal component of the net sweep, in preview-short-side units. */
+  horizontalDisplacement: number | null;
+  /** Upward component of the net sweep, in preview-short-side units. */
+  upwardDisplacement: number | null;
+  /** Display-space corner targeted by the net sweep. */
+  cornerDirection: PlanetReturnWaveCornerDirection | null;
+  openHandScore: number | null;
+  palmScaleRatio: number | null;
+  /** Legacy schema field; the return detector now has one physical throw path. */
+  triggerMode: null;
+  score: number;
+  triggered: boolean;
+  reason: string;
+  /** Maximum observed step speed, including a spatially validated tracking-gap bridge. */
+  peakSpeed?: number | null;
+  /** Candidate-start distance to the focused body, in preview-short-side units. */
+  startDistanceToBody?: number | null;
+  /** Candidate-end distance to the focused body, in preview-short-side units. */
+  endDistanceToBody?: number | null;
+  /** Recent end-of-stroke body-distance change; positive means the throw finishes moving away. */
+  bodyDistanceTrend?: number | null;
+  /** Focused-body hit radius, in preview-short-side units. */
+  bodyHitRadius?: number | null;
 }
 
 export interface RenderFrameSnapshot {

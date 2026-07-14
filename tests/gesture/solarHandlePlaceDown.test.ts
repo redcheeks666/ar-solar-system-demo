@@ -36,7 +36,7 @@ function step(
 }
 
 // Pull open with both hands, then hold the endpoints until SolarHandleControl is
-// re-acquired. Hold distance 0.6 stays under the max-width place-down (0.72).
+// re-acquired. Hold distance 0.6 stays under the near-edge place-down boundary.
 function openToHandleControl(controller: SolarOpeningController): {
   state: InteractionState;
   timestamp: number;
@@ -91,13 +91,14 @@ describe('SolarHandleControl place-down semantics', () => {
     expect(state).toBe('SolarFreeHover');
   });
 
-  it('auto-places down once the two-hand span exceeds half the frame', () => {
+  it('auto-places down only after a sustained near-edge two-hand span', () => {
     const controller = new SolarOpeningController();
     let { state, timestamp } = openToHandleControl(controller);
     expect(state).toBe('SolarHandleControl');
 
-    // Pull wider than the max visual width (0.72 of the frame): auto place-down.
-    for (const distance of [0.68, 0.74, 0.82]) {
+    // Hold beyond the 0.90 enter boundary for longer than the 180ms dwell.
+    for (let i = 0; i < 8 && state !== 'SolarFreeHover'; i += 1) {
+      const distance = 0.94;
       const update = step(controller, state, twoHands(distance), timestamp);
       if (update.nextState) {
         state = update.nextState;
@@ -105,6 +106,22 @@ describe('SolarHandleControl place-down semantics', () => {
       timestamp += 33;
     }
     expect(state).toBe('SolarFreeHover');
+  });
+
+  it('ignores a one-frame wide-span spike and resets below the exit boundary', () => {
+    const controller = new SolarOpeningController();
+    let { state, timestamp } = openToHandleControl(controller);
+    expect(state).toBe('SolarHandleControl');
+
+    for (const distance of [0.94, 0.89, 0.84, 0.94, 0.84]) {
+      const update = step(controller, state, twoHands(distance), timestamp);
+      if (update.nextState) {
+        state = update.nextState;
+      }
+      timestamp += 33;
+    }
+
+    expect(state).toBe('SolarHandleControl');
   });
 
   it('keeps controlling without placing down while hands stay open and in range', () => {
@@ -158,5 +175,12 @@ describe('SolarHandleControl place-down semantics', () => {
 
     expect(state).toBe('SolarHandleControl');
     expect(enteredAt! - holdStart).toBeGreaterThanOrEqual(450);
+    expect(controller.getEndpointDebugSnapshot()).toMatchObject({
+      mode: 'enter',
+      reason: 'endpoint-hit-stable',
+      bothWithinRadius: true,
+      stableRequiredMs: 500,
+    });
+    expect(controller.getEndpointDebugSnapshot().stableMs).toBeGreaterThanOrEqual(500);
   });
 });

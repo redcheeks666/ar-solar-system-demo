@@ -24,6 +24,7 @@ import {
   AE_RIFT_BORDER_SOURCE_WIDTH,
   AE_RIFT_VERTICAL_TILT_DEGREES,
   SOLAR_SYSTEM_PREVIEW_TILT_X_DEGREES,
+  SOLAR_BACKGROUND_OPACITY_SCALE,
   UNIVERSE_RIFT_HEIGHT,
   UNIVERSE_RIFT_WIDTH,
 } from '../../src/solar/solarVisualConfig';
@@ -458,6 +459,9 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       expect(whiteStardust.visible).toBe(true);
       expect(cyanTrails.visible).toBe(true);
       const openingOpacity = whiteStardust.material.opacity;
+      expect(openingOpacity).toBeLessThanOrEqual(
+        0.18 * SOLAR_BACKGROUND_OPACITY_SCALE,
+      );
 
       solarSystem.applyBodyInteractionState({
         hoveredBody: null,
@@ -512,6 +516,12 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
       expect(riftRoot?.visible).toBe(true);
       const overviewOpacity = starfieldMaterial.uniforms.opacity.value as number;
       expect(overviewOpacity).toBeGreaterThan(0.1);
+      expect(overviewOpacity).toBeLessThanOrEqual(
+        SOLAR_BACKGROUND_OPACITY_SCALE,
+      );
+      expect(solarSystem.getBodyRenderState('earth')).toMatchObject({
+        opacity: 1,
+      });
 
       solarSystem.applyBodyInteractionState({
         hoveredBody: null,

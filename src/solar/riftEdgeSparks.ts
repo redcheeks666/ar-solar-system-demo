@@ -12,6 +12,7 @@ import {
 } from 'three';
 import { BLOOM_RENDER_LAYER } from '../rendering/renderLayers';
 import { clamp01, lerp } from '../utils/math';
+import { SOLAR_BACKGROUND_OPACITY_SCALE } from './solarVisualConfig';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import {
@@ -151,7 +152,10 @@ export class RiftEdgeSparks {
       colorAttribute.needsUpdate = true;
 
       layer.material.opacity =
-        layer.peakOpacity * opacityScale * lerp(0.6, 1, energy);
+        layer.peakOpacity *
+        opacityScale *
+        SOLAR_BACKGROUND_OPACITY_SCALE *
+        lerp(0.6, 1, energy);
     });
   }
 

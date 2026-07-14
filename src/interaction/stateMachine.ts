@@ -22,10 +22,9 @@ const VALID_TRANSITIONS: Record<InteractionState, ReadonlySet<InteractionState>>
     'SolarActive',
     'SolarFreeHover',
     'PlanetFocusView',
-    'BodyReturning',
   ]),
   PlanetFocusView: new Set(['PlanetFocusControlled', 'PlanetFocusFloating', 'BodyReturning']),
-  PlanetFocusControlled: new Set(['PlanetFocusFloating', 'BodyReturning']),
+  PlanetFocusControlled: new Set(['PlanetFocusFloating']),
   PlanetFocusFloating: new Set(['PlanetFocusControlled', 'BodyReturning']),
   BodyReturning: new Set(['SolarActive', 'SolarFreeHover']),
 };

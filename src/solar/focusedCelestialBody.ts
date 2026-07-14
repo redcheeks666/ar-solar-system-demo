@@ -690,12 +690,10 @@ const EARTH_SHADOW_FRAGMENT_SHADER = `
 
   void main() {
     float lightAmount = dot(normalize(vViewNormal), normalize(lightDirection));
-    float darkness = 1.0 - smoothstep(-0.18, 0.48, lightAmount);
-    // Keep only a narrow trace of warmth at the day/night boundary.
-    float dawn = exp(-pow((lightAmount - 0.07) / 0.05, 2.0));
-    vec3 color = mix(shadowColor, vec3(1.0, 0.55, 0.28), dawn * 0.25);
-    float alpha = max(darkness * opacity, dawn * 0.08);
-    gl_FragColor = vec4(color, alpha);
+    // A broad neutral falloff avoids drawing a visible colored band across the
+    // surface while leaving enough overlap for city lights to emerge naturally.
+    float darkness = 1.0 - smoothstep(-0.28, 0.58, lightAmount);
+    gl_FragColor = vec4(shadowColor, darkness * opacity);
   }
 `;
 

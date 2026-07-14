@@ -4,6 +4,11 @@ export const MEDIAPIPE_WASM_URL = '/mediapipe/wasm';
 
 export const HAND_LANDMARKER_MODEL_URL = '/mediapipe/models/hand_landmarker.task';
 
+export const HAND_LANDMARKER_NUM_HANDS = 2;
+export const MIN_HAND_DETECTION_CONFIDENCE = 0.35;
+export const MIN_HAND_PRESENCE_CONFIDENCE = 0.35;
+export const MIN_HAND_TRACKING_CONFIDENCE = 0.4;
+
 export const POSE_LANDMARKER_MODEL_URL =
   'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
 

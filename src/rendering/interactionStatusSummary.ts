@@ -1,18 +1,28 @@
 import type { DebugSnapshot } from '../utils/types';
+import {
+  getCelestialBodyDisplayName,
+  isInteractiveCelestialBodyId,
+} from '../solar/solarSystemData';
 
 const UPDATE_INTERVAL_MS = 150;
 
 interface StatusSummary {
   title: string;
+  operationTitle?: string;
   state: string;
   reason: string;
   params: string[];
 }
 
+export type InteractionStatusSummaryMode = 'full' | 'operation-only';
+
 export class InteractionStatusSummary {
   private lastRenderTime = 0;
 
-  constructor(private readonly container: HTMLElement) {}
+  constructor(
+    private readonly container: HTMLElement,
+    private readonly mode: InteractionStatusSummaryMode = 'full',
+  ) {}
 
   update(snapshot: DebugSnapshot): void {
     if (this.container.hidden) {
@@ -30,6 +40,27 @@ export class InteractionStatusSummary {
   }
 
   private render(summary: StatusSummary): void {
+    if (this.mode === 'operation-only') {
+      const corners = document.createElement('span');
+      corners.className = 'planet-focus-action-card-corners';
+      corners.setAttribute('aria-hidden', 'true');
+
+      const edge = document.createElement('span');
+      edge.className = 'planet-focus-action-card-edge';
+      edge.setAttribute('aria-hidden', 'true');
+
+      const label = document.createElement('p');
+      label.className = 'demo-operation-label';
+      label.textContent = 'CURRENT OPERATION // LIVE';
+
+      const operation = document.createElement('p');
+      operation.className = 'demo-operation-title';
+      operation.textContent = summary.operationTitle ?? summary.title;
+
+      this.container.replaceChildren(corners, edge, label, operation);
+      return;
+    }
+
     const title = document.createElement('p');
     title.className = 'interaction-summary-title';
     title.textContent = summary.title;
@@ -159,8 +190,8 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   if (snapshot.interactionState === 'PlanetActivated') {
     return {
       title: '天体已激活',
-      state: `${snapshot.activatedBody ?? '目标天体'} 等待双指双击闭合`,
-      reason: '选中天体停止原轨道公转但保持自转；用选中这只手的拇指和食指连续闭合两次进入单颗星球界面',
+      state: `${snapshot.activatedBody ?? '目标天体'} 等待双指双击并松开`,
+      reason: '选中天体停止原轨道公转但保持自转；用选中这只手的拇指和食指连续点捏两次，第二次稳定松开后进入单颗星球界面',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Pinch ratio=${nullable(snapshot.planetActivation.pinchRatio)}`,
@@ -174,13 +205,15 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   if (snapshot.interactionState === 'PlanetFocusView') {
     return {
       title: '单颗星球界面',
+      operationTitle: focusedBodyOperationTitle(snapshot),
       state: `${snapshot.activatedBody ?? '目标天体'} 等待热区触碰`,
-      reason: focusViewReason(snapshot),
+      reason: `${focusViewReason(snapshot)}；手从星球命中区外朝左上角或右上角快速甩出，也可直接返回太阳系`,
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Focus=${snapshot.planetFocus.controlState}`,
         `Touch=${snapshot.planetFocus.touchHandCount}`,
         `Dwell=${Math.round(snapshot.planetFocus.dwellMs)}ms`,
+        `Wave=${snapshot.planetReturnWave.state}/${snapshot.planetReturnWave.reason}`,
         `Reason=${snapshot.planetFocus.transitionReason}`,
       ],
     };
@@ -193,7 +226,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         snapshot.planetFocus.controlMode === 'two'
           ? '双手跟随，手距调整大小'
           : '单手跟随移动',
-      reason: '触碰热区停留已成立；捏合拇指和任一手指后张开会放下当前星球并转为悬浮；食指尖按住左上角按钮可返回太阳系',
+      reason: '触碰热区停留已成立；捏合拇指和任一手指后张开会放下当前星球并转为悬浮；跟手控制期间返回手势禁用',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Mode=${snapshot.planetFocus.controlMode}`,
@@ -207,15 +240,17 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   if (snapshot.interactionState === 'PlanetFocusFloating') {
     return {
       title: '星球已放下',
+      operationTitle: '星球悬浮中',
       state: `${snapshot.activatedBody ?? '目标天体'} 悬浮在当前位置`,
       reason:
         snapshot.planetFocus.controlState === 'DeselectedWaitForClear'
-          ? '跟手选中已取消；需要所有手离开当前星球热区后，才会重新进入待选中状态'
-          : '跟手控制已解除；当前星球仍留在单颗星球界面并持续自转，不自动回轨；食指尖按住左上角按钮可返回太阳系',
+          ? '跟手选中已取消；需要所有手离开当前星球热区后，才会重新进入待选中状态；放下后等待 250ms，再从星球命中区外朝左上角或右上角快速甩出可返回太阳系'
+          : '跟手控制已解除；当前星球仍留在单颗星球界面并持续自转；放下后等待 250ms，再从星球命中区外朝左上角或右上角快速甩出可返回太阳系',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
         `Focus=${snapshot.planetFocus.controlState}`,
+        `Wave=${snapshot.planetReturnWave.state}/${snapshot.planetReturnWave.reason}`,
         `Reason=${snapshot.planetFocus.transitionReason}`,
       ],
     };
@@ -225,7 +260,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
     return {
       title: '正在返回太阳系',
       state: `${snapshot.activatedBody ?? snapshot.planetFocus.focusedBody ?? '当前星球'} 回到原轨道`,
-      reason: '食指尖按住左上角返回按钮已确认；焦点星球正在用 0.5 秒调整回太阳系位置和大小，完成后恢复太阳系交互与不透明度',
+      reason: '已确认从星球命中区外朝左上角或右上角的快速甩出；焦点星球正在用 0.5 秒调整回太阳系位置和大小，完成后恢复太阳系交互与不透明度',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
         `Scale=${snapshot.planetFocus.scaleMultiplier.toFixed(2)}`,
@@ -275,6 +310,15 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   };
 }
 
+function focusedBodyOperationTitle(snapshot: DebugSnapshot): string {
+  const focusedBody =
+    snapshot.planetFocus.focusedBody ?? snapshot.activatedBody;
+
+  return focusedBody && isInteractiveCelestialBodyId(focusedBody)
+    ? getCelestialBodyDisplayName(focusedBody)
+    : '单颗星球界面';
+}
+
 function focusViewReason(snapshot: DebugSnapshot): string {
   if (snapshot.planetFocus.controlState === 'IntroCooldown') {
     return '焦点星球还在进入居中动画中；到达屏幕中心并且热区清空前，不会开始停留计时';
@@ -284,7 +328,7 @@ function focusViewReason(snapshot: DebugSnapshot): string {
     return '进入焦点后检测到手仍在热区内；需要先离开热区，再重新触碰并停留 1 秒';
   }
 
-  return '当前行星保持自转；单手或双手重新碰触当前星球热区并停留 1 秒后才进入跟手控制；食指尖按住左上角按钮 1 秒返回太阳系';
+  return '当前行星保持自转；单手或双手重新碰触当前星球热区并停留 1 秒后进入跟手控制；放下悬浮稳定后朝左上角或右上角快速张手挥出可返回太阳系';
 }
 
 function cameraStateText(status: DebugSnapshot['cameraStatus']): string {

@@ -128,7 +128,6 @@ const TWO_HAND_WITHDRAW_NORMALIZED = 1.3;
 // Re-acquire the active single-follow hand by spatial continuity when its hand key shifts (an
 // off-hand entering/leaving the frame changes the array index / side), so control is not dropped.
 const ACTIVE_HAND_REACQUIRE_RADIUS_PX = 220;
-const RETIRED_GESTURE_RETURN_REQUIRED_MS = 0;
 
 export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   focusedBody: null,
@@ -147,10 +146,6 @@ export const EMPTY_PLANET_FOCUS_SNAPSHOT: PlanetFocusSnapshot = {
   pinchDistancePx: null,
   pinchRatio: null,
   pinchTapHandKey: null,
-  returnGestureMs: 0,
-  returnGestureRequiredMs: RETIRED_GESTURE_RETURN_REQUIRED_MS,
-  returnGestureScore: 0,
-  returnGestureHandKey: null,
   transitionReason: 'inactive',
 };
 
@@ -174,9 +169,6 @@ export class PlanetFocusController {
   private heatZoneClearRequired: 'intro' | 'release' | null = null;
   private pinchPhases = new Map<string, PinchPhase>();
   private pinchTapReadyHands = new Set<string>();
-  private returnGestureMs = 0;
-  private returnGestureScore = 0;
-  private returnGestureHandKey: string | null = null;
   private snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
 
   update(input: PlanetFocusUpdateInput): PlanetFocusUpdate {
@@ -248,7 +240,6 @@ export class PlanetFocusController {
     this.heatZoneClearRequired = null;
     this.pinchPhases.clear();
     this.pinchTapReadyHands.clear();
-    this.clearReturnGesture();
     this.snapshot = EMPTY_PLANET_FOCUS_SNAPSHOT;
   }
 
@@ -268,13 +259,6 @@ export class PlanetFocusController {
     this.heatZoneClearRequired = 'intro';
     this.pinchPhases.clear();
     this.pinchTapReadyHands.clear();
-    this.clearReturnGesture();
-  }
-
-  private clearReturnGesture(): void {
-    this.returnGestureMs = 0;
-    this.returnGestureScore = 0;
-    this.returnGestureHandKey = null;
   }
 
   private updateHeatZoneClearGate(
@@ -1027,10 +1011,6 @@ export class PlanetFocusController {
       pinchDistancePx: pinchMetrics?.distancePx ?? null,
       pinchRatio: pinchMetrics?.ratio ?? null,
       pinchTapHandKey: input.pinchTapHandKey ?? null,
-      returnGestureMs: this.returnGestureMs,
-      returnGestureRequiredMs: RETIRED_GESTURE_RETURN_REQUIRED_MS,
-      returnGestureScore: this.returnGestureScore,
-      returnGestureHandKey: this.returnGestureHandKey,
       transitionReason: input.reason,
     };
   }

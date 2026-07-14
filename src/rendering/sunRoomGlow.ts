@@ -1,6 +1,7 @@
 import { clamp01 } from '../utils/math';
+import { SOLAR_BACKGROUND_OPACITY_SCALE } from '../solar/solarVisualConfig';
 
-const SUN_GLOW_PEAK_OPACITY = 0.5;
+const SUN_GLOW_PEAK_OPACITY = 0.5 * SOLAR_BACKGROUND_OPACITY_SCALE;
 const REVEAL_SMOOTHING_SECONDS = 0.22;
 const STYLE_EPSILON = 0.004;
 

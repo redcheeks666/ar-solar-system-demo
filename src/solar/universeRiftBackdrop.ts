@@ -35,6 +35,7 @@ import {
   RIFT_EDGE_OPENING_WOBBLE_BOOST,
   RIFT_REVEAL_PROGRESS_END,
   RIFT_REVEAL_PROGRESS_START,
+  SOLAR_BACKGROUND_OPACITY_SCALE,
   SOLAR_SYSTEM_PREVIEW_TILT_X,
   SOLAR_SYSTEM_PREVIEW_TILT_Y,
   UNIVERSE_RIFT_BACKGROUND_OPACITY,
@@ -198,7 +199,8 @@ export class UniverseRiftBackdrop {
   private applyOpacity(): void {
     const opacityScale = this.reveal * this.dimCurrent;
     this.root.visible = opacityScale > 0.005;
-    this.backgroundMaterial.uniforms.opacity.value = opacityScale;
+    this.backgroundMaterial.uniforms.opacity.value =
+      opacityScale * SOLAR_BACKGROUND_OPACITY_SCALE;
   }
 
   dispose(): void {
@@ -317,6 +319,27 @@ const RIFT_EDGE_FRAGMENT_SHADER = `
     vec2 rimDirection = radial > 0.0001 ? normalized / radial : vec2(1.0, 0.0);
     float gradientLength = length(rimDirection / radii);
     float signedDistance = (radial - 1.0) / max(gradientLength, 0.0001);
+
+    // The wobble cannot exceed this bound because seamDamp and openingEnergy are at most 1.
+    // Deep interior and exterior pixels therefore cannot reach the feathered edge or contribute
+    // more than exp(-6) to the rim, so avoid all three fbm evaluations there.
+    float maxWobble = noiseAmplitude * (1.0 + openingWobbleBoost);
+    float negligibleGlowDistance = 6.0 * glowWidth;
+    if (
+      signedDistance <
+        -(edgeFeather + maxWobble + negligibleGlowDistance)
+    ) {
+      vec4 starfield = texture2D(map, vUv);
+      gl_FragColor = vec4(starfield.rgb, starfield.a * opacity);
+      #include <colorspace_fragment>
+      return;
+    }
+
+    if (signedDistance > maxWobble + negligibleGlowDistance) {
+      gl_FragColor = vec4(0.0);
+      #include <colorspace_fragment>
+      return;
+    }
 
     // Damp the wobble while the aperture is still a thin seam so the crack
     // stays a coherent line instead of noise soup.

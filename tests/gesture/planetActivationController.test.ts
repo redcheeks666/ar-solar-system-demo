@@ -197,7 +197,7 @@ describe('PlanetActivationController', () => {
     expect(releasedAway.snapshot.activatedBody).toBeNull();
   });
 
-  it('enters PlanetFocusView after the selected hand performs two closeDown events', () => {
+  it('enters PlanetFocusView only after two closeDown events and the final release', () => {
     const controller = new PlanetActivationController();
     const targets = [target('earth', 640, 360)];
 
@@ -256,7 +256,7 @@ describe('PlanetActivationController', () => {
       targets,
       timestamp: 660,
     });
-    const focus = step({
+    const secondClose = step({
       controller,
       state: 'PlanetActivated',
       hands: [handAtPixel(640, 360, 0.1)],
@@ -264,10 +264,43 @@ describe('PlanetActivationController', () => {
       timestamp: 760,
     });
 
+    expect(secondClose.nextState).toBeNull();
+    expect(secondClose.snapshot.doubleCloseCount).toBe(2);
+    expect(secondClose.snapshot.transitionReason).toBe(
+      'double-close-second-close-waiting-for-release',
+    );
+
+    const heldSecondClose = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.1)],
+      targets,
+      timestamp: 860,
+    });
+    expect(heldSecondClose.nextState).toBeNull();
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.8)],
+      targets,
+      timestamp: 920,
+    });
+    const focus = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.8)],
+      targets,
+      timestamp: 1000,
+    });
+
     expect(focus.nextState).toBe('PlanetFocusView');
     expect(focus.snapshot.activatedBody).toBe('earth');
     expect(focus.snapshot.doubleCloseCount).toBe(2);
-    expect(focus.snapshot.transitionReason).toBe('double-close-enter-focus');
+    expect(focus.snapshot.pinchState).toBe('open');
+    expect(focus.snapshot.transitionReason).toBe(
+      'double-close-release-enter-focus',
+    );
   });
 
   it('enters PlanetFocusView when the user performs small double-click pinches without fully opening', () => {
@@ -327,7 +360,7 @@ describe('PlanetActivationController', () => {
       targets,
       timestamp: 660,
     });
-    const focus = step({
+    const secondClose = step({
       controller,
       state: 'PlanetActivated',
       hands: [handAtPixel(640, 360, 0.24)],
@@ -335,9 +368,29 @@ describe('PlanetActivationController', () => {
       timestamp: 760,
     });
 
+    expect(secondClose.nextState).toBeNull();
+    expect(secondClose.snapshot.doubleCloseCount).toBe(2);
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.48)],
+      targets,
+      timestamp: 820,
+    });
+    const focus = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.48)],
+      targets,
+      timestamp: 900,
+    });
+
     expect(focus.nextState).toBe('PlanetFocusView');
     expect(focus.snapshot.doubleCloseCount).toBe(2);
-    expect(focus.snapshot.transitionReason).toBe('double-close-enter-focus');
+    expect(focus.snapshot.transitionReason).toBe(
+      'double-close-release-enter-focus',
+    );
   });
 
   it('enters PlanetFocusView when the real-camera reopen is only a few pixels above the first close', () => {
@@ -466,7 +519,7 @@ describe('PlanetActivationController', () => {
       targets,
       timestamp: 660,
     });
-    const focus = step({
+    const secondClose = step({
       controller,
       state: 'PlanetActivated',
       hands: [
@@ -483,9 +536,47 @@ describe('PlanetActivationController', () => {
       timestamp: 760,
     });
 
+    expect(secondClose.nextState).toBeNull();
+    expect(secondClose.snapshot.doubleCloseCount).toBe(2);
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [
+        handWithPinchMidpoint({
+          centerX: 640,
+          centerY: 360,
+          pinchX: 640,
+          pinchY: 360,
+          tipDistancePx: 61,
+          palmScale: 0.18,
+        }),
+      ],
+      targets,
+      timestamp: 820,
+    });
+    const focus = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [
+        handWithPinchMidpoint({
+          centerX: 640,
+          centerY: 360,
+          pinchX: 640,
+          pinchY: 360,
+          tipDistancePx: 61,
+          palmScale: 0.18,
+        }),
+      ],
+      targets,
+      timestamp: 900,
+    });
+
     expect(focus.nextState).toBe('PlanetFocusView');
     expect(focus.snapshot.doubleCloseCount).toBe(2);
-    expect(focus.snapshot.transitionReason).toBe('double-close-enter-focus');
+    expect(focus.snapshot.transitionReason).toBe(
+      'double-close-release-enter-focus',
+    );
   });
 
   it('does not count a held closed pinch as two closeDown events', () => {

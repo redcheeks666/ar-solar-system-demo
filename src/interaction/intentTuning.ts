@@ -43,6 +43,15 @@ export const SOLAR_PLACE_DOWN_FIST_SCORE_MIN = 0.55;
 export const SOLAR_PLACE_DOWN_OPEN_SCORE_MIN = 0.6;
 export const SOLAR_PLACE_DOWN_OPEN_MIN_FINGERS = 3;
 
+// --- Opened-solar place-down (sustained near-edge span) --------------------
+// A-v3 replay showed successful endpoint re-grips at roughly 0.75-0.86 frame
+// span being dropped by the old 0.72 one-frame threshold. Use a semantic
+// near-frame-edge boundary with hysteresis and dwell, leaving margin above the
+// observed samples rather than fitting their maximum.
+export const MAX_VISUAL_WIDTH_ENTER_SCREEN_FRACTION = 0.9;
+export const MAX_VISUAL_WIDTH_EXIT_SCREEN_FRACTION = 0.86;
+export const MAX_VISUAL_WIDTH_STABLE_MS = 180;
+
 // --- Availability ----------------------------------------------------------
 export const AVAILABILITY_LOST_HAND_SCORE = 0.55;
 

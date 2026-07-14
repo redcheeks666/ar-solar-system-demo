@@ -58,7 +58,7 @@ export class DebugOverlay {
       ],
       [
         'Perf tracking',
-        `update ${formatMs(snapshot.performance.trackingUpdateMs)} / detect ${formatMs(
+        `main update ${formatMs(snapshot.performance.trackingUpdateMs)} / worker detect ${formatMs(
           snapshot.performance.detectMs,
         )}`,
       ],
@@ -67,6 +67,12 @@ export class DebugOverlay {
         `${formatMs(snapshot.performance.handDetectMs)} / ${formatMs(
           snapshot.performance.poseDetectMs,
         )}`,
+      ],
+      [
+        'Tracking worker',
+        `${snapshot.performance.handDelegate ?? 'n/a'} roundtrip=${formatMs(
+          snapshot.performance.workerRoundTripMs,
+        )} dropped=${snapshot.performance.droppedVideoFrameCount}`,
       ],
       [
         'Tracking Hz',
@@ -158,6 +164,18 @@ export class DebugOverlay {
       ],
       ['Solar scale', snapshot.solarScale.toFixed(2)],
       ['Solar reason', snapshot.solarReason],
+      [
+        'Active endpoint gate',
+        `${snapshot.solarEndpoint.mode} score=${snapshot.solarEndpoint.score.toFixed(2)} hit=${snapshot.solarEndpoint.bothWithinRadius ? 'yes' : 'no'}`,
+      ],
+      [
+        'Active endpoint dist',
+        `${formatNullable(snapshot.solarEndpoint.leftDistanceWorld)} / ${formatNullable(snapshot.solarEndpoint.rightDistanceWorld)} (r=${formatNullable(snapshot.solarEndpoint.radiusWorld)})`,
+      ],
+      [
+        'Active endpoint dwell',
+        `${Math.round(snapshot.solarEndpoint.stableMs)} / ${Math.round(snapshot.solarEndpoint.stableRequiredMs)}ms · ${snapshot.solarEndpoint.reason}`,
+      ],
       ['Hovered body', snapshot.hoveredBody ?? 'none'],
       ['Activated body', snapshot.activatedBody ?? 'none'],
       ['Pinch', snapshot.pinchState],
@@ -219,12 +237,24 @@ export class DebugOverlay {
       ['Focus pinch hand', snapshot.planetFocus.pinchTapHandKey ?? 'none'],
       ['Focus reason', snapshot.planetFocus.transitionReason],
       [
-        'Return button',
-        snapshot.planetFocus.returnGestureRequiredMs > 0
-          ? `${Math.round(snapshot.planetFocus.returnGestureMs)}ms / ${Math.round(
-              snapshot.planetFocus.returnGestureRequiredMs,
-            )}ms, hand=${snapshot.planetFocus.returnGestureHandKey ?? 'none'}`
-          : 'hidden',
+        'Return wave',
+        `${snapshot.planetReturnWave.state} hand=${snapshot.planetReturnWave.handKey ?? 'none'} evidence=${snapshot.planetReturnWave.handReady ? 'ready' : 'collecting'} frames=${snapshot.planetReturnWave.stableFrames}`,
+      ],
+      [
+        'Return wave motion',
+        `peak=${formatNullable(snapshot.planetReturnWave.peakSpeed ?? null)} d=${formatNullable(snapshot.planetReturnWave.displacement)} elapsed=${Math.round(snapshot.planetReturnWave.elapsedMs)}ms`,
+      ],
+      [
+        'Return wave direction',
+        `${snapshot.planetReturnWave.cornerDirection ?? 'none'} x=${formatNullable(snapshot.planetReturnWave.horizontalDisplacement)} up=${formatNullable(snapshot.planetReturnWave.upwardDisplacement)}`,
+      ],
+      [
+        'Return wave/body',
+        `start=${formatNullable(snapshot.planetReturnWave.startDistanceToBody ?? null)} end=${formatNullable(snapshot.planetReturnWave.endDistanceToBody ?? null)} trend=${formatNullable(snapshot.planetReturnWave.bodyDistanceTrend ?? null)} hit=${formatNullable(snapshot.planetReturnWave.bodyHitRadius ?? null)}`,
+      ],
+      [
+        'Return wave quality',
+        `open=${formatNullable(snapshot.planetReturnWave.openHandScore)} scale=${formatNullable(snapshot.planetReturnWave.palmScaleRatio)} score=${snapshot.planetReturnWave.score.toFixed(2)} ${snapshot.planetReturnWave.reason}`,
       ],
       ['Throw velocity', formatNullable(snapshot.throwVelocity)],
       ['Whole control', snapshot.wholeSystem.controlState],
@@ -248,6 +278,11 @@ export class DebugOverlay {
         'Re-grip confidence',
         formatNullable(snapshot.wholeSystem.reGripConfidence),
       ],
+      [
+        'Whole pinch ratio',
+        `${formatNullable(snapshot.wholeSystem.leftPinchRatio)} / ${formatNullable(snapshot.wholeSystem.rightPinchRatio)}`,
+      ],
+      ['Whole pinch penalty', snapshot.wholeSystem.pinchPenalty.toFixed(2)],
       [
         'Scale intent',
         `${snapshot.wholeSystem.scaleIntent} (${snapshot.wholeSystem.scaleIntentScore.toFixed(2)})`,
