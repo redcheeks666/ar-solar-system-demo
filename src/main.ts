@@ -468,6 +468,11 @@ function updateGestureControllers(
     planeZ: INTERACTION_PLANE_Z,
     timestamp,
   });
+  const planetActivationTargets =
+    placeholderSolarSystem.getInteractiveBodyScreenTargets(
+      camera,
+      previewLayout,
+    );
   latestGestureReplayContext = {
     solar: {
       interactionState: solarInteractionState,
@@ -494,13 +499,14 @@ function updateGestureControllers(
     return;
   }
 
+  latestGestureReplayContext.planetActivation = {
+    interactionState: interaction.state,
+    targets: planetActivationTargets,
+  };
   const planetActivationUpdate = planetActivation.update({
     tracking,
     interactionState: interaction.state,
-    targets: placeholderSolarSystem.getInteractiveBodyScreenTargets(
-      camera,
-      previewLayout,
-    ),
+    targets: planetActivationTargets,
     layout: previewLayout,
     timestamp,
   });

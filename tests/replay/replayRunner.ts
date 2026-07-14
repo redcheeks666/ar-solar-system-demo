@@ -5,9 +5,13 @@ import {
   type GestureDebugFrame,
   type ReplayCameraSnapshot,
 } from '../../src/interaction/gestureDebugRecorder';
+import { mapNormalizedToStagePixel } from '../../src/interaction/coordinateMapping';
+import { PlanetActivationController } from '../../src/interaction/planetActivationController';
 import { PlanetFocusController } from '../../src/interaction/planetFocusController';
 import { PlanetReturnWaveController } from '../../src/interaction/planetReturnWave';
 import { SolarOpeningController } from '../../src/interaction/solarOpeningController';
+import type { CelestialBodyScreenTarget } from '../../src/solar/solarSystem';
+import type { InteractiveCelestialBodyId } from '../../src/solar/solarSystemData';
 import {
   INDEX_TIP_INDEX,
   THUMB_TIP_INDEX,
@@ -36,6 +40,14 @@ export interface PlanetFocusReplayFrameResult {
   stateAfter: InteractionState;
   nextState: InteractionState | null;
   snapshot: ReturnType<PlanetFocusController['update']>['snapshot'];
+}
+
+export interface PlanetActivationReplayFrameResult {
+  t: number;
+  inputState: InteractionState;
+  stateAfter: InteractionState;
+  nextState: InteractionState | null;
+  snapshot: ReturnType<PlanetActivationController['update']>['snapshot'];
 }
 
 export interface PlanetReturnWaveReplayFrameResult {
@@ -76,6 +88,78 @@ export function parseGestureDebugExport(json: string): GestureDebugExport {
   }
 
   return value as GestureDebugExport;
+}
+
+/**
+ * Replays hover, pinch activation, and DoubleClose from recorded landmarks. New schema-v3 exports
+ * carry the exact body targets. Older v3 exports reconstruct the active/hovered targets from their
+ * additive diagnostics; if recording began in PlanetActivated, one synthetic closed seed restores
+ * only that pre-existing controller state before the first recorded frame is evaluated.
+ */
+export function replayPlanetActivationController(
+  recording: GestureDebugExport,
+): PlanetActivationReplayFrameResult[] {
+  const startIndex = recording.frames.findIndex((frame) =>
+    canReplayPlanetActivation(
+      frame.replay.planetActivation?.interactionState ??
+        frame.replay.solar.interactionState,
+    ),
+  );
+
+  if (startIndex < 0) {
+    throw new Error(
+      'Planet activation replay needs a solar hover/activation state.',
+    );
+  }
+
+  const controller = new PlanetActivationController();
+  const targetRegistry = new Map<
+    InteractiveCelestialBodyId,
+    CelestialBodyScreenTarget
+  >();
+  const firstFrame = recording.frames[startIndex];
+  const firstTargets = restorePlanetActivationTargets(
+    firstFrame,
+    targetRegistry,
+  );
+  const recordedStartState =
+    firstFrame.replay.planetActivation?.interactionState ??
+    firstFrame.replay.solar.interactionState;
+  let state: InteractionState = recordedStartState;
+
+  if (recordedStartState === 'PlanetActivated') {
+    seedRecordedActivation(controller, firstFrame, firstTargets);
+  }
+
+  const results: PlanetActivationReplayFrameResult[] = [];
+  recording.frames.slice(startIndex).forEach((frame) => {
+    if (!canReplayPlanetActivation(state) && state !== 'PlanetFocusView') {
+      return;
+    }
+
+    const inputState = state;
+    const update = controller.update({
+      tracking: restoreTrackingSnapshot(frame),
+      interactionState: inputState,
+      targets: restorePlanetActivationTargets(frame, targetRegistry),
+      layout: frame.replay.solar.layout,
+      timestamp: frame.t,
+    });
+
+    if (update.nextState) {
+      state = update.nextState;
+    }
+
+    results.push({
+      t: frame.t,
+      inputState,
+      stateAfter: state,
+      nextState: update.nextState,
+      snapshot: update.snapshot,
+    });
+  });
+
+  return results;
 }
 
 /** Replays the product solar lifecycle from PullArmed using only recorded controller inputs. */
@@ -299,6 +383,145 @@ export function extractGestureCurves(
     focusReason: frame.planetFocus.transitionReason,
   }));
 }
+
+function canReplayPlanetActivation(state: InteractionState): boolean {
+  return (
+    state === 'SolarActive' ||
+    state === 'SolarFreeHover' ||
+    state === 'BodyHover' ||
+    state === 'PlanetActivated'
+  );
+}
+
+function restorePlanetActivationTargets(
+  frame: GestureDebugFrame,
+  registry: Map<InteractiveCelestialBodyId, CelestialBodyScreenTarget>,
+): CelestialBodyScreenTarget[] {
+  const recordedTargets = frame.replay.planetActivation?.targets;
+  if (recordedTargets) {
+    registry.clear();
+    recordedTargets.forEach((target) => registry.set(target.id, target));
+    return recordedTargets;
+  }
+
+  const hoveredBody = frame.planetActivation.hoveredBody as
+    | InteractiveCelestialBodyId
+    | null
+    | undefined;
+  const screenPosition = frame.planetActivation.hoverScreenPosition;
+  const hitRadiusPx = frame.planetActivation.hoverHitRadiusPx;
+
+  if (hoveredBody && screenPosition && hitRadiusPx && hitRadiusPx > 0) {
+    const previous = registry.get(hoveredBody);
+    registry.set(hoveredBody, {
+      id: hoveredBody,
+      label: hoveredBody,
+      screenPosition,
+      visible: true,
+      hitRadiusPx,
+      originalOrbit:
+        frame.planetActivation.activatedBody === hoveredBody
+          ? frame.planetActivation.activatedOriginalOrbit ??
+            previous?.originalOrbit ??
+            fallbackOrbit(hoveredBody)
+          : previous?.originalOrbit ?? fallbackOrbit(hoveredBody),
+    });
+  }
+
+  return [...registry.values()];
+}
+
+function fallbackOrbit(
+  bodyId: InteractiveCelestialBodyId,
+): CelestialBodyScreenTarget['originalOrbit'] {
+  return {
+    parentId: bodyId === 'moon' ? 'earth' : null,
+    orbitRadius: bodyId === 'moon' ? 0.18 : 1,
+    orbitPhase: 0,
+    localPosition: { x: 0, y: 0, z: 0 },
+  };
+}
+
+function seedRecordedActivation(
+  controller: PlanetActivationController,
+  frame: GestureDebugFrame,
+  targets: CelestialBodyScreenTarget[],
+): void {
+  const activatedBody = frame.planetActivation.activatedBody as
+    | InteractiveCelestialBodyId
+    | null
+    | undefined;
+  const target = targets.find((candidate) => candidate.id === activatedBody);
+  const tracking = restoreTrackingSnapshot(frame);
+  const activeHandKey = frame.planetActivation.activeHandKey;
+  const activeSide = activeHandKey?.split(':')[0];
+  const activeIndex = Number(activeHandKey?.split(':')[1]);
+  const handIndex = Number.isInteger(activeIndex)
+    ? activeIndex
+    : tracking.hands.hands.findIndex((hand) => hand.side === activeSide);
+  const sourceHand =
+    tracking.hands.hands[handIndex] ??
+    tracking.hands.hands.find((hand) => hand.side === activeSide) ??
+    tracking.hands.hands[0];
+
+  if (!target || !sourceHand) {
+    throw new Error(
+      'Planet activation replay cannot seed the recorded active body/hand.',
+    );
+  }
+
+  const landmarks = sourceHand.landmarks.map((point) => ({ ...point }));
+  const midpoint = {
+    x: (sourceHand.thumbTip.x + sourceHand.indexFingerTip.x) / 2,
+    y: (sourceHand.thumbTip.y + sourceHand.indexFingerTip.y) / 2,
+    z: (sourceHand.thumbTip.z + sourceHand.indexFingerTip.z) / 2,
+  };
+  const halfCloseDistance = sourceHand.palmScale * 0.05;
+  const thumbTip = { ...midpoint, x: midpoint.x - halfCloseDistance };
+  const indexFingerTip = { ...midpoint, x: midpoint.x + halfCloseDistance };
+  landmarks[THUMB_TIP_INDEX] = thumbTip;
+  landmarks[INDEX_TIP_INDEX] = indexFingerTip;
+  const seedHand: TrackedHand = {
+    ...sourceHand,
+    thumbTip,
+    indexFingerTip,
+    landmarks,
+  };
+  const seedTracking: TrackingSnapshot = {
+    ...tracking,
+    hands: {
+      ...tracking.hands,
+      detectedHands: 1,
+      left: seedHand.side === 'left' ? seedHand : null,
+      right: seedHand.side === 'right' ? seedHand : null,
+      hands: [seedHand],
+      lastUpdatedAt: frame.t - DOUBLE_CLOSE_SEED_LEAD_MS,
+    },
+    lastUpdatedAt: frame.t - DOUBLE_CLOSE_SEED_LEAD_MS,
+  };
+
+  const seeded = controller.update({
+    tracking: seedTracking,
+    interactionState: 'SolarFreeHover',
+    targets: [
+      {
+        ...target,
+        screenPosition: mapNormalizedToStagePixel(
+          sourceHand.center,
+          frame.replay.solar.layout,
+        ),
+      },
+    ],
+    layout: frame.replay.solar.layout,
+    timestamp: frame.t - DOUBLE_CLOSE_SEED_LEAD_MS,
+  });
+
+  if (seeded.nextState !== 'PlanetActivated') {
+    throw new Error('Planet activation replay seed did not activate the body.');
+  }
+}
+
+const DOUBLE_CLOSE_SEED_LEAD_MS = 200;
 
 export function restoreTrackingSnapshot(
   frame: GestureDebugFrame,

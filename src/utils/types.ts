@@ -336,6 +336,10 @@ export interface DebugSnapshot {
 }
 
 export interface PlanetActivationDebugSnapshot {
+  /** Existing runtime fields are optional here so older schema-v3 recordings remain readable. */
+  hoveredBody?: string | null;
+  activatedBody?: string | null;
+  pinchState?: string;
   activeHandKey: string | null;
   pinchDistance: number | null;
   pinchDistancePx: number | null;
@@ -361,6 +365,12 @@ export interface PlanetActivationDebugSnapshot {
   } | null;
   trackingLossMs: number;
   doubleCloseCount: number;
+  /** Additive schema-v3 diagnostics for the ratio-only valley-peak-valley detector. */
+  doubleCloseValleyRatio?: number | null;
+  doubleClosePeakRatio?: number | null;
+  doubleCloseProminence?: number | null;
+  doubleCloseTimeoutRemainingMs?: number | null;
+  doubleCloseFailureReason?: string | null;
   transitionReason: string;
 }
 

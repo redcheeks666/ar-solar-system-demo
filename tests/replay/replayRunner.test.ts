@@ -13,6 +13,7 @@ import { DEFAULT_GESTURE_THRESHOLDS } from '../helpers/testThresholds';
 import {
   extractGestureCurves,
   parseGestureDebugExport,
+  replayPlanetActivationController,
   replayPlanetFocusController,
   replayPlanetReturnWave,
   replaySolarController,
@@ -159,6 +160,67 @@ describe('gesture replay runner', () => {
 
     expect(results.some((result) => result.stateAfter === 'SolarActive')).toBe(true);
     expect(results.some((result) => result.snapshot.visible)).toBe(true);
+  });
+
+  it('replays ratio-only DoubleClose through PlanetActivationController', () => {
+    const target = {
+      id: 'earth' as const,
+      label: 'Earth',
+      screenPosition: { x: 640, y: 360 },
+      visible: true,
+      hitRadiusPx: 72,
+      originalOrbit: {
+        parentId: null,
+        orbitRadius: 1,
+        orbitPhase: 0,
+        localPosition: { x: 1, y: 0, z: 0 },
+      },
+    };
+    const hand = (ratio: number) => {
+      const tracked = createHand({ center: point(0.5, 0.5), spread: 1.2 });
+      const halfDistance = (tracked.palmScale * ratio) / 2;
+      tracked.thumbTip = point(0.5 - halfDistance, 0.5);
+      tracked.indexFingerTip = point(0.5 + halfDistance, 0.5);
+      tracked.landmarks[4] = tracked.thumbTip;
+      tracked.landmarks[8] = tracked.indexFingerTip;
+      return tracked;
+    };
+    const activationContext = (
+      state: GestureReplayFrameContext['solar']['interactionState'],
+    ) => {
+      const context = replayContext(state);
+      context.planetActivation = {
+        interactionState: state,
+        targets: [target],
+      };
+      return context;
+    };
+    const sequence = [
+      [0, 0.1, 'SolarFreeHover'],
+      [220, 0.75, 'PlanetActivated'],
+      [253, 0.75, 'PlanetActivated'],
+      [300, 0.126, 'PlanetActivated'],
+      [333, 0.126, 'PlanetActivated'],
+      [430, 0.75, 'PlanetActivated'],
+      [463, 0.75, 'PlanetActivated'],
+      [530, 0.25, 'PlanetActivated'],
+      [563, 0.25, 'PlanetActivated'],
+      [630, 0.75, 'PlanetActivated'],
+      [665, 0.75, 'PlanetActivated'],
+      [705, 0.75, 'PlanetActivated'],
+    ] as const;
+    const frames = sequence.map(([t, ratio, state]) =>
+      frame({
+        t,
+        hands: [hand(ratio)],
+        replay: activationContext(state),
+      }),
+    );
+
+    const replay = replayPlanetActivationController(recording(frames));
+
+    expect(replay.at(-1)?.stateAfter).toBe('PlanetFocusView');
+    expect(replay.at(-1)?.snapshot.doubleCloseProminence).toBeCloseTo(0.5, 2);
   });
 
   it('replays focus entry, heat-zone clear, and single-hand dwell', () => {

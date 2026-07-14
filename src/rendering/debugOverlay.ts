@@ -190,6 +190,24 @@ export class DebugOverlay {
       ],
       ['DoubleClose count', String(snapshot.planetActivation.doubleCloseCount)],
       [
+        'DoubleClose valley / peak',
+        `${formatNullable(snapshot.planetActivation.doubleCloseValleyRatio ?? null)} / ${formatNullable(snapshot.planetActivation.doubleClosePeakRatio ?? null)}`,
+      ],
+      [
+        'DoubleClose prominence',
+        formatNullable(snapshot.planetActivation.doubleCloseProminence ?? null),
+      ],
+      [
+        'DoubleClose timeout',
+        snapshot.planetActivation.doubleCloseTimeoutRemainingMs == null
+          ? 'none'
+          : `${Math.round(snapshot.planetActivation.doubleCloseTimeoutRemainingMs)}ms`,
+      ],
+      [
+        'DoubleClose failure',
+        snapshot.planetActivation.doubleCloseFailureReason ?? 'none',
+      ],
+      [
         'Hover dist/radius px',
         `${formatNullable(snapshot.planetActivation.hoverDistancePx)} / ${formatNullable(
           snapshot.planetActivation.hoverHitRadiusPx,

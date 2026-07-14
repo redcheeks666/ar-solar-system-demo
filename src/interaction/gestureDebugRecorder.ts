@@ -1,7 +1,10 @@
 import type { PerspectiveCamera } from 'three';
 import type { PreviewLayout } from './coordinateMapping';
 import type { SolarOpeningSnapshot } from './solarOpeningController';
-import type { FocusedCelestialBodyScreenTarget } from '../solar/solarSystem';
+import type {
+  CelestialBodyScreenTarget,
+  FocusedCelestialBodyScreenTarget,
+} from '../solar/solarSystem';
 import type { InteractiveCelestialBodyId } from '../solar/solarSystemData';
 import type {
   DebugSnapshot,
@@ -32,6 +35,11 @@ export interface GestureReplayFrameContext {
     planeZ: number;
     snapshot: SolarOpeningSnapshot;
     endpoint: SolarEndpointDebugSnapshot;
+  };
+  /** Additive v3 input context; older v3 recordings reconstruct targets from diagnostics. */
+  planetActivation?: {
+    interactionState: InteractionState;
+    targets: CelestialBodyScreenTarget[];
   };
   planetFocus: {
     interactionState: InteractionState;

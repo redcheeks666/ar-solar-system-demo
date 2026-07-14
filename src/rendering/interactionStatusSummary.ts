@@ -197,6 +197,10 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
         `Pinch ratio=${nullable(snapshot.planetActivation.pinchRatio)}`,
         `Pinch=${snapshot.pinchState}`,
         `DoubleClose=${snapshot.planetActivation.doubleCloseCount}`,
+        `Valley/Peak=${nullable(snapshot.planetActivation.doubleCloseValleyRatio ?? null)}/${nullable(snapshot.planetActivation.doubleClosePeakRatio ?? null)}`,
+        `Prominence=${nullable(snapshot.planetActivation.doubleCloseProminence ?? null)}`,
+        `Timeout=${snapshot.planetActivation.doubleCloseTimeoutRemainingMs == null ? 'none' : `${Math.round(snapshot.planetActivation.doubleCloseTimeoutRemainingMs)}ms`}`,
+        `Failure=${snapshot.planetActivation.doubleCloseFailureReason ?? 'none'}`,
         `Reason=${snapshot.planetActivation.transitionReason}`,
       ],
     };

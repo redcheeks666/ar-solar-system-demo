@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   parseGestureDebugExport,
+  replayPlanetActivationController,
   replayPlanetFocusController,
   replayPlanetReturnWave,
   replaySolarController,
@@ -14,6 +15,73 @@ const trueReturnWaveRecordingPath =
   process.env.GESTURE_REPLAY_RETURN_WAVE_TRUE;
 const falseReturnWaveRecordingPath =
   process.env.GESTURE_REPLAY_RETURN_WAVE_FALSE;
+const doubleCloseSuccessRecordingPath =
+  process.env.GESTURE_REPLAY_DOUBLE_CLOSE_SUCCESS;
+const doubleCloseRetryRecordingPath =
+  process.env.GESTURE_REPLAY_DOUBLE_CLOSE_RETRY;
+
+if (!doubleCloseSuccessRecordingPath || !doubleCloseRetryRecordingPath) {
+  describe('local DoubleClose recording regressions', () => {
+    it('stays opt-in when the paired recording paths are not supplied', () => {
+      expect(
+        Boolean(
+          doubleCloseSuccessRecordingPath && doubleCloseRetryRecordingPath,
+        ),
+      ).toBe(false);
+    });
+  });
+} else {
+  describe('local DoubleClose recording regressions', () => {
+    it('keeps the successful DoubleClose focus entry at least as fast', () => {
+      const recording = parseGestureDebugExport(
+        readFileSync(doubleCloseSuccessRecordingPath, 'utf8'),
+      );
+      const replay = replayPlanetActivationController(recording);
+      const recordedFocusAt = recording.frames.find(
+        (frame) =>
+          frame.replay.solar.interactionState === 'PlanetFocusView',
+      )?.t;
+      const replayedFocusAt = replay.find(
+        (frame) => frame.stateAfter === 'PlanetFocusView',
+      )?.t;
+
+      console.info(
+        JSON.stringify({
+          scenario: 'double-close-success',
+          recordedFocusAt,
+          replayedFocusAt,
+        }),
+      );
+      expect(recordedFocusAt).toBeDefined();
+      expect(replayedFocusAt).toBeDefined();
+      expect(replayedFocusAt as number).toBeLessThanOrEqual(
+        recordedFocusAt as number,
+      );
+    });
+
+    it('accepts the repeated human DoubleClose that previously never focused', () => {
+      const recording = parseGestureDebugExport(
+        readFileSync(doubleCloseRetryRecordingPath, 'utf8'),
+      );
+      const replay = replayPlanetActivationController(recording);
+      const focusFrame = replay.find(
+        (frame) => frame.stateAfter === 'PlanetFocusView',
+      );
+
+      console.info(
+        JSON.stringify({
+          scenario: 'double-close-retry',
+          replayedFocusAt: focusFrame?.t ?? null,
+          valley: focusFrame?.snapshot.doubleCloseValleyRatio ?? null,
+          peak: focusFrame?.snapshot.doubleClosePeakRatio ?? null,
+          prominence:
+            focusFrame?.snapshot.doubleCloseProminence ?? null,
+        }),
+      );
+      expect(focusFrame).toBeDefined();
+    });
+  });
+}
 
 if (!aRecordingPath || !bRecordingPath) {
   describe('local A/B gesture recording regressions', () => {

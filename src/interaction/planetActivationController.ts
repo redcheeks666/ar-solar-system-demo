@@ -39,6 +39,11 @@ export interface PlanetActivationSnapshot {
   activatedOriginalOrbit: CelestialOriginalOrbitTransform | null;
   trackingLossMs: number;
   doubleCloseCount: number;
+  doubleCloseValleyRatio: number | null;
+  doubleClosePeakRatio: number | null;
+  doubleCloseProminence: number | null;
+  doubleCloseTimeoutRemainingMs: number | null;
+  doubleCloseFailureReason: string | null;
   transitionReason: string;
 }
 
@@ -77,30 +82,45 @@ type HandInteractionPointKind =
   | 'indexTip'
   | 'palmCenter';
 
+type DoubleClosePhase =
+  | 'wait-initial-open'
+  | 'wait-first-valley'
+  | 'wait-peak'
+  | 'wait-second-valley'
+  | 'wait-final-release';
+
+type DoubleCloseUpdate =
+  | 'first-close'
+  | 'peak-ready'
+  | 'second-close'
+  | 'focus-entry'
+  | null;
+
 const PINCH_START_RATIO = 0.48;
 const PINCH_END_RATIO = 0.62;
 const PINCH_START_MAX_DISTANCE_PX = 96;
 const PINCH_END_MAX_DISTANCE_PX = 128;
-// Tuned against a real gesture log: users make shallow, sharp pinches (ratio bottoms out near 0.30
-// for only 1-2 frames) and re-open only slightly between the two closes, so the reopen registers
-// slowly. These constants are set so that real pattern reaches focus in ~3.5s instead of never.
-//
-// Sharp pinch => a short debounce (1-2 frames) is enough to reject a single-frame noise spike.
-const DOUBLE_CLOSE_STABLE_MS = 50;
-const DOUBLE_CLOSE_MIN_OPEN_GAP_MS = 70;
-// A slow, slight reopen eats into this budget, so it must be generous. False entry is held off by
-// the wide open/close hysteresis below + the full open-close-open-close sequence, not a short window.
-const DOUBLE_CLOSE_MAX_INTERVAL_MS = 2500;
+// A valley is a physically closed thumb/index pair relative to palm size; 0.35 includes deliberate
+// shallow clicks while remaining below the ordinary partially-open range.
+const DOUBLE_CLOSE_VALLEY_MAX_RATIO = 0.35;
+// A peak is a deliberate reopen between clicks; 0.50 is separated from the closed band without
+// requiring the larger 0.62 activation-pinch release.
+const DOUBLE_CLOSE_PEAK_MIN_RATIO = 0.5;
+// Peak prominence measures intentional close-open travel. A quarter palm-scale separates that
+// travel from normal fingertip jitter while leaving margin for unequal click depths.
+const DOUBLE_CLOSE_MIN_PROMINENCE = 0.25;
+// Every valley and the intervening peak needs two fresh detection frames: one-frame spikes cannot
+// decide an important transition, while 33-66ms click bottoms remain valid at webcam frame rates.
+const DOUBLE_CLOSE_MIN_EXTREMUM_FRAMES = 2;
+// The final reopen must remain visible for the existing release gate before focus entry.
+const DOUBLE_CLOSE_FINAL_RELEASE_STABLE_MS = 70;
+// Human double-click cadence may include a deliberate reset between clicks; the interval is still
+// bounded so a much later independent pinch cannot complete an old gesture.
+const DOUBLE_CLOSE_MAX_INTERVAL_MS = 3800;
+// The activation pinch itself is excluded from the two subsequent click valleys.
 const DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS = 180;
+// Focus entry is rate-limited after a completed double-close release.
 const DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS = 900;
-// Wide hysteresis: the close ratio is loose enough to catch the shallow pinches users actually make
-// (~0.30), while the 0.09 gap up to the open ratio stops small finger fidgets faking a double-close.
-const DOUBLE_CLOSE_OPEN_RATIO = 0.42;
-const DOUBLE_CLOSE_CLOSE_RATIO = 0.33;
-const DOUBLE_CLOSE_REOPEN_DELTA_RATIO = 0.035;
-const DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX = 7;
-const DOUBLE_CLOSE_RECLOSE_DELTA_RATIO = 0.03;
-const DOUBLE_CLOSE_RECLOSE_DELTA_DISTANCE_PX = 7;
 const HOVER_EXIT_RADIUS_MULTIPLIER = 1.32;
 const ACTIVATION_EXIT_HOLD_MS = 1000;
 const HOVER_SWITCH_MARGIN = 0.24;
@@ -123,6 +143,11 @@ export const EMPTY_PLANET_ACTIVATION_SNAPSHOT: PlanetActivationSnapshot = {
   activatedOriginalOrbit: null,
   trackingLossMs: 0,
   doubleCloseCount: 0,
+  doubleCloseValleyRatio: null,
+  doubleClosePeakRatio: null,
+  doubleCloseProminence: null,
+  doubleCloseTimeoutRemainingMs: null,
+  doubleCloseFailureReason: null,
   transitionReason: 'inactive',
 };
 
@@ -137,14 +162,20 @@ export class PlanetActivationController {
   > = 'SolarFreeHover';
   private trackingLostSince: number | null = null;
   private activationExitStartedAt: number | null = null;
+  private lockedHoverPointKind: HandInteractionPointKind | null = null;
+  private switchArmedBody: InteractiveCelestialBodyId | null = null;
   private doubleCloseCount = 0;
-  private firstCloseAt: number | null = null;
-  private closeStableSince: number | null = null;
-  private closedLatched = false;
-  private reopenStableSince: number | null = null;
-  private openReady = false;
-  private latchedCloseMetrics: PinchMetrics | null = null;
-  private reopenPeakMetrics: PinchMetrics | null = null;
+  private doubleClosePhase: DoubleClosePhase = 'wait-initial-open';
+  private firstValleyAt: number | null = null;
+  private firstValleyRatio: number | null = null;
+  private candidateValleyStartedAt: number | null = null;
+  private candidateValleyRatio: number | null = null;
+  private candidateValleyFrames = 0;
+  private peakRatio: number | null = null;
+  private peakStableFrames = 0;
+  private finalReleaseStartedAt: number | null = null;
+  private doubleCloseTimeoutRemainingMs: number | null = null;
+  private doubleCloseFailureReason: string | null = null;
   private focusCooldownUntil = 0;
   private snapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
 
@@ -177,6 +208,7 @@ export class PlanetActivationController {
       };
     }
 
+    this.releaseInteractionPointLockIfFullyOpen(input);
     const candidates = this.createCandidates(input);
     const hoverCandidate = this.selectHoverCandidate(candidates);
 
@@ -243,6 +275,8 @@ export class PlanetActivationController {
     this.activatedAtMs = null;
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
+    this.lockedHoverPointKind = null;
+    this.switchArmedBody = null;
     this.resetDoubleClose();
     this.snapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   }
@@ -269,26 +303,9 @@ export class PlanetActivationController {
       this.findActiveHandCandidate(candidates, activeBody) ??
       this.findCandidateByBody(candidates, activeBody);
 
-    this.hoveredBody = hoverCandidate?.target.id ?? activeBody;
-
-    if (hoverCandidate && hoverCandidate.target.id !== activeBody) {
-      const nextMetrics = computePinchMetrics(hoverCandidate.hand, input.layout);
-
-      if (isPinchStart(nextMetrics) || isDoubleCloseClosed(nextMetrics)) {
-        this.activateBody(hoverCandidate, input.timestamp);
-        this.trackingLostSince = null;
-        const snapshot = this.createSnapshot({
-          hoverCandidate,
-          pinchMetrics: nextMetrics,
-          pinchState: 'pinching',
-          reason: 'activation-switched-body',
-        });
-        this.snapshot = snapshot;
-        return { snapshot, nextState: null };
-      }
-    }
-
     if (!activeCandidate) {
+      this.interruptDoubleCloseObservation();
+      this.switchArmedBody = null;
       this.trackingLostSince ??= input.timestamp;
       const trackingLossMs = input.timestamp - this.trackingLostSince;
       const snapshot = this.createSnapshot({
@@ -320,6 +337,53 @@ export class PlanetActivationController {
 
     this.trackingLostSince = null;
     const pinchMetrics = computePinchMetrics(activeCandidate.hand, input.layout);
+    const sameHandHover =
+      hoverCandidate?.handKey === activeCandidate.handKey
+        ? hoverCandidate
+        : null;
+    const fullyOpen = pinchMetrics.ratio >= PINCH_END_RATIO;
+    let switchArmedThisFrame = false;
+
+    if (fullyOpen) {
+      this.lockedHoverPointKind = null;
+      if (sameHandHover && sameHandHover.target.id !== activeBody) {
+        this.switchArmedBody = sameHandHover.target.id;
+        this.hoveredBody = sameHandHover.target.id;
+        switchArmedThisFrame = true;
+      } else {
+        this.switchArmedBody = null;
+        this.hoveredBody = activeBody;
+      }
+    } else {
+      const armedSwitchCandidate =
+        this.switchArmedBody &&
+        sameHandHover?.target.id === this.switchArmedBody
+          ? sameHandHover
+          : null;
+
+      // A body switch is legal only when the open hand first hovered that body. The subsequent
+      // close commits that already-armed intent; a closed hand drifting into a neighbour can never
+      // switch selection or clear the in-progress double-close sequence.
+      if (armedSwitchCandidate && isPinchStart(pinchMetrics)) {
+        this.activateBody(armedSwitchCandidate, input.timestamp);
+        this.trackingLostSince = null;
+        const snapshot = this.createSnapshot({
+          hoverCandidate: armedSwitchCandidate,
+          pinchMetrics,
+          pinchState: 'pinching',
+          reason: 'activation-switched-body-after-open-hover',
+        });
+        this.snapshot = snapshot;
+        return { snapshot, nextState: null };
+      }
+
+      if (pinchMetrics.ratio <= DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
+        this.lockedHoverPointKind ??= activeCandidate.handPointKind;
+        this.switchArmedBody = null;
+      }
+      this.hoveredBody = activeBody;
+    }
+
     const activeHandNearBody =
       activeCandidate.normalizedDistance <= HOVER_EXIT_RADIUS_MULTIPLIER;
     const pinchHeld = isPinchHeld(pinchMetrics);
@@ -352,15 +416,15 @@ export class PlanetActivationController {
     }
 
     const doubleClose = this.updateDoubleClose(
-      pinchMetrics,
+      pinchMetrics.ratio,
       input.timestamp,
       this.activatedAtMs ?? input.timestamp,
     );
 
     const lockedHover =
-      hoverCandidate?.target.id === activeBody
-        ? hoverCandidate
-        : this.findCandidateByBody(candidates, activeBody) ?? hoverCandidate;
+      this.findActiveHandCandidate(candidates, activeBody) ??
+      this.findCandidateByBody(candidates, activeBody) ??
+      hoverCandidate;
 
     if (doubleClose === 'focus-entry') {
       const snapshot = this.createSnapshot({
@@ -374,28 +438,14 @@ export class PlanetActivationController {
     }
 
     const snapshot = this.createSnapshot({
-      hoverCandidate: lockedHover,
+      hoverCandidate: switchArmedThisFrame ? sameHandHover : lockedHover,
       pinchMetrics,
-      pinchState:
-        doubleClose === 'first-close' ||
-        doubleClose === 'second-close' ||
-        this.closedLatched
-          ? 'closed'
-          : this.openReady
-            ? 'close-ready'
-            : isPinchHeld(pinchMetrics)
-              ? 'pinching'
-              : 'open',
-      reason:
-        doubleClose === 'first-close'
-          ? 'double-close-first-close'
-          : doubleClose === 'second-close' || this.doubleCloseCount === 2
-            ? 'double-close-second-close-waiting-for-release'
-          : this.openReady
-            ? 'double-close-open-ready'
-            : isPinchHeld(pinchMetrics)
-              ? 'activation-held'
-              : 'activation-held-open',
+      pinchState: this.getPinchState(pinchMetrics),
+      reason: this.getActivatedReason(
+        doubleClose,
+        switchArmedThisFrame,
+        pinchMetrics,
+      ),
     });
     this.snapshot = snapshot;
     return { snapshot, nextState: null };
@@ -407,16 +457,21 @@ export class PlanetActivationController {
     input.tracking.hands.hands.forEach((hand, handIndex) => {
       const handKey = createHandKey(hand, handIndex);
       const handPoints = createHandInteractionPoints(hand, input.layout);
+      const lockedPointKind =
+        handKey === this.activeHandKey ? this.lockedHoverPointKind : null;
 
       input.targets.forEach((target) => {
         if (!target.visible || target.hitRadiusPx <= 0) {
           return;
         }
 
-        const nearestPoint = getNearestInteractionPoint(
-          handPoints,
-          target.screenPosition,
-        );
+        const nearestPoint = lockedPointKind
+          ? getInteractionPoint(
+              handPoints,
+              lockedPointKind,
+              target.screenPosition,
+            )
+          : getNearestInteractionPoint(handPoints, target.screenPosition);
         const distancePx = nearestPoint.distancePx;
         candidates.push({
           target,
@@ -518,6 +573,12 @@ export class PlanetActivationController {
       activatedOriginalOrbit,
       trackingLossMs: input.trackingLossMs ?? 0,
       doubleCloseCount: this.doubleCloseCount,
+      doubleCloseValleyRatio:
+        this.candidateValleyRatio ?? this.firstValleyRatio,
+      doubleClosePeakRatio: this.peakRatio,
+      doubleCloseProminence: this.getDoubleCloseProminence(),
+      doubleCloseTimeoutRemainingMs: this.doubleCloseTimeoutRemainingMs,
+      doubleCloseFailureReason: this.doubleCloseFailureReason,
       transitionReason: input.reason,
     };
   }
@@ -528,6 +589,8 @@ export class PlanetActivationController {
     this.activatedAtMs = timestamp;
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
+    this.lockedHoverPointKind = candidate.handPointKind;
+    this.switchArmedBody = null;
     this.resetDoubleClose();
   }
 
@@ -537,14 +600,91 @@ export class PlanetActivationController {
     this.activatedAtMs = null;
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
+    this.lockedHoverPointKind = null;
+    this.switchArmedBody = null;
     this.resetDoubleClose();
   }
 
-  private updateDoubleClose(
+  private releaseInteractionPointLockIfFullyOpen(
+    input: PlanetActivationUpdateInput,
+  ): void {
+    if (!this.activeHandKey || !this.lockedHoverPointKind) {
+      return;
+    }
+
+    const hands = input.tracking.hands.hands;
+    const exactHand = hands.find(
+      (hand, index) => createHandKey(hand, index) === this.activeHandKey,
+    );
+    const activeSide = this.activeHandKey.split(':')[0];
+    const activeHand =
+      exactHand ?? hands.find((hand) => hand.side === activeSide) ?? null;
+
+    if (activeHand && computePinchRatio(activeHand) >= PINCH_END_RATIO) {
+      this.lockedHoverPointKind = null;
+    }
+  }
+
+  private getPinchState(metrics: PinchMetrics): PlanetActivationPinchState {
+    if (
+      metrics.ratio <= DOUBLE_CLOSE_VALLEY_MAX_RATIO ||
+      this.candidateValleyFrames > 0 ||
+      (this.doubleClosePhase === 'wait-final-release' &&
+        metrics.ratio < DOUBLE_CLOSE_PEAK_MIN_RATIO)
+    ) {
+      return 'closed';
+    }
+
+    if (
+      this.doubleClosePhase === 'wait-first-valley' ||
+      this.doubleClosePhase === 'wait-second-valley'
+    ) {
+      return 'close-ready';
+    }
+
+    return isPinchHeld(metrics) ? 'pinching' : 'open';
+  }
+
+  private getActivatedReason(
+    doubleClose: DoubleCloseUpdate,
+    switchArmedThisFrame: boolean,
     metrics: PinchMetrics,
+  ): string {
+    if (doubleClose === 'first-close') {
+      return 'double-close-first-close';
+    }
+    if (
+      doubleClose === 'second-close' ||
+      this.doubleClosePhase === 'wait-final-release'
+    ) {
+      return 'double-close-second-close-waiting-for-release';
+    }
+    if (
+      doubleClose === 'peak-ready' ||
+      this.doubleClosePhase === 'wait-second-valley'
+    ) {
+      return 'double-close-peak-ready';
+    }
+    if (this.doubleCloseFailureReason) {
+      return this.doubleCloseFailureReason;
+    }
+    if (switchArmedThisFrame) {
+      return 'activation-switch-armed-open-hover';
+    }
+    if (this.doubleClosePhase === 'wait-first-valley') {
+      return 'double-close-open-ready';
+    }
+    if (this.doubleClosePhase === 'wait-peak') {
+      return 'double-close-first-close-waiting-for-peak';
+    }
+    return isPinchHeld(metrics) ? 'activation-held' : 'activation-held-open';
+  }
+
+  private updateDoubleClose(
+    ratio: number,
     timestamp: number,
     activatedAtMs: number,
-  ): 'first-close' | 'second-close' | 'focus-entry' | null {
+  ): DoubleCloseUpdate {
     if (
       timestamp < this.focusCooldownUntil ||
       timestamp - activatedAtMs < DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS
@@ -552,151 +692,179 @@ export class PlanetActivationController {
       return null;
     }
 
-    if (
-      this.doubleCloseCount === 1 &&
-      this.firstCloseAt !== null &&
-      timestamp - this.firstCloseAt > DOUBLE_CLOSE_MAX_INTERVAL_MS
-    ) {
-      this.resetDoubleClose();
+    if (this.doubleCloseCount === 1 && this.firstValleyAt !== null) {
+      this.doubleCloseTimeoutRemainingMs = Math.max(
+        0,
+        DOUBLE_CLOSE_MAX_INTERVAL_MS - (timestamp - this.firstValleyAt),
+      );
+      if (timestamp - this.firstValleyAt > DOUBLE_CLOSE_MAX_INTERVAL_MS) {
+        this.resetDoubleClose('double-close-timeout');
+        return null;
+      }
+    } else {
+      this.doubleCloseTimeoutRemainingMs = null;
     }
 
-    const openForDoubleClose = this.isOpenForDoubleClose(metrics);
-    const closedForDoubleClose = isDoubleCloseClosed(metrics);
-
-    if (this.closedLatched) {
-      if (openForDoubleClose) {
-        this.reopenStableSince ??= timestamp;
-        this.reopenPeakMetrics = maxPinchMetrics(
-          this.reopenPeakMetrics,
-          metrics,
-        );
-
-        if (timestamp - this.reopenStableSince >= DOUBLE_CLOSE_MIN_OPEN_GAP_MS) {
-          this.closedLatched = false;
-          this.closeStableSince = null;
-
-          if (this.doubleCloseCount === 2) {
-            this.openReady = false;
-            this.reopenStableSince = null;
-            this.focusCooldownUntil =
-              timestamp + DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS;
-            return 'focus-entry';
-          }
-
-          this.openReady = true;
+    if (this.doubleClosePhase === 'wait-initial-open') {
+      if (ratio >= DOUBLE_CLOSE_PEAK_MIN_RATIO) {
+        this.peakStableFrames += 1;
+        this.peakRatio = maxMaybe(this.peakRatio, ratio);
+        if (this.peakStableFrames >= DOUBLE_CLOSE_MIN_EXTREMUM_FRAMES) {
+          this.doubleClosePhase = 'wait-first-valley';
+          this.peakRatio = null;
+          this.peakStableFrames = 0;
+          this.doubleCloseFailureReason = null;
         }
       } else {
-        this.reopenStableSince = null;
-        this.reopenPeakMetrics = null;
+        this.peakStableFrames = 0;
+        this.peakRatio = null;
+      }
+      return null;
+    }
+
+    if (this.doubleClosePhase === 'wait-first-valley') {
+      if (ratio > DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
+        this.clearCandidateValley();
+        return null;
       }
 
-      return null;
-    }
+      this.trackCandidateValley(ratio, timestamp);
+      if (this.candidateValleyFrames < DOUBLE_CLOSE_MIN_EXTREMUM_FRAMES) {
+        return null;
+      }
 
-    if (openForDoubleClose) {
-      this.openReady = true;
-      this.reopenPeakMetrics = maxPinchMetrics(
-        this.reopenPeakMetrics,
-        metrics,
-      );
-      this.closeStableSince = null;
-      return null;
-    }
-
-    if (!closedForDoubleClose) {
-      this.closeStableSince = null;
-      return null;
-    }
-
-    if (!this.openReady) {
-      return null;
-    }
-
-    if (!this.isClosedAfterReopen(metrics)) {
-      this.closeStableSince = null;
-      return null;
-    }
-
-    this.closeStableSince ??= timestamp;
-
-    if (timestamp - this.closeStableSince < DOUBLE_CLOSE_STABLE_MS) {
-      return null;
-    }
-
-    if (this.doubleCloseCount === 0) {
+      this.firstValleyAt = this.candidateValleyStartedAt;
+      this.firstValleyRatio = this.candidateValleyRatio;
       this.doubleCloseCount = 1;
-      this.firstCloseAt = timestamp;
-      this.closedLatched = true;
-      this.openReady = false;
-      this.latchedCloseMetrics = metrics;
-      this.reopenPeakMetrics = null;
-      this.reopenStableSince = null;
+      this.doubleClosePhase = 'wait-peak';
+      this.doubleCloseTimeoutRemainingMs = DOUBLE_CLOSE_MAX_INTERVAL_MS;
+      this.doubleCloseFailureReason = null;
+      this.clearCandidateValley();
       return 'first-close';
     }
 
-    if (
-      this.doubleCloseCount === 1 &&
-      this.firstCloseAt !== null &&
-      timestamp - this.firstCloseAt <= DOUBLE_CLOSE_MAX_INTERVAL_MS
-    ) {
+    if (this.doubleClosePhase === 'wait-peak') {
+      if (ratio <= DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
+        this.firstValleyRatio = minMaybe(this.firstValleyRatio, ratio);
+        this.peakRatio = null;
+        this.peakStableFrames = 0;
+        return null;
+      }
+
+      this.peakRatio = maxMaybe(this.peakRatio, ratio);
+      if (ratio >= DOUBLE_CLOSE_PEAK_MIN_RATIO) {
+        this.peakStableFrames += 1;
+        if (this.peakStableFrames >= DOUBLE_CLOSE_MIN_EXTREMUM_FRAMES) {
+          this.doubleClosePhase = 'wait-second-valley';
+          this.clearCandidateValley();
+          this.doubleCloseFailureReason = null;
+          return 'peak-ready';
+        }
+      } else {
+        this.peakStableFrames = 0;
+      }
+      return null;
+    }
+
+    if (this.doubleClosePhase === 'wait-second-valley') {
+      if (ratio > DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
+        this.peakRatio = maxMaybe(this.peakRatio, ratio);
+        this.clearCandidateValley();
+        return null;
+      }
+
+      this.trackCandidateValley(ratio, timestamp);
+      if (this.candidateValleyFrames < DOUBLE_CLOSE_MIN_EXTREMUM_FRAMES) {
+        return null;
+      }
+
+      const prominence = this.getDoubleCloseProminence();
+      if (prominence === null || prominence < DOUBLE_CLOSE_MIN_PROMINENCE) {
+        this.firstValleyRatio = minMaybe(
+          this.firstValleyRatio,
+          this.candidateValleyRatio,
+        );
+        this.doubleClosePhase = 'wait-peak';
+        this.peakRatio = null;
+        this.peakStableFrames = 0;
+        this.clearCandidateValley();
+        this.doubleCloseFailureReason = 'double-close-prominence-too-low';
+        return null;
+      }
+
       this.doubleCloseCount = 2;
-      this.closedLatched = true;
-      this.openReady = false;
-      this.latchedCloseMetrics = metrics;
-      this.reopenPeakMetrics = null;
-      this.reopenStableSince = null;
+      this.doubleClosePhase = 'wait-final-release';
+      this.doubleCloseTimeoutRemainingMs = null;
+      this.finalReleaseStartedAt = null;
+      this.doubleCloseFailureReason = null;
       return 'second-close';
     }
 
-    this.resetDoubleClose();
+    if (ratio >= DOUBLE_CLOSE_PEAK_MIN_RATIO) {
+      this.finalReleaseStartedAt ??= timestamp;
+      if (
+        timestamp - this.finalReleaseStartedAt >=
+        DOUBLE_CLOSE_FINAL_RELEASE_STABLE_MS
+      ) {
+        this.focusCooldownUntil =
+          timestamp + DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS;
+        return 'focus-entry';
+      }
+    } else {
+      this.finalReleaseStartedAt = null;
+      if (ratio <= DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
+        this.candidateValleyRatio = minMaybe(
+          this.candidateValleyRatio,
+          ratio,
+        );
+      }
+    }
+
     return null;
   }
 
-  private resetDoubleClose(): void {
+  private trackCandidateValley(ratio: number, timestamp: number): void {
+    this.candidateValleyStartedAt ??= timestamp;
+    this.candidateValleyRatio = minMaybe(this.candidateValleyRatio, ratio);
+    this.candidateValleyFrames += 1;
+  }
+
+  private clearCandidateValley(): void {
+    this.candidateValleyStartedAt = null;
+    this.candidateValleyRatio = null;
+    this.candidateValleyFrames = 0;
+  }
+
+  private interruptDoubleCloseObservation(): void {
+    this.clearCandidateValley();
+    this.peakStableFrames = 0;
+    this.finalReleaseStartedAt = null;
+    if (this.doubleClosePhase === 'wait-initial-open') {
+      this.peakRatio = null;
+    }
+  }
+
+  private getDoubleCloseProminence(): number | null {
+    if (this.firstValleyRatio === null || this.peakRatio === null) {
+      return null;
+    }
+
+    const currentValley =
+      this.candidateValleyRatio ?? this.firstValleyRatio;
+    return this.peakRatio - Math.max(this.firstValleyRatio, currentValley);
+  }
+
+  private resetDoubleClose(failureReason: string | null = null): void {
     this.doubleCloseCount = 0;
-    this.firstCloseAt = null;
-    this.closeStableSince = null;
-    this.closedLatched = false;
-    this.reopenStableSince = null;
-    this.openReady = false;
-    this.latchedCloseMetrics = null;
-    this.reopenPeakMetrics = null;
-  }
-
-  private isOpenForDoubleClose(metrics: PinchMetrics): boolean {
-    if (isDoubleCloseOpen(metrics)) {
-      return true;
-    }
-
-    if (!this.latchedCloseMetrics) {
-      return false;
-    }
-
-    return (
-      // OR (mirrors isClosedAfterReopen): a clear ratio rise OR a clear pixel rise counts as a
-      // reopen, so a modest deliberate re-open is not missed — that miss forced repeated pinches.
-      metrics.ratio - this.latchedCloseMetrics.ratio >=
-        DOUBLE_CLOSE_REOPEN_DELTA_RATIO ||
-      metrics.distancePx - this.latchedCloseMetrics.distancePx >=
-        DOUBLE_CLOSE_REOPEN_DELTA_DISTANCE_PX
-    );
-  }
-
-  private isClosedAfterReopen(metrics: PinchMetrics): boolean {
-    if (this.doubleCloseCount === 0) {
-      return true;
-    }
-
-    if (!this.reopenPeakMetrics) {
-      return false;
-    }
-
-    return (
-      this.reopenPeakMetrics.ratio - metrics.ratio >=
-        DOUBLE_CLOSE_RECLOSE_DELTA_RATIO ||
-      this.reopenPeakMetrics.distancePx - metrics.distancePx >=
-        DOUBLE_CLOSE_RECLOSE_DELTA_DISTANCE_PX
-    );
+    this.doubleClosePhase = 'wait-initial-open';
+    this.firstValleyAt = null;
+    this.firstValleyRatio = null;
+    this.clearCandidateValley();
+    this.peakRatio = null;
+    this.peakStableFrames = 0;
+    this.finalReleaseStartedAt = null;
+    this.doubleCloseTimeoutRemainingMs = null;
+    this.doubleCloseFailureReason = failureReason;
   }
 }
 
@@ -767,6 +935,25 @@ function getNearestInteractionPoint(
     .sort((a, b) => a.distancePx - b.distancePx)[0];
 }
 
+function getInteractionPoint(
+  points: ReturnType<typeof createHandInteractionPoints>,
+  kind: HandInteractionPointKind,
+  target: { x: number; y: number },
+): {
+  kind: HandInteractionPointKind;
+  pixel: { x: number; y: number };
+  distancePx: number;
+} {
+  const point = points.find((candidate) => candidate.kind === kind) as {
+    kind: HandInteractionPointKind;
+    pixel: { x: number; y: number };
+  };
+  return {
+    ...point,
+    distancePx: distancePixels(point.pixel, target),
+  };
+}
+
 function computePinchMetrics(
   hand: TrackedHand,
   layout: PreviewLayout,
@@ -778,6 +965,13 @@ function computePinchMetrics(
   const ratio = distance / Math.max(hand.palmScale, 0.001);
 
   return { distance, distancePx, ratio };
+}
+
+function computePinchRatio(hand: TrackedHand): number {
+  return (
+    distance2d(hand.thumbTip, hand.indexFingerTip) /
+    Math.max(hand.palmScale, 0.001)
+  );
 }
 
 function isPinchStart(metrics: PinchMetrics): boolean {
@@ -794,31 +988,15 @@ function isPinchHeld(metrics: PinchMetrics): boolean {
   );
 }
 
-function isDoubleCloseOpen(metrics: PinchMetrics): boolean {
-  // Ratio is palm-scale-relative, so it is robust to how far the hand is from the camera; the raw
-  // pixel gap is not, so it is intentionally excluded. `!isPinchHeld` stays as a fully-open fallback.
-  return metrics.ratio >= DOUBLE_CLOSE_OPEN_RATIO || !isPinchHeld(metrics);
-}
-
-function isDoubleCloseClosed(metrics: PinchMetrics): boolean {
-  // Ratio only: the raw pixel gap shrinks as the hand moves away from the camera and would otherwise
-  // read open fingers as "closed" — the main source of false focus entries.
-  return metrics.ratio <= DOUBLE_CLOSE_CLOSE_RATIO;
-}
-
-function maxPinchMetrics(
-  current: PinchMetrics | null,
-  next: PinchMetrics,
-): PinchMetrics {
-  if (!current) {
-    return next;
+function minMaybe(current: number | null, next: number | null): number | null {
+  if (next === null) {
+    return current;
   }
+  return current === null ? next : Math.min(current, next);
+}
 
-  return {
-    distance: Math.max(current.distance, next.distance),
-    distancePx: Math.max(current.distancePx, next.distancePx),
-    ratio: Math.max(current.ratio, next.ratio),
-  };
+function maxMaybe(current: number | null, next: number): number {
+  return current === null ? next : Math.max(current, next);
 }
 
 function averagePoints(
