@@ -113,6 +113,28 @@ button {
   pointer-events: auto;
 }
 
+.public-fallback-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #050607;
+}
+
+.public-fallback-panel {
+  position: relative;
+  left: auto;
+  bottom: auto;
+  width: min(560px, 100%);
+  transform: none;
+}
+
+.public-fallback-message {
+  margin-bottom: 0;
+}
+
 .eyebrow {
   margin: 0 0 6px;
   color: #93d7cb;

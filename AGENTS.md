@@ -37,6 +37,8 @@ Commits in the main repo should refresh the companion repo via `.githooks/post-c
 
 Web Demo only. Do not introduce Electron, Tauri, TouchDesigner, Unity, Unreal, XR devices, mobile support, backend services, authentication, databases, analytics, or deployment infrastructure unless the user explicitly asks.
 
+The user explicitly authorized on 2026-07-19 the public-site robustness fallbacks, unsuitable-device guidance (not mobile adaptation), and in-repository build/deployment documentation needed for a public launch. Analytics, full mobile gesture adaptation, backend/auth/database work, CI/CD, and hosted deployment infrastructure remain prohibited unless separately authorized.
+
 ## Tech Stack
 
 - Vite + TypeScript, Three.js for 3D, MediaPipe Tasks Vision for hand/pose landmarks, browser MediaDevices for webcam, a dedicated Web Worker for hand inference, requestAnimationFrame render loop, lightweight CSS for UI/debug panels.

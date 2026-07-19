@@ -3,15 +3,15 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
-const MAIN_SOURCE = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf8');
+const APP_SOURCE = readFileSync(resolve(process.cwd(), 'src/app.ts'), 'utf8');
 const STYLES = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
 
 describe('single-body focus UI', () => {
   it('does not render a return button or hidden return hit target', () => {
     expect(INDEX_HTML).not.toContain('id="planet-return-button"');
     expect(INDEX_HTML).not.toContain('长按返回太阳系');
-    expect(MAIN_SOURCE).not.toContain('index-finger-return-button-hold');
-    expect(MAIN_SOURCE).not.toContain('planetReturnButton');
+    expect(APP_SOURCE).not.toContain('index-finger-return-button-hold');
+    expect(APP_SOURCE).not.toContain('planetReturnButton');
   });
 
   it('keeps the Earth-Moon switch card and its compact two-column layout', () => {

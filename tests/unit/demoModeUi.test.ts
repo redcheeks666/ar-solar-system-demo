@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const INDEX_HTML = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
-const MAIN_SOURCE = readFileSync(resolve(process.cwd(), 'src/main.ts'), 'utf8');
+const APP_SOURCE = readFileSync(resolve(process.cwd(), 'src/app.ts'), 'utf8');
 const SUMMARY_SOURCE = readFileSync(
   resolve(process.cwd(), 'src/rendering/interactionStatusSummary.ts'),
   'utf8',
@@ -16,8 +16,8 @@ const STYLES = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
 
 describe('demo-mode operation HUD', () => {
   it('uses the title-only summary mode without hiding the summary container', () => {
-    expect(MAIN_SOURCE).toContain("demoModeEnabled ? 'operation-only' : 'full'");
-    expect(MAIN_SOURCE).not.toContain('interactionSummary.hidden = true');
+    expect(APP_SOURCE).toContain("demoModeEnabled ? 'operation-only' : 'full'");
+    expect(APP_SOURCE).not.toContain('interactionSummary.hidden = true');
 
     const compactBranch = SUMMARY_SOURCE.slice(
       SUMMARY_SOURCE.indexOf("if (this.mode === 'operation-only')"),
@@ -108,11 +108,11 @@ describe('demo-mode hand skeleton toggle', () => {
   });
 
   it('uses the shared stable index-finger hold and clear-before-retoggle gate', () => {
-    expect(MAIN_SOURCE).toContain('const DEMO_HAND_MODEL_HOLD_MS = 500');
-    expect(MAIN_SOURCE).toContain('let demoHandSkeletonVisible = false');
-    expect(MAIN_SOURCE).toContain('updateIndexFingerUiHold({');
-    expect(MAIN_SOURCE).toContain('demoHandModelNeedsClear = true');
-    expect(MAIN_SOURCE).toContain(
+    expect(APP_SOURCE).toContain('const DEMO_HAND_MODEL_HOLD_MS = 500');
+    expect(APP_SOURCE).toContain('let demoHandSkeletonVisible = false');
+    expect(APP_SOURCE).toContain('updateIndexFingerUiHold({');
+    expect(APP_SOURCE).toContain('demoHandModelNeedsClear = true');
+    expect(APP_SOURCE).toContain(
       'debugOverlay.isVisible || (demoModeEnabled && demoHandSkeletonVisible)',
     );
   });
