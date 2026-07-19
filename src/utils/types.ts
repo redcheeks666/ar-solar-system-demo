@@ -364,6 +364,20 @@ export interface PlanetActivationDebugSnapshot {
     };
   } | null;
   trackingLossMs: number;
+  /** Additive activation-motion diagnostics; optional so existing schema-v3 recordings replay. */
+  activationMotionPhase?: string;
+  handAnchorScreen?: {
+    x: number;
+    y: number;
+  } | null;
+  /** Hand travel and speed are normalized by the preview short side. */
+  handDisplacement?: number | null;
+  handLockRadius?: number;
+  handSpeed?: number | null;
+  settleSpeedThreshold?: number;
+  settleFrameCount?: number;
+  settleRequiredFrames?: number;
+  settleTarget?: string | null;
   doubleCloseCount: number;
   /** Additive schema-v3 diagnostics for the ratio-only valley-peak-valley detector. */
   doubleCloseValleyRatio?: number | null;

@@ -9,9 +9,13 @@ import {
   cross,
   distance2d,
   distance3d,
+  easeInOutCubic,
+  easeOutBack,
+  easeOutExpo,
   inverseLerp,
   lerp,
   normalize,
+  smoothstep,
   subtract,
   unwrapAngle,
 } from '../../src/utils/math';
@@ -47,6 +51,24 @@ describe('scalar math helpers', () => {
     expect(averageNullable(4, null)).toBe(4);
     expect(averageNullable(null, 8)).toBe(8);
     expect(averageNullable(4, 8)).toBe(6);
+  });
+
+  it('provides shared clamped easing curves for staged visual transitions', () => {
+    expect(smoothstep(-1)).toBe(0);
+    expect(smoothstep(0.5)).toBe(0.5);
+    expect(smoothstep(2)).toBe(1);
+
+    expect(easeOutExpo(0)).toBe(0);
+    expect(easeOutExpo(0.5)).toBeGreaterThan(0.9);
+    expect(easeOutExpo(1)).toBe(1);
+
+    expect(easeInOutCubic(0)).toBe(0);
+    expect(easeInOutCubic(0.5)).toBe(0.5);
+    expect(easeInOutCubic(1)).toBe(1);
+
+    expect(easeOutBack(0)).toBeCloseTo(0);
+    expect(easeOutBack(0.75)).toBeGreaterThan(1);
+    expect(easeOutBack(1)).toBe(1);
   });
 });
 

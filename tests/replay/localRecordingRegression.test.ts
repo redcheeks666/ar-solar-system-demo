@@ -19,6 +19,41 @@ const doubleCloseSuccessRecordingPath =
   process.env.GESTURE_REPLAY_DOUBLE_CLOSE_SUCCESS;
 const doubleCloseRetryRecordingPath =
   process.env.GESTURE_REPLAY_DOUBLE_CLOSE_RETRY;
+const activationWristAnchorRecordingPath =
+  process.env.GESTURE_REPLAY_ACTIVATION_WRIST_ANCHOR;
+
+if (!activationWristAnchorRecordingPath) {
+  describe('local activation wrist-anchor regression', () => {
+    it('stays opt-in when the activation recording path is not supplied', () => {
+      expect(activationWristAnchorRecordingPath).toBeUndefined();
+    });
+  });
+} else {
+  describe('local activation wrist-anchor regression', () => {
+    it('keeps in-place DoubleClose reachable through recorded fingertip motion', () => {
+      const recording = parseGestureDebugExport(
+        readFileSync(activationWristAnchorRecordingPath, 'utf8'),
+      );
+      const replay = replayPlanetActivationController(recording);
+      const doubleCloseFrame = replay.find((frame) =>
+        frame.snapshot.transitionReason.startsWith('double-close-'),
+      );
+      const focusFrame = replay.find(
+        (frame) => frame.stateAfter === 'PlanetFocusView',
+      );
+
+      console.info(
+        JSON.stringify({
+          scenario: 'activation-wrist-anchor',
+          replayedDoubleCloseAt: doubleCloseFrame?.t ?? null,
+          replayedFocusAt: focusFrame?.t ?? null,
+        }),
+      );
+      expect(doubleCloseFrame).toBeDefined();
+      expect(focusFrame).toBeDefined();
+    });
+  });
+}
 
 if (!doubleCloseSuccessRecordingPath || !doubleCloseRetryRecordingPath) {
   describe('local DoubleClose recording regressions', () => {

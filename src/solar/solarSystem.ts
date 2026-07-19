@@ -42,7 +42,11 @@ import {
   type InteractiveCelestialBodyId,
 } from './solarSystemData';
 import { BLOOM_RENDER_LAYER } from '../rendering/renderLayers';
-import { FocusedCelestialBody } from './focusedCelestialBody';
+import {
+  FocusedCelestialBody,
+  getFocusedBodyReturnThrowStrength,
+  type FocusedBodyReturnMotion,
+} from './focusedCelestialBody';
 import { getTextureAssetPath } from './planetTextureMaterials';
 import { SOLAR_FX_TEXTURES, type TextureAsset } from './solarAssetManifest';
 import { SolarParticleField } from './solarParticles';
@@ -269,8 +273,16 @@ export class CodePlaceholderSolarSystem {
     this.tearArcs.update(deltaSeconds);
     this.updateSunFlareLight();
     if (this.focusedBody) {
-      this.focusedBodies.get(this.focusedBody)?.update(deltaSeconds, this.group);
+      const focusedBody = this.focusedBodies.get(this.focusedBody);
+      focusedBody?.update(deltaSeconds, this.group);
+      if (focusedBody?.consumeReturnCapturePulse()) {
+        this.getBodyById(this.focusedBody).triggerOrbitCapturePulse();
+        this.getBodyById('sun').triggerReturnCaptureFlare();
+      }
     }
+    this.focusedBodies.forEach((body) =>
+      body.updatePersistentVfx(deltaSeconds, this.group),
+    );
   }
 
   private updateSunFlareLight(): void {
@@ -477,6 +489,7 @@ export class CodePlaceholderSolarSystem {
 
   startFocusedBodyReturn(input: {
     focusedBody: InteractiveCelestialBodyId;
+    returnMotion?: FocusedBodyReturnMotion | null;
   }): boolean {
     const focusedBody = this.focusedBodies.get(input.focusedBody);
 
@@ -489,10 +502,25 @@ export class CodePlaceholderSolarSystem {
       TEMP_FOCUS_RETURN_POSITION,
     );
     const sourceWorldScale = sourceBody.getMaxWorldScale(TEMP_FOCUS_RETURN_SCALE);
+    const orbitVelocity = sourceBody.getOrbitVelocity(
+      TEMP_FOCUS_RETURN_ORBIT_VELOCITY,
+    );
+    const returnMotion = isValidReturnMotion(input.returnMotion)
+      ? input.returnMotion
+      : createRadialFallbackReturnMotion(
+          sourceWorldPosition,
+          this.getBodyById('sun').getWorldPosition(TEMP_SUN_WORLD_POSITION),
+        );
+    sourceBody.setOrbitPaused(true);
+    if (input.focusedBody === 'moon') {
+      this.getBodyById('earth').setOrbitPaused(true);
+    }
     focusedBody.startReturnTransition(
       this.group,
       sourceWorldPosition,
       sourceWorldScale,
+      returnMotion,
+      orbitVelocity,
     );
 
     return true;
@@ -542,6 +570,11 @@ export class CodePlaceholderSolarSystem {
     this.applyRiftBackdropState();
     this.applyParticleState();
 
+    const returningBody =
+      this.focusedBody &&
+      this.focusedBodies.get(this.focusedBody)?.isReturnTransitionActive()
+        ? this.focusedBody
+        : null;
     INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
       const body = this.getBodyById(definition.id as InteractiveCelestialBodyId);
       const state = getBodyVisualState(definition.id as InteractiveCelestialBodyId, input);
@@ -550,7 +583,11 @@ export class CodePlaceholderSolarSystem {
         shouldPauseBodyOrbit(
           definition.id as InteractiveCelestialBodyId,
           input.activatedBody,
-        ),
+        ) ||
+          shouldPauseBodyForReturn(
+            definition.id as InteractiveCelestialBodyId,
+            returningBody,
+          ),
       );
     });
   }
@@ -758,7 +795,7 @@ export class CodePlaceholderSolarSystem {
     INTERACTIVE_CELESTIAL_BODY_DEFINITIONS.forEach((definition) => {
       const body = new FocusedCelestialBody(definition);
       this.focusedBodies.set(definition.id as InteractiveCelestialBodyId, body);
-      this.group.add(body.root);
+      this.group.add(body.root, body.transitionVfxRoot);
     });
   }
 
@@ -942,6 +979,48 @@ const TEMP_FOCUS_WORLD_SCALE = new Vector3();
 const TEMP_FOCUS_CONTROL_POSITION = new Vector3();
 const TEMP_FOCUS_RETURN_POSITION = new Vector3();
 const TEMP_FOCUS_RETURN_SCALE = new Vector3();
+const TEMP_FOCUS_RETURN_ORBIT_VELOCITY = new Vector3();
+const TEMP_SUN_WORLD_POSITION = new Vector3();
+const TEMP_RADIAL_RETURN_DIRECTION = new Vector3();
+
+function isValidReturnMotion(
+  motion: FocusedBodyReturnMotion | null | undefined,
+): motion is FocusedBodyReturnMotion {
+  if (!motion) {
+    return false;
+  }
+
+  const { x, y, z } = motion.throwDirection;
+  return (
+    Number.isFinite(x) &&
+    Number.isFinite(y) &&
+    Number.isFinite(z) &&
+    x * x + y * y + z * z > 0.000001
+  );
+}
+
+function createRadialFallbackReturnMotion(
+  bodyWorldPosition: Vector3,
+  sunWorldPosition: Vector3,
+): FocusedBodyReturnMotion {
+  TEMP_RADIAL_RETURN_DIRECTION
+    .copy(bodyWorldPosition)
+    .sub(sunWorldPosition);
+  if (TEMP_RADIAL_RETURN_DIRECTION.lengthSq() <= 0.000001) {
+    TEMP_RADIAL_RETURN_DIRECTION.set(0, 1, 0);
+  } else {
+    TEMP_RADIAL_RETURN_DIRECTION.normalize();
+  }
+
+  return {
+    throwDirection: {
+      x: TEMP_RADIAL_RETURN_DIRECTION.x,
+      y: TEMP_RADIAL_RETURN_DIRECTION.y,
+      z: TEMP_RADIAL_RETURN_DIRECTION.z,
+    },
+    throwStrength: getFocusedBodyReturnThrowStrength(null),
+  };
+}
 
 function getBodyVisualState(
   id: InteractiveCelestialBodyId,
@@ -990,6 +1069,16 @@ function shouldPauseBodyOrbit(
   }
 
   return activatedBody === 'moon' && id === 'earth';
+}
+
+function shouldPauseBodyForReturn(
+  id: InteractiveCelestialBodyId,
+  returningBody: InteractiveCelestialBodyId | null,
+): boolean {
+  return (
+    returningBody === id ||
+    (returningBody === 'moon' && id === 'earth')
+  );
 }
 
 function smoothProgressRange(

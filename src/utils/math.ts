@@ -20,6 +20,34 @@ export function inverseLerp(from: number, to: number, value: number): number {
   return clamp01((value - from) / (to - from));
 }
 
+export function smoothstep(value: number): number {
+  const clamped = clamp01(value);
+
+  return clamped * clamped * (3 - 2 * clamped);
+}
+
+export function easeOutExpo(value: number): number {
+  const clamped = clamp01(value);
+
+  return clamped === 1 ? 1 : 1 - 2 ** (-10 * clamped);
+}
+
+export function easeInOutCubic(value: number): number {
+  const clamped = clamp01(value);
+
+  return clamped < 0.5
+    ? 4 * clamped * clamped * clamped
+    : 1 - ((-2 * clamped + 2) ** 3) / 2;
+}
+
+export function easeOutBack(value: number): number {
+  const clamped = clamp01(value);
+  const overshoot = 1.70158;
+  const shifted = clamped - 1;
+
+  return 1 + (overshoot + 1) * shifted ** 3 + overshoot * shifted ** 2;
+}
+
 export function average(a: number, b: number): number {
   return (a + b) / 2;
 }

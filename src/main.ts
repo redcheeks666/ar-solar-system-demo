@@ -43,7 +43,11 @@ import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { INTERACTION_PLANE_Z, TransparentSceneRenderer } from './rendering/scene';
 import { SunRoomGlow } from './rendering/sunRoomGlow';
-import { FOCUS_BODY_WORLD_Z } from './solar/focusedCelestialBody';
+import {
+  FOCUS_BODY_WORLD_Z,
+  type FocusedBodyReturnMotion,
+} from './solar/focusedCelestialBody';
+import { createFocusedBodyReturnMotionFromWave } from './solar/focusedBodyReturnMotion';
 import { CodePlaceholderSolarSystem } from './solar/solarSystem';
 import {
   INTERACTIVE_CELESTIAL_BODY_IDS,
@@ -58,6 +62,7 @@ import {
 import type {
   CameraPermissionStatus,
   DebugSnapshot,
+  PlanetReturnWaveDebugSnapshot,
   TrackingSnapshot,
 } from './utils/types';
 
@@ -560,7 +565,7 @@ function updateGestureControllers(
     debugSnapshot.planetReturnWave = returnWaveUpdate.snapshot;
 
     if (returnWaveUpdate.triggered) {
-      triggerPlanetReturn();
+      triggerPlanetReturn(returnWaveUpdate.snapshot);
       return;
     }
 
@@ -1116,7 +1121,9 @@ function updateEarthMoonSwitchButtonHandHold(
   }
 }
 
-function triggerPlanetReturn(): void {
+function triggerPlanetReturn(
+  returnWaveSnapshot: PlanetReturnWaveDebugSnapshot | null = null,
+): void {
   const focusedBody = getActiveFocusedBody();
   cancelEarthMoonSwitchHold();
 
@@ -1131,7 +1138,10 @@ function triggerPlanetReturn(): void {
     transitionReason: 'fast-upper-corner-throw-return',
   };
   interaction.transition('BodyReturning');
-  startBodyReturn(focusedBody);
+  startBodyReturn(
+    focusedBody,
+    createFocusedBodyReturnMotionFromWave(returnWaveSnapshot),
+  );
   updateGuidanceForState(interaction.state);
   updatePlanetFocusControlsVisibility();
   updatePlanetFocusSwitchButtonVisibility();
@@ -1293,6 +1303,7 @@ function isInteractiveCelestialBodyId(
 
 function startBodyReturn(
   focusedBody: PlanetFocusSnapshot['focusedBody'],
+  returnMotion: FocusedBodyReturnMotion | null = null,
 ): void {
   if (!focusedBody) {
     finishBodyReturn();
@@ -1302,6 +1313,7 @@ function startBodyReturn(
   returningFocusedBody = focusedBody;
   const started = placeholderSolarSystem.startFocusedBodyReturn({
     focusedBody,
+    returnMotion,
   });
 
   if (!started) {

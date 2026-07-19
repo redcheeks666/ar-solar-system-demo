@@ -342,6 +342,10 @@ export function getCelestialBodyDisplayName(id: CelestialBodyId): string {
   return `${definition.nameZh}（${definition.name}）`;
 }
 
+export function getCelestialBodyNameZh(id: CelestialBodyId): string {
+  return getCelestialBodyDefinition(id).nameZh;
+}
+
 export function getInteractiveCelestialBodyDefinition(
   id: InteractiveCelestialBodyId,
 ): CelestialBodyDefinition {

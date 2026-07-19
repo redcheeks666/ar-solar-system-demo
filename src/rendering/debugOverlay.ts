@@ -220,6 +220,26 @@ export class DebugOverlay {
       ['Hover point', snapshot.planetActivation.hoverPointKind ?? 'none'],
       ['Activation hand', snapshot.planetActivation.activeHandKey ?? 'none'],
       [
+        'Activation motion',
+        snapshot.planetActivation.activationMotionPhase ?? 'Inactive',
+      ],
+      [
+        'Activation wrist anchor',
+        formatPoint2(snapshot.planetActivation.handAnchorScreen ?? null),
+      ],
+      [
+        'Activation wrist travel / lock',
+        `${formatNullable(snapshot.planetActivation.handDisplacement ?? null)} / ${formatNullable(snapshot.planetActivation.handLockRadius ?? null)} short-side`,
+      ],
+      [
+        'Activation wrist speed / settle',
+        `${formatNullable(snapshot.planetActivation.handSpeed ?? null)} / ${formatNullable(snapshot.planetActivation.settleSpeedThreshold ?? null)} short-side/s`,
+      ],
+      [
+        'Activation landing',
+        `${snapshot.planetActivation.settleTarget ?? 'none'} · ${snapshot.planetActivation.settleFrameCount ?? 0}/${snapshot.planetActivation.settleRequiredFrames ?? 0} frames`,
+      ],
+      [
         'Activation lost',
         `${Math.round(snapshot.planetActivation.trackingLossMs)}ms`,
       ],

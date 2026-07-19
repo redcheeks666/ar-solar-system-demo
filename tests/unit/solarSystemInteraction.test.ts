@@ -1,20 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  DoubleSide,
   Mesh,
   MeshBasicMaterial,
   Points,
+  RingGeometry,
   ShaderMaterial,
   Sprite,
   Vector3,
 } from 'three';
 import { CAMERA_FOV, CAMERA_Z } from '../../src/rendering/scene';
-import { BACKGROUND_RENDER_LAYER } from '../../src/rendering/renderLayers';
+import {
+  BACKGROUND_RENDER_LAYER,
+  BLOOM_RENDER_LAYER,
+} from '../../src/rendering/renderLayers';
 import {
   FOCUS_BODY_WORLD_Z,
   FOCUS_INTRO_DURATION_SECONDS,
   FOCUS_RETURN_DURATION_SECONDS,
+  getFocusedBodyReturnThrowStrength,
   getFocusedBodyScreenHeightFraction,
 } from '../../src/solar/focusedCelestialBody';
+import { createFocusedBodyReturnMotionFromWave } from '../../src/solar/focusedBodyReturnMotion';
 import { SOLAR_PARTICLE_COUNT } from '../../src/solar/solarParticles';
 import { CodePlaceholderSolarSystem } from '../../src/solar/solarSystem';
 import type { InteractiveCelestialBodyId } from '../../src/solar/solarSystemData';
@@ -100,6 +107,31 @@ function getFocusedBodyHeightFraction(
 }
 
 describe('CodePlaceholderSolarSystem interaction state', () => {
+  it('maps display-space upper corners into matching world-space throw directions', () => {
+    const baseWave = {
+      horizontalDisplacement: 0.4,
+      upwardDisplacement: 0.3,
+      peakSpeed: 6,
+    } as const;
+    const left = createFocusedBodyReturnMotionFromWave({
+      ...baseWave,
+      cornerDirection: 'upper-left',
+    });
+    const right = createFocusedBodyReturnMotionFromWave({
+      ...baseWave,
+      cornerDirection: 'upper-right',
+    });
+
+    expect(left?.throwDirection).toEqual({ x: -0.8, y: 0.6, z: 0 });
+    expect(right?.throwDirection).toEqual({ x: 0.8, y: 0.6, z: 0 });
+    expect(
+      createFocusedBodyReturnMotionFromWave({
+        ...baseWave,
+        cornerDirection: null,
+      }),
+    ).toBeNull();
+  });
+
   it('matches the AE-approved pre-flattened rift angle with an equivalent runtime pitch', () => {
     const aeProjectedHeightRatio =
       (AE_RIFT_BORDER_SOURCE_HEIGHT / AE_RIFT_BORDER_SOURCE_WIDTH) *
@@ -885,6 +917,244 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
     }
   });
 
+  it('launches toward the requested display corner before curving back to orbit', () => {
+    const runCornerLaunch = (horizontalSign: -1 | 1) => {
+      const solarSystem = new CodePlaceholderSolarSystem();
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(1);
+
+      try {
+        solarSystem.update(1 / 60);
+        solarSystem.update(1 / 60);
+        solarSystem.applyBodyInteractionState({
+          hoveredBody: null,
+          activatedBody: 'earth',
+          focusedBody: 'earth',
+        });
+        solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+        solarSystem.setFocusedBodyPlacement({
+          focusedBody: 'earth',
+          worldPosition: { x: 0, y: 0, z: FOCUS_BODY_WORLD_Z },
+          scaleMultiplier: 1,
+        });
+
+        const focusRoot = solarSystem.group.getObjectByName('focus-earth-root')!;
+        const start = focusRoot.getWorldPosition(new Vector3()).clone();
+        expect(
+          solarSystem.startFocusedBodyReturn({
+            focusedBody: 'earth',
+            returnMotion: {
+              throwDirection: { x: horizontalSign, y: 1, z: 0 },
+              throwStrength: getFocusedBodyReturnThrowStrength(6),
+            },
+          }),
+        ).toBe(true);
+
+        solarSystem.update(FOCUS_RETURN_DURATION_SECONDS * 0.045);
+        const anticipated = focusRoot.getWorldPosition(new Vector3()).clone();
+        expect(Math.sign(anticipated.x - start.x)).toBe(-horizontalSign);
+        expect(anticipated.y).toBeLessThan(start.y);
+
+        solarSystem.update(FOCUS_RETURN_DURATION_SECONDS * 0.09);
+        const launched = focusRoot.getWorldPosition(new Vector3());
+        expect(Math.sign(launched.x - start.x)).toBe(horizontalSign);
+        expect(launched.y).toBeGreaterThan(start.y);
+      } finally {
+        solarSystem.dispose();
+      }
+    };
+
+    runCornerLaunch(-1);
+    runCornerLaunch(1);
+  });
+
+  it('uses peak speed for visible launch strength and a finite radial fallback', () => {
+    const sampleLaunchDistance = (peakSpeed: number | null) => {
+      const solarSystem = new CodePlaceholderSolarSystem();
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(1);
+
+      try {
+        solarSystem.update(1 / 60);
+        solarSystem.update(1 / 60);
+        solarSystem.applyBodyInteractionState({
+          hoveredBody: null,
+          activatedBody: 'jupiter',
+          focusedBody: 'jupiter',
+        });
+        solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+        solarSystem.setFocusedBodyPlacement({
+          focusedBody: 'jupiter',
+          worldPosition: { x: 0, y: 0, z: FOCUS_BODY_WORLD_Z },
+          scaleMultiplier: 1,
+        });
+        const focusRoot = solarSystem.group.getObjectByName('focus-jupiter-root')!;
+        const start = focusRoot.getWorldPosition(new Vector3()).clone();
+        solarSystem.startFocusedBodyReturn({
+          focusedBody: 'jupiter',
+          returnMotion:
+            peakSpeed === null
+              ? null
+              : {
+                  throwDirection: { x: 1, y: 1, z: 0 },
+                  throwStrength: getFocusedBodyReturnThrowStrength(peakSpeed),
+                },
+        });
+        solarSystem.update(FOCUS_RETURN_DURATION_SECONDS * 0.135);
+        const position = focusRoot.getWorldPosition(new Vector3());
+        expect([position.x, position.y, position.z].every(Number.isFinite)).toBe(true);
+        return position.distanceTo(start);
+      } finally {
+        solarSystem.dispose();
+      }
+    };
+
+    expect(sampleLaunchDistance(6)).toBeGreaterThan(sampleLaunchDistance(3));
+    expect(sampleLaunchDistance(null)).toBeGreaterThan(0.01);
+  });
+
+  it('merges Earth and Moon along their sampled world-space orbit tangents', () => {
+    const assertTangentMerge = (
+      focusedBody: 'earth' | 'moon',
+      activatedBody: 'earth' | 'moon',
+    ) => {
+      const solarSystem = new CodePlaceholderSolarSystem();
+      solarSystem.setVisible(true);
+      solarSystem.setOpeningProgress(1);
+
+      try {
+        solarSystem.update(1 / 60);
+        const before = solarSystem
+          .getBodyWorldPosition(focusedBody, new Vector3())
+          .clone();
+        solarSystem.update(1 / 120);
+        let expectedTangent = solarSystem
+          .getBodyWorldPosition(focusedBody, new Vector3())
+          .clone()
+          .sub(before)
+          .normalize();
+        solarSystem.applyBodyInteractionState({
+          hoveredBody: null,
+          activatedBody,
+          focusedBody,
+        });
+        solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+        if (focusedBody === 'moon') {
+          const latestBefore = solarSystem
+            .getBodyWorldPosition('moon', new Vector3())
+            .clone();
+          solarSystem.update(1 / 120);
+          expectedTangent = solarSystem
+            .getBodyWorldPosition('moon', new Vector3())
+            .clone()
+            .sub(latestBefore)
+            .normalize();
+        }
+        solarSystem.setFocusedBodyPlacement({
+          focusedBody,
+          worldPosition: { x: 0.18, y: -0.12, z: FOCUS_BODY_WORLD_Z },
+          scaleMultiplier: 1.2,
+        });
+        solarSystem.startFocusedBodyReturn({
+          focusedBody,
+          returnMotion: {
+            throwDirection: { x: -1, y: 1, z: 0 },
+            throwStrength: getFocusedBodyReturnThrowStrength(5),
+          },
+        });
+
+        solarSystem.update(FOCUS_RETURN_DURATION_SECONDS * 0.96);
+        const focusRoot = solarSystem.group.getObjectByName(
+          `focus-${focusedBody}-root`,
+        )!;
+        const beforeMerge = focusRoot.getWorldPosition(new Vector3()).clone();
+        solarSystem.update(FOCUS_RETURN_DURATION_SECONDS * 0.04);
+        const mergeDirection = focusRoot
+          .getWorldPosition(new Vector3())
+          .clone()
+          .sub(beforeMerge)
+          .normalize();
+
+        expect(mergeDirection.dot(expectedTangent)).toBeGreaterThan(0.82);
+      } finally {
+        solarSystem.dispose();
+      }
+    };
+
+    assertTangentMerge('earth', 'earth');
+    assertTangentMerge('moon', 'earth');
+  });
+
+  it('reuses bloom-layer return VFX and clears them after repeated returns', () => {
+    const solarSystem = new CodePlaceholderSolarSystem();
+    solarSystem.setVisible(true);
+    solarSystem.setOpeningProgress(1);
+
+    try {
+      const vfxRoot = solarSystem.group.getObjectByName('focus-earth-return-vfx-root')!;
+      const initialChildCount = vfxRoot.children.length;
+      const afterimages = vfxRoot.children.filter((child) =>
+        child.name.includes('return-afterimage'),
+      );
+      const ripple = vfxRoot.getObjectByName('focus-earth-return-capture-ripple')!;
+      const orbitRing = solarSystem.group.getObjectByName('earth-orbit-ring') as Mesh;
+      const orbitMaterial = orbitRing.material as ShaderMaterial;
+      const sunPlasma = solarSystem.group.getObjectByName('sun-plasma-core') as Mesh;
+      const sunMaterial = sunPlasma.material as ShaderMaterial;
+      expect(afterimages).toHaveLength(4);
+      expect(
+        afterimages.every((child) =>
+          child.layers.isEnabled(BLOOM_RENDER_LAYER),
+        ),
+      ).toBe(true);
+      expect(ripple.layers.isEnabled(BLOOM_RENDER_LAYER)).toBe(true);
+
+      for (let cycle = 0; cycle < 2; cycle += 1) {
+        solarSystem.update(1 / 60);
+        solarSystem.update(1 / 60);
+        solarSystem.applyBodyInteractionState({
+          hoveredBody: null,
+          activatedBody: 'earth',
+          focusedBody: 'earth',
+        });
+        solarSystem.update(FOCUS_INTRO_DURATION_SECONDS);
+        solarSystem.startFocusedBodyReturn({
+          focusedBody: 'earth',
+          returnMotion: {
+            throwDirection: { x: 1, y: 1, z: 0 },
+            throwStrength: getFocusedBodyReturnThrowStrength(5),
+          },
+        });
+        let sawAfterimage = false;
+        for (let frame = 0; frame < 60; frame += 1) {
+          solarSystem.update(FOCUS_RETURN_DURATION_SECONDS / 60);
+          sawAfterimage ||= afterimages.some((child) => child.visible);
+        }
+        expect(solarSystem.isFocusedBodyReturnComplete('earth')).toBe(true);
+        expect(sawAfterimage).toBe(true);
+        expect(orbitRing.layers.isEnabled(BLOOM_RENDER_LAYER)).toBe(true);
+        expect(orbitMaterial.uniforms.intensity.value).toBeGreaterThan(1);
+        expect(sunMaterial.uniforms.flareBoost.value).toBeGreaterThan(0);
+        expect(ripple.visible).toBe(true);
+        solarSystem.applyBodyInteractionState({
+          hoveredBody: null,
+          activatedBody: null,
+          focusedBody: null,
+        });
+        for (let frame = 0; frame < 40; frame += 1) {
+          solarSystem.update(1 / 60);
+        }
+        expect(vfxRoot.children).toHaveLength(initialChildCount);
+        expect(afterimages.every((child) => !child.visible)).toBe(true);
+        expect(ripple.visible).toBe(false);
+        expect(orbitRing.layers.isEnabled(BLOOM_RENDER_LAYER)).toBe(false);
+        expect(orbitMaterial.uniforms.intensity.value).toBe(1);
+      }
+    } finally {
+      solarSystem.dispose();
+    }
+  });
+
   it('keeps the focused return animation alive if focus state is cleared mid-return', () => {
     const solarSystem = new CodePlaceholderSolarSystem();
     solarSystem.setVisible(true);
@@ -973,9 +1243,46 @@ describe('CodePlaceholderSolarSystem interaction state', () => {
         }
 
         if (definition.id === 'saturn') {
-          expect(
-            focusRoot?.getObjectByName('focus-saturn-saturn-ring'),
-          ).toBeDefined();
+          const focusMesh = focusRoot?.getObjectByName(
+            'focus-saturn-placeholder-sphere',
+          ) as Mesh;
+          const tiltGroup = focusRoot?.getObjectByName('focus-saturn-tilt');
+          const ring = focusRoot?.getObjectByName('focus-saturn-ring');
+          const backHalf = ring?.getObjectByName(
+            'focus-saturn-ring-back',
+          ) as Mesh<RingGeometry, MeshBasicMaterial>;
+          const frontHalf = ring?.getObjectByName(
+            'focus-saturn-ring-front',
+          ) as Mesh<RingGeometry, MeshBasicMaterial>;
+
+          expect(ring?.parent).toBe(tiltGroup);
+          expect(tiltGroup?.rotation.z).toBeCloseTo(definition.axialTilt);
+          expect(ring?.rotation.x).toBeCloseTo(Math.PI * 0.38);
+          expect(backHalf.parent).toBe(ring);
+          expect(frontHalf.parent).toBe(ring);
+          expect(backHalf.renderOrder).toBeLessThan(focusMesh.renderOrder);
+          expect(frontHalf.renderOrder).toBeGreaterThan(
+            (atmosphere as Mesh).renderOrder,
+          );
+          expect(backHalf.geometry.parameters.thetaStart).toBeCloseTo(Math.PI);
+          expect(backHalf.geometry.parameters.thetaLength).toBeCloseTo(Math.PI);
+          expect(frontHalf.geometry.parameters.thetaStart).toBeCloseTo(0);
+          expect(frontHalf.geometry.parameters.thetaLength).toBeCloseTo(Math.PI);
+          expect(frontHalf.material).toBe(backHalf.material);
+          expect(frontHalf.material.depthTest).toBe(false);
+          expect(frontHalf.material.depthWrite).toBe(false);
+          expect(frontHalf.material.side).toBe(DoubleSide);
+          expect(frontHalf.layers.mask).toBe(backHalf.layers.mask);
+
+          [backHalf.geometry, frontHalf.geometry].forEach((geometry) => {
+            const uvs = geometry.getAttribute('uv');
+            const uValues = Array.from(
+              { length: uvs.count },
+              (_, index) => uvs.getX(index),
+            );
+            expect(Math.min(...uValues)).toBeCloseTo(0);
+            expect(Math.max(...uValues)).toBeCloseTo(1);
+          });
         }
       });
     } finally {

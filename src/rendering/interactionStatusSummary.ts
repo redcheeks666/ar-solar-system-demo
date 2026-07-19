@@ -1,6 +1,7 @@
 import type { DebugSnapshot } from '../utils/types';
 import {
   getCelestialBodyDisplayName,
+  getCelestialBodyNameZh,
   isInteractiveCelestialBodyId,
 } from '../solar/solarSystemData';
 
@@ -189,11 +190,15 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
 
   if (snapshot.interactionState === 'PlanetActivated') {
     return {
-      title: '天体已激活',
+      title: `${statusBodyNameZh(snapshot)}已激活`,
       state: `${snapshot.activatedBody ?? '目标天体'} 等待双指双击并松开`,
-      reason: '选中天体停止原轨道公转但保持自转；用选中这只手的拇指和食指连续点捏两次，第二次稳定松开后进入单颗星球界面',
+      reason: '手在锚点附近时锁定当前天体并接受双指双击；主动移手后只在落定时切换到目标天体或取消空白落点',
       params: [
         `Activated=${snapshot.activatedBody ?? 'none'}`,
+        `Motion=${snapshot.planetActivation.activationMotionPhase ?? 'Inactive'}`,
+        `Travel=${nullable(snapshot.planetActivation.handDisplacement ?? null)}/${nullable(snapshot.planetActivation.handLockRadius ?? null)}`,
+        `Speed=${nullable(snapshot.planetActivation.handSpeed ?? null)}/${nullable(snapshot.planetActivation.settleSpeedThreshold ?? null)}`,
+        `Landing=${snapshot.planetActivation.settleTarget ?? 'none'} ${snapshot.planetActivation.settleFrameCount ?? 0}/${snapshot.planetActivation.settleRequiredFrames ?? 0}`,
         `Pinch ratio=${nullable(snapshot.planetActivation.pinchRatio)}`,
         `Pinch=${snapshot.pinchState}`,
         `DoubleClose=${snapshot.planetActivation.doubleCloseCount}`,
@@ -225,7 +230,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
 
   if (snapshot.interactionState === 'PlanetFocusControlled') {
     return {
-      title: '正在控制星球',
+      title: `正在控制${statusBodyNameZh(snapshot)}`,
       state:
         snapshot.planetFocus.controlMode === 'two'
           ? '双手跟随，手距调整大小'
@@ -244,7 +249,7 @@ function buildStatusSummary(snapshot: DebugSnapshot): StatusSummary {
   if (snapshot.interactionState === 'PlanetFocusFloating') {
     return {
       title: '星球已放下',
-      operationTitle: '星球悬浮中',
+      operationTitle: `${statusBodyNameZh(snapshot)}悬浮中`,
       state: `${snapshot.activatedBody ?? '目标天体'} 悬浮在当前位置`,
       reason:
         snapshot.planetFocus.controlState === 'DeselectedWaitForClear'
@@ -321,6 +326,20 @@ function focusedBodyOperationTitle(snapshot: DebugSnapshot): string {
   return focusedBody && isInteractiveCelestialBodyId(focusedBody)
     ? getCelestialBodyDisplayName(focusedBody)
     : '单颗星球界面';
+}
+
+function statusBodyNameZh(snapshot: DebugSnapshot): string {
+  const focusedBody = snapshot.planetFocus.focusedBody;
+
+  if (focusedBody && isInteractiveCelestialBodyId(focusedBody)) {
+    return getCelestialBodyNameZh(focusedBody);
+  }
+
+  const activatedBody = snapshot.activatedBody;
+
+  return activatedBody && isInteractiveCelestialBodyId(activatedBody)
+    ? getCelestialBodyNameZh(activatedBody)
+    : '天体';
 }
 
 function focusViewReason(snapshot: DebugSnapshot): string {

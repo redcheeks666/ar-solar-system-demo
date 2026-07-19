@@ -82,6 +82,10 @@ const SOLAR_FLARE_DECAY_SECONDS = 1.35;
 const SOLAR_FLARE_MIN_GAP_SECONDS = 9;
 const SOLAR_FLARE_MAX_GAP_SECONDS = 20;
 const SOLAR_FLARE_FIRST_DELAY_SECONDS = 6;
+const RETURN_CAPTURE_FLARE_SECONDS = 0.5;
+const ORBIT_CAPTURE_PULSE_SECONDS = 0.62;
+const ORBIT_CAPTURE_PULSE_INTENSITY = 4.6;
+const MIN_ORBIT_VELOCITY_SQUARED = 0.000001;
 
 interface SolarProminenceConfig {
   readonly longitude: number;
@@ -162,6 +166,7 @@ export class CelestialBody {
   private targetLockMaterial: SpriteMaterial | null = null;
   private targetLockTextureLoaded = false;
   private orbitMaterial: ShaderMaterial | null = null;
+  private orbitRing: Mesh | null = null;
   private atmosphereRimMaterial: ShaderMaterial | null = null;
   private solarVfxMaterials: SolarVfxMaterialBundle | null = null;
   private lensFlareSprite: Sprite | null = null;
@@ -170,12 +175,18 @@ export class CelestialBody {
   private flareLevel = 0;
   private flareElapsedSeconds = -1;
   private flareCooldownSeconds = SOLAR_FLARE_FIRST_DELAY_SECONDS;
+  private returnCaptureFlareElapsedSeconds = -1;
+  private orbitCapturePulseElapsedSeconds = -1;
   private solarVfxElapsedSeconds = 0;
   private hudPulseElapsedSeconds = 0;
   private interactionVisualState: CelestialBodyInteractionVisualState = 'idle';
   private focusBackgroundDimmed = false;
   private orbitAngle: number;
   private orbitPaused = false;
+  private readonly previousWorldPosition = new Vector3();
+  private readonly currentWorldPosition = new Vector3();
+  private readonly orbitVelocity = new Vector3();
+  private hasPreviousWorldPosition = false;
   private disposed = false;
 
   constructor(readonly definition: CelestialBodyDefinition) {
@@ -213,6 +224,8 @@ export class CelestialBody {
       setSolarVfxTime(this.solarVfxMaterials, this.solarVfxElapsedSeconds);
       this.updateSolarActivity(deltaSeconds);
     }
+    this.captureOrbitVelocity(deltaSeconds);
+    this.updateOrbitCapturePulse(deltaSeconds);
     this.updateHudPulse(deltaSeconds);
   }
 
@@ -264,7 +277,20 @@ export class CelestialBody {
               0,
               1 - (elapsed - SOLAR_FLARE_RISE_SECONDS) / SOLAR_FLARE_DECAY_SECONDS,
             );
-    this.flareLevel = rawLevel * dimScale;
+    let returnCaptureLevel = 0;
+    if (this.returnCaptureFlareElapsedSeconds >= 0) {
+      this.returnCaptureFlareElapsedSeconds += deltaSeconds;
+      const captureProgress = Math.min(
+        this.returnCaptureFlareElapsedSeconds / RETURN_CAPTURE_FLARE_SECONDS,
+        1,
+      );
+      returnCaptureLevel = (1 - captureProgress) ** 2;
+      if (captureProgress >= 1) {
+        this.returnCaptureFlareElapsedSeconds = -1;
+      }
+    }
+
+    this.flareLevel = Math.max(rawLevel * dimScale, returnCaptureLevel);
 
     if (this.solarVfxMaterials) {
       setSolarVfxFlareBoost(this.solarVfxMaterials, this.flareLevel);
@@ -278,6 +304,26 @@ export class CelestialBody {
 
   setOrbitPaused(paused: boolean): void {
     this.orbitPaused = paused;
+  }
+
+  getOrbitVelocity(target: Vector3): Vector3 {
+    return target.copy(this.orbitVelocity);
+  }
+
+  triggerOrbitCapturePulse(): void {
+    if (this.orbitMaterial) {
+      this.orbitCapturePulseElapsedSeconds = 0;
+      this.orbitMaterial.uniforms.intensity.value = ORBIT_CAPTURE_PULSE_INTENSITY;
+      this.orbitRing?.layers.enable(BLOOM_RENDER_LAYER);
+    }
+  }
+
+  triggerReturnCaptureFlare(): void {
+    if (this.solarVfxMaterials) {
+      this.returnCaptureFlareElapsedSeconds = 0;
+      this.flareLevel = Math.max(this.flareLevel, 1);
+      setSolarVfxFlareBoost(this.solarVfxMaterials, this.flareLevel);
+    }
   }
 
   setLabelVisible(visible: boolean): void {
@@ -381,6 +427,43 @@ export class CelestialBody {
 
     if (this.labelMaterial) {
       this.labelMaterial.opacity = dimmed ? FOCUS_BACKGROUND_LABEL_OPACITY : 1;
+    }
+  }
+
+  private captureOrbitVelocity(deltaSeconds: number): void {
+    this.getWorldPosition(this.currentWorldPosition);
+
+    if (this.hasPreviousWorldPosition && deltaSeconds > 0.000001) {
+      TEMP_ORBIT_VELOCITY
+        .copy(this.currentWorldPosition)
+        .sub(this.previousWorldPosition)
+        .divideScalar(deltaSeconds);
+      if (TEMP_ORBIT_VELOCITY.lengthSq() > MIN_ORBIT_VELOCITY_SQUARED) {
+        this.orbitVelocity.copy(TEMP_ORBIT_VELOCITY);
+      }
+    }
+
+    this.previousWorldPosition.copy(this.currentWorldPosition);
+    this.hasPreviousWorldPosition = true;
+  }
+
+  private updateOrbitCapturePulse(deltaSeconds: number): void {
+    if (!this.orbitMaterial || this.orbitCapturePulseElapsedSeconds < 0) {
+      return;
+    }
+
+    this.orbitCapturePulseElapsedSeconds += deltaSeconds;
+    const progress = Math.min(
+      this.orbitCapturePulseElapsedSeconds / ORBIT_CAPTURE_PULSE_SECONDS,
+      1,
+    );
+    this.orbitMaterial.uniforms.intensity.value =
+      1 + (ORBIT_CAPTURE_PULSE_INTENSITY - 1) * (1 - progress) ** 2;
+
+    if (progress >= 1) {
+      this.orbitCapturePulseElapsedSeconds = -1;
+      this.orbitMaterial.uniforms.intensity.value = 1;
+      this.orbitRing?.layers.disable(BLOOM_RENDER_LAYER);
     }
   }
 
@@ -572,6 +655,7 @@ export class CelestialBody {
     ring.renderOrder = -1;
     this.orbitPivot.add(ring);
     this.orbitMaterial = material;
+    this.orbitRing = ring;
     this.geometries.push(geometry);
     this.materials.push(material);
   }
@@ -788,7 +872,7 @@ export class CelestialBody {
       return;
     }
 
-    const texture = createLabelTexture(this.definition.label);
+    const texture = createLabelTexture(this.definition.nameZh);
     const material = new SpriteMaterial({
       map: texture,
       transparent: true,
@@ -925,7 +1009,7 @@ function createLabelTexture(label: string): CanvasTexture {
 
   context.fillStyle = '#ffffff';
   context.font =
-    '600 34px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    '600 34px system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
   context.textAlign = 'center';
   context.textBaseline = 'middle';
   context.fillText(label, canvas.width / 2, canvas.height / 2 + 1);
@@ -950,3 +1034,5 @@ function drawHudCorner(
   context.lineTo(x + xDirection * size, y);
   context.stroke();
 }
+
+const TEMP_ORBIT_VELOCITY = new Vector3();

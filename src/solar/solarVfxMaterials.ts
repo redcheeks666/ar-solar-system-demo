@@ -92,6 +92,7 @@ export function createOrbitTrailMaterial(
   return new ShaderMaterial({
     uniforms: {
       opacity: { value: 0 },
+      intensity: { value: 1 },
       baseColor: { value: new Color(baseColor) },
       trailColor: { value: new Color(trailColor) },
     },
@@ -280,6 +281,7 @@ const ORBIT_TRAIL_VERTEX_SHADER = `
 
 const ORBIT_TRAIL_FRAGMENT_SHADER = `
   uniform float opacity;
+  uniform float intensity;
   uniform vec3 baseColor;
   uniform vec3 trailColor;
   varying vec2 vLocalPosition;
@@ -292,9 +294,10 @@ const ORBIT_TRAIL_FRAGMENT_SHADER = `
     float trail = exp(-behind / 0.62);
     float head = exp(-behind / 0.085);
 
-    float alpha = min(opacity * (1.0 + trail * 4.2 + head * 2.4), 0.9);
+    float alpha = min(opacity * intensity * (1.0 + trail * 4.2 + head * 2.4), 0.95);
     vec3 color = mix(baseColor, trailColor, clamp(trail * 1.5, 0.0, 1.0));
     color += trailColor * head * 0.5;
+    color *= mix(1.0, 1.45, clamp((intensity - 1.0) / 3.6, 0.0, 1.0));
 
     gl_FragColor = vec4(color, alpha);
     #include <colorspace_fragment>

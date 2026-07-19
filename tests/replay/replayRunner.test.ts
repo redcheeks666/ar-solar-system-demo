@@ -223,6 +223,99 @@ describe('gesture replay runner', () => {
     expect(replay.at(-1)?.snapshot.doubleCloseProminence).toBeCloseTo(0.5, 2);
   });
 
+  it('replays anchored activation movement without switching transit bodies', () => {
+    const targets = [
+      {
+        id: 'mercury' as const,
+        label: 'Mercury',
+        screenPosition: { x: 420, y: 360 },
+        visible: true,
+        hitRadiusPx: 64,
+        originalOrbit: {
+          parentId: null,
+          orbitRadius: 0.5,
+          orbitPhase: 0,
+          localPosition: { x: 0.5, y: 0, z: 0 },
+        },
+      },
+      {
+        id: 'venus' as const,
+        label: 'Venus',
+        screenPosition: { x: 560, y: 360 },
+        visible: true,
+        hitRadiusPx: 64,
+        originalOrbit: {
+          parentId: null,
+          orbitRadius: 0.75,
+          orbitPhase: 0,
+          localPosition: { x: 0.75, y: 0, z: 0 },
+        },
+      },
+      {
+        id: 'mars' as const,
+        label: 'Mars',
+        screenPosition: { x: 700, y: 360 },
+        visible: true,
+        hitRadiusPx: 64,
+        originalOrbit: {
+          parentId: null,
+          orbitRadius: 1.25,
+          orbitPhase: 0,
+          localPosition: { x: 1.25, y: 0, z: 0 },
+        },
+      },
+    ];
+    const handAt = (screenX: number, ratio: number) => {
+      const centerX = 1 - screenX / TEST_LAYOUT.stageWidth;
+      const tracked = createHand({ center: point(centerX, 0.5), spread: 1.2 });
+      const halfDistance = (tracked.palmScale * ratio) / 2;
+      tracked.thumbTip = point(centerX - halfDistance, 0.5);
+      tracked.indexFingerTip = point(centerX + halfDistance, 0.5);
+      tracked.landmarks[4] = tracked.thumbTip;
+      tracked.landmarks[8] = tracked.indexFingerTip;
+      return tracked;
+    };
+    const activationContext = (
+      state: GestureReplayFrameContext['solar']['interactionState'],
+    ) => {
+      const context = replayContext(state);
+      context.planetActivation = { interactionState: state, targets };
+      return context;
+    };
+    const sequence = [
+      [0, 420, 'SolarFreeHover'],
+      [33, 500, 'PlanetActivated'],
+      [66, 575, 'PlanetActivated'],
+      [99, 650, 'PlanetActivated'],
+      [132, 700, 'PlanetActivated'],
+      [165, 700, 'PlanetActivated'],
+      [198, 700, 'PlanetActivated'],
+      [231, 700, 'PlanetActivated'],
+    ] as const;
+    const replay = replayPlanetActivationController(
+      recording(
+        sequence.map(([t, x, state], index) =>
+          frame({
+            t,
+            hands: [handAt(x, index === 0 ? 0.12 : 0.28)],
+            replay: activationContext(state),
+          }),
+        ),
+      ),
+    );
+
+    expect(replay.slice(0, -1).every(
+      (result) => result.snapshot.activatedBody === 'mercury',
+    )).toBe(true);
+    expect(replay.some(
+      (result) => result.snapshot.activatedBody === 'venus',
+    )).toBe(false);
+    expect(replay.at(-1)?.snapshot.activatedBody).toBe('mars');
+    expect(replay.at(-1)?.snapshot.transitionReason).toBe(
+      'activation-switched-body-after-hand-settle',
+    );
+  });
+
   it('replays focus entry, heat-zone clear, and single-hand dwell', () => {
     const target = {
       id: 'earth' as const,

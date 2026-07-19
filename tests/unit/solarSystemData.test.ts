@@ -5,6 +5,7 @@ import {
   INTERACTIVE_CELESTIAL_BODY_DEFINITIONS,
   INTERACTIVE_CELESTIAL_BODY_IDS,
   getCelestialBodyDisplayName,
+  getCelestialBodyNameZh,
   getInteractiveCelestialBodyDefinition,
   getOriginalOrbitTransform,
   isInteractiveCelestialBodyId,
@@ -51,6 +52,14 @@ describe('solar system body registry', () => {
     expect(getCelestialBodyDisplayName('earth')).toBe('地球（Earth）');
     expect(getCelestialBodyDisplayName('moon')).toBe('月球（Moon）');
     expect(getCelestialBodyDisplayName('neptune')).toBe('海王星（Neptune）');
+  });
+
+  it('provides Chinese-only names for status cards and body labels', () => {
+    expect(getCelestialBodyNameZh('sun')).toBe('太阳');
+    expect(getCelestialBodyNameZh('mercury')).toBe('水星');
+    expect(getCelestialBodyNameZh('earth')).toBe('地球');
+    expect(getCelestialBodyNameZh('moon')).toBe('月球');
+    expect(getCelestialBodyNameZh('neptune')).toBe('海王星');
   });
 
   it('provides activation, focus, and return metadata for each interactive body', () => {

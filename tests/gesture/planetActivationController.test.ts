@@ -245,7 +245,7 @@ describe('PlanetActivationController', () => {
     expect(switched.snapshot.hoveredBody).toBe('mars');
   });
 
-  it('pinch-activates a hovered body and keeps it selected while the same hand opens near the body', () => {
+  it('pinch-activates a hovered body and keeps it locked through nearby hand-shape changes', () => {
     const controller = new PlanetActivationController();
     const targets = [target('venus', 640, 360)];
 
@@ -280,26 +280,31 @@ describe('PlanetActivationController', () => {
     expect(openedNearBody.nextState).toBeNull();
     expect(openedNearBody.snapshot.activatedBody).toBe('venus');
     expect(openedNearBody.snapshot.pinchState).toBe('open');
+    expect(openedNearBody.snapshot.hoverPointKind).toBe('pinchMidpoint');
 
-    const brieflyAway = step({
+    const movedAway = step({
       controller,
       state: 'PlanetActivated',
-      hands: [handAtPixel(1000, 360, 0.75)],
+      hands: [handAtPixel(1000, 360, 0.3)],
       targets,
       timestamp: 260,
     });
-    expect(brieflyAway.nextState).toBeNull();
-    expect(brieflyAway.snapshot.activatedBody).toBe('venus');
+    expect(movedAway.nextState).toBeNull();
+    expect(movedAway.snapshot.activatedBody).toBe('venus');
+    expect(movedAway.snapshot.activationMotionPhase).toBe('Locked');
 
-    const releasedAway = step({
+    const stillMoving = step({
       controller,
       state: 'PlanetActivated',
-      hands: [handAtPixel(1000, 360, 0.75)],
+      hands: [handAtPixel(1080, 360, 0.3)],
       targets,
-      timestamp: 1280,
+      timestamp: 293,
     });
-    expect(releasedAway.nextState).toBe('SolarActive');
-    expect(releasedAway.snapshot.activatedBody).toBeNull();
+    expect(stillMoving.nextState).toBeNull();
+    expect(stillMoving.snapshot.activatedBody).toBe('venus');
+    expect(stillMoving.snapshot.transitionReason).toBe(
+      'activation-seeking-moving',
+    );
   });
 
   it('enters PlanetFocusView only after two closeDown events and the final release', () => {
@@ -412,6 +417,187 @@ describe('PlanetActivationController', () => {
     expect(focus.snapshot.pinchState).toBe('open');
     expect(focus.snapshot.transitionReason).toBe(
       'double-close-release-enter-focus',
+    );
+  });
+
+  it('enters focus when in-place DoubleClose moves the pinch point but not the wrist', () => {
+    const controller = new PlanetActivationController();
+    const targets = [target('earth', 640, 360, 128)];
+    const hand = (pinchX: number, tipDistancePx: number) =>
+      handWithPinchMidpoint({
+        centerX: 640,
+        centerY: 360,
+        pinchX,
+        pinchY: 360,
+        tipDistancePx,
+      });
+    const updates = [];
+
+    updates.push(step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [hand(640, 24)],
+      targets,
+      timestamp: 0,
+    }));
+
+    for (const [timestamp, pinchX, tipDistancePx] of [
+      [220, 700, 80],
+      [253, 680, 80],
+      [300, 600, 32],
+      [333, 610, 32],
+      [430, 700, 80],
+      [463, 690, 80],
+      [530, 590, 32],
+      [563, 600, 32],
+      [630, 700, 80],
+      [665, 680, 80],
+      [705, 690, 80],
+    ] as const) {
+      updates.push(step({
+        controller,
+        state: 'PlanetActivated',
+        hands: [hand(pinchX, tipDistancePx)],
+        targets,
+        timestamp,
+      }));
+    }
+
+    expect(updates.every(
+      (update) => update.snapshot.activationMotionPhase === 'Locked',
+    )).toBe(true);
+    expect(updates.every(
+      (update) => update.snapshot.settleTarget === null,
+    )).toBe(true);
+    expect(updates.at(-4)?.snapshot.doubleCloseCount).toBe(2);
+    expect(updates.at(-1)?.nextState).toBe('PlanetFocusView');
+    expect(updates.at(-1)?.snapshot.transitionReason).toBe(
+      'double-close-release-enter-focus',
+    );
+  });
+
+  it('does not enter Seeking when pinch open-close motion changes only fingertip interaction points', () => {
+    const controller = new PlanetActivationController();
+    const targets = [target('jupiter', 640, 360, 160)];
+    const hand = (pinchX: number, tipDistancePx: number) =>
+      handWithPinchMidpoint({
+        centerX: 640,
+        centerY: 360,
+        pinchX,
+        pinchY: 360,
+        tipDistancePx,
+      });
+
+    step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [hand(640, 24)],
+      targets,
+      timestamp: 0,
+    });
+
+    for (const [timestamp, pinchX, tipDistancePx] of [
+      [33, 750, 96],
+      [66, 530, 28],
+      [99, 735, 88],
+      [132, 545, 32],
+    ] as const) {
+      const update = step({
+        controller,
+        state: 'PlanetActivated',
+        hands: [hand(pinchX, tipDistancePx)],
+        targets,
+        timestamp,
+      });
+
+      expect(update.snapshot.activationMotionPhase).toBe('Locked');
+      expect(update.snapshot.handDisplacement).toBeCloseTo(0, 6);
+      expect(update.snapshot.handSpeed).toBeCloseTo(0, 6);
+      expect(update.snapshot.settleTarget).toBeNull();
+    }
+  });
+
+  it('keeps DoubleClose progress through one wrist outlier and a same-body re-anchor', () => {
+    const controller = new PlanetActivationController();
+    const targets = [target('earth', 640, 360, 140)];
+
+    step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [handAtPixel(640, 360, 0.2)],
+      targets,
+      timestamp: 0,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.75)],
+      targets,
+      timestamp: 220,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.75)],
+      targets,
+      timestamp: 253,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.25)],
+      targets,
+      timestamp: 300,
+    });
+    const firstClose = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.25)],
+      targets,
+      timestamp: 333,
+    });
+    expect(firstClose.snapshot.doubleCloseCount).toBe(1);
+
+    const oneFrameOutlier = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.75)],
+      targets,
+      timestamp: 430,
+    });
+    expect(oneFrameOutlier.snapshot.handDisplacement).toBeGreaterThan(
+      oneFrameOutlier.snapshot.handLockRadius,
+    );
+    expect(oneFrameOutlier.snapshot.activationMotionPhase).toBe('Locked');
+    expect(oneFrameOutlier.snapshot.doubleCloseCount).toBe(1);
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.75)],
+      targets,
+      timestamp: 463,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.75)],
+      targets,
+      timestamp: 496,
+    });
+    const reanchored = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.75)],
+      targets,
+      timestamp: 529,
+    });
+
+    expect(reanchored.snapshot.activationMotionPhase).toBe('Locked');
+    expect(reanchored.snapshot.activatedBody).toBe('earth');
+    expect(reanchored.snapshot.doubleCloseCount).toBe(1);
+    expect(reanchored.snapshot.transitionReason).toBe(
+      'activation-reanchored-after-hand-settle',
     );
   });
 
@@ -855,7 +1041,7 @@ describe('PlanetActivationController', () => {
     expect(last.snapshot.doubleClosePeakRatio ?? 0).toBeLessThan(0.5);
   });
 
-  it('keeps a recognized first close when the closed hand drifts across a neighbour', () => {
+  it('keeps a recognized first close when hand jitter stays locked and a neighbour drifts underneath', () => {
     const controller = new PlanetActivationController();
     const targets = [
       target('jupiter', 560, 360, 60),
@@ -892,8 +1078,11 @@ describe('PlanetActivationController', () => {
     const drifted = step({
       controller,
       state: 'PlanetActivated',
-      hands: [handAtPixel(760, 360, 0.2)],
-      targets,
+      hands: [handAtPixel(575, 360, 0.2)],
+      targets: [
+        target('jupiter', 760, 360, 60),
+        target('saturn', 575, 360, 100),
+      ],
       timestamp: 333,
     });
 
@@ -901,6 +1090,10 @@ describe('PlanetActivationController', () => {
     expect(drifted.snapshot.hoveredBody).toBe('jupiter');
     expect(drifted.snapshot.doubleCloseCount).toBe(1);
     expect(drifted.snapshot.hoverPointKind).toBe('pinchMidpoint');
+    expect(drifted.snapshot.activationMotionPhase).toBe('Locked');
+    expect(drifted.snapshot.handDisplacement).toBeLessThan(
+      drifted.snapshot.handLockRadius,
+    );
   });
 
   it('keeps the activated body while already in PlanetFocusView', () => {
@@ -987,7 +1180,7 @@ describe('PlanetActivationController', () => {
     expect(update.snapshot.hoverDistancePx).toBeCloseTo(0, 6);
   });
 
-  it('locks the activated body when a closed hand drifts into a neighbour hit zone', () => {
+  it('does not switch while a closed hand is still traversing into a neighbour hit zone', () => {
     const controller = new PlanetActivationController();
     const targets = [
       target('earth', 640, 360, 72),
@@ -1031,9 +1224,27 @@ describe('PlanetActivationController', () => {
     expect(mars.snapshot.activatedBody).toBe('earth');
     expect(mars.snapshot.doubleCloseCount).toBe(0);
     expect(mars.snapshot.hoverPointKind).toBe('pinchMidpoint');
+
+    const stillTraversing = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [
+        handWithPinchMidpoint({
+          centerX: 820,
+          centerY: 360,
+          pinchX: 820,
+          pinchY: 360,
+          tipDistancePx: 42,
+        }),
+      ],
+      targets,
+      timestamp: 66,
+    });
+    expect(stillTraversing.snapshot.activationMotionPhase).toBe('Seeking');
+    expect(stillTraversing.snapshot.settleFrameCount).toBe(0);
   });
 
-  it('allows an explicit body switch only after the open hand hovers the neighbour', () => {
+  it('uses wrist translation to switch only after the hand settles on the neighbour', () => {
     const controller = new PlanetActivationController();
     const targets = [
       target('earth', 640, 360, 72),
@@ -1056,30 +1267,264 @@ describe('PlanetActivationController', () => {
       timestamp: 0,
     });
 
-    const openOverMars = step({
-      controller,
-      state: 'PlanetActivated',
-      hands: [handAtPixel(780, 360, 0.8)],
-      targets,
-      timestamp: 220,
-    });
-    expect(openOverMars.nextState).toBeNull();
-    expect(openOverMars.snapshot.hoveredBody).toBe('mars');
-    expect(openOverMars.snapshot.activatedBody).toBe('earth');
-    expect(openOverMars.snapshot.transitionReason).toBe(
-      'activation-switch-armed-open-hover',
-    );
+    for (const [timestamp, x] of [
+      [33, 690],
+      [66, 735],
+      [99, 780],
+    ] as const) {
+      const crossing = step({
+        controller,
+        state: 'PlanetActivated',
+        hands: [handAtPixel(x, 360, 0.2)],
+        targets,
+        timestamp,
+      });
+      expect(crossing.snapshot.activatedBody).toBe('earth');
+      expect(crossing.snapshot.activationMotionPhase).toBe(
+        timestamp < 99 ? 'Locked' : 'Seeking',
+      );
+    }
 
-    const closedOnMars = step({
+    const settling1 = step({
       controller,
       state: 'PlanetActivated',
-      hands: [handAtPixel(780, 360, 0.4)],
+      hands: [handAtPixel(780, 360, 0.2)],
       targets,
-      timestamp: 300,
+      timestamp: 132,
     });
-    expect(closedOnMars.snapshot.activatedBody).toBe('mars');
-    expect(closedOnMars.snapshot.transitionReason).toBe(
-      'activation-switched-body-after-open-hover',
+    const settling2 = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(780, 360, 0.2)],
+      targets,
+      timestamp: 165,
+    });
+    const switched = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(780, 360, 0.2)],
+      targets,
+      timestamp: 198,
+    });
+
+    expect(settling1.snapshot.activatedBody).toBe('earth');
+    expect(settling2.snapshot.activatedBody).toBe('earth');
+    expect(switched.snapshot.activatedBody).toBe('mars');
+    expect(switched.snapshot.activationMotionPhase).toBe('Locked');
+    expect(switched.snapshot.settleTarget).toBe('mars');
+    expect(switched.snapshot.transitionReason).toBe(
+      'activation-switched-body-after-hand-settle',
+    );
+  });
+
+  it('commits only the final body after moving continuously across a dense row', () => {
+    const controller = new PlanetActivationController();
+    const targets = [
+      target('mercury', 420, 360, 64),
+      target('venus', 560, 360, 64),
+      target('mars', 700, 360, 64),
+    ];
+
+    step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [handAtPixel(420, 360, 0.12)],
+      targets,
+      timestamp: 0,
+    });
+
+    for (const [timestamp, x] of [
+      [33, 500],
+      [66, 575],
+      [99, 650],
+      [132, 700],
+    ] as const) {
+      const crossing = step({
+        controller,
+        state: 'PlanetActivated',
+        hands: [handAtPixel(x, 360, 0.28)],
+        targets,
+        timestamp,
+      });
+      expect(crossing.snapshot.activatedBody).toBe('mercury');
+      expect(crossing.snapshot.activatedBody).not.toBe('venus');
+    }
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.28)],
+      targets,
+      timestamp: 165,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.28)],
+      targets,
+      timestamp: 198,
+    });
+    const landed = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(700, 360, 0.28)],
+      targets,
+      timestamp: 231,
+    });
+
+    expect(landed.snapshot.activatedBody).toBe('mars');
+    expect(landed.snapshot.transitionReason).toBe(
+      'activation-switched-body-after-hand-settle',
+    );
+  });
+
+  it('keeps activation locked when targets drift but the relaxed hand stays near its anchor', () => {
+    const controller = new PlanetActivationController();
+    step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [handAtPixel(640, 360, 0.12)],
+      targets: [
+        target('earth', 640, 360, 72),
+        target('mars', 800, 360, 72),
+      ],
+      timestamp: 0,
+    });
+
+    let locked = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(650, 360, 0.3)],
+      targets: [
+        target('earth', 860, 360, 72),
+        target('mars', 650, 360, 100),
+      ],
+      timestamp: 400,
+    });
+    locked = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(658, 360, 0.3)],
+      targets: [
+        target('earth', 920, 360, 72),
+        target('mars', 658, 360, 100),
+      ],
+      timestamp: 1400,
+    });
+
+    expect(locked.nextState).toBeNull();
+    expect(locked.snapshot.activatedBody).toBe('earth');
+    expect(locked.snapshot.hoveredBody).toBe('earth');
+    expect(locked.snapshot.activationMotionPhase).toBe('Locked');
+    expect(locked.snapshot.settleTarget).toBeNull();
+  });
+
+  it('cancels after a naturally relaxed hand moves to empty space and settles', () => {
+    const controller = new PlanetActivationController();
+    const targets = [
+      target('earth', 420, 360, 72),
+      target('mars', 620, 360, 72),
+    ];
+    step({
+      controller,
+      state: 'SolarActive',
+      hands: [handAtPixel(420, 360, 0.12)],
+      targets,
+      timestamp: 0,
+    });
+
+    for (const [timestamp, x] of [
+      [33, 560],
+      [66, 760],
+      [99, 1000],
+    ] as const) {
+      const moving = step({
+        controller,
+        state: 'PlanetActivated',
+        hands: [handAtPixel(x, 360, 0.3)],
+        targets,
+        timestamp,
+      });
+      expect(moving.snapshot.activatedBody).toBe('earth');
+    }
+
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(1000, 360, 0.3)],
+      targets,
+      timestamp: 132,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(1000, 360, 0.3)],
+      targets,
+      timestamp: 165,
+    });
+    const emptyDwell = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(1000, 360, 0.3)],
+      targets,
+      timestamp: 198,
+    });
+    expect(emptyDwell.snapshot.settleTarget).toBe('empty');
+    expect(emptyDwell.snapshot.activatedBody).toBe('earth');
+
+    const cancelled = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(1000, 360, 0.3)],
+      targets,
+      timestamp: 363,
+    });
+    expect(cancelled.nextState).toBe('SolarActive');
+    expect(cancelled.snapshot.activatedBody).toBeNull();
+    expect(cancelled.snapshot.pinchRatio).toBeCloseTo(0.3, 2);
+    expect(cancelled.snapshot.transitionReason).toBe(
+      'activation-cancelled-after-empty-settle',
+    );
+  });
+
+  it('allows a deliberate stationary open hand to cancel without moving', () => {
+    const controller = new PlanetActivationController();
+    const targets = [target('earth', 640, 360, 72)];
+    step({
+      controller,
+      state: 'SolarFreeHover',
+      hands: [handAtPixel(640, 360, 0.12)],
+      targets,
+      timestamp: 0,
+    });
+    step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.6)],
+      targets,
+      timestamp: 33,
+    });
+    const pending = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.6)],
+      targets,
+      timestamp: 100,
+    });
+    const cancelled = step({
+      controller,
+      state: 'PlanetActivated',
+      hands: [handAtPixel(640, 360, 0.6)],
+      targets,
+      timestamp: 520,
+    });
+
+    expect(pending.snapshot.activationMotionPhase).toBe('Locked');
+    expect(pending.snapshot.activatedBody).toBe('earth');
+    expect(cancelled.nextState).toBe('BodyHover');
+    expect(cancelled.snapshot.activatedBody).toBeNull();
+    expect(cancelled.snapshot.transitionReason).toBe(
+      'activation-cancelled-by-stationary-open-release',
     );
   });
 

@@ -8,6 +8,10 @@ const SUMMARY_SOURCE = readFileSync(
   resolve(process.cwd(), 'src/rendering/interactionStatusSummary.ts'),
   'utf8',
 );
+const CELESTIAL_BODY_SOURCE = readFileSync(
+  resolve(process.cwd(), 'src/solar/celestialBody.ts'),
+  'utf8',
+);
 const STYLES = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
 
 describe('demo-mode operation HUD', () => {
@@ -32,7 +36,26 @@ describe('demo-mode operation HUD', () => {
     expect(SUMMARY_SOURCE).toContain(
       'operationTitle: focusedBodyOperationTitle(snapshot)',
     );
-    expect(SUMMARY_SOURCE).toContain("operationTitle: '星球悬浮中'");
+    expect(SUMMARY_SOURCE).toContain(
+      'title: `${statusBodyNameZh(snapshot)}已激活`',
+    );
+    expect(SUMMARY_SOURCE).toContain(
+      'title: `正在控制${statusBodyNameZh(snapshot)}`',
+    );
+    expect(SUMMARY_SOURCE).toContain("title: '星球已放下'");
+    expect(SUMMARY_SOURCE).toContain(
+      'operationTitle: `${statusBodyNameZh(snapshot)}悬浮中`',
+    );
+    expect(SUMMARY_SOURCE).toContain("    : '天体';");
+  });
+
+  it('renders overview body labels from Chinese names with CJK fallbacks', () => {
+    expect(CELESTIAL_BODY_SOURCE).toContain(
+      'createLabelTexture(this.definition.nameZh)',
+    );
+    expect(CELESTIAL_BODY_SOURCE).toContain('"PingFang SC"');
+    expect(CELESTIAL_BODY_SOURCE).toContain('"Microsoft YaHei"');
+    expect(CELESTIAL_BODY_SOURCE).toContain('"Noto Sans CJK SC"');
   });
 
   it('keeps the compact operation card in the approved cyan HUD family', () => {

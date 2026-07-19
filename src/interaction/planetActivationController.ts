@@ -22,6 +22,13 @@ export type PlanetActivationPinchState =
   | 'pinching'
   | 'held-during-loss';
 
+export type PlanetActivationMotionPhase = 'Inactive' | 'Locked' | 'Seeking';
+
+export type PlanetActivationSettleTarget =
+  | InteractiveCelestialBodyId
+  | 'empty'
+  | null;
+
 export interface PlanetActivationSnapshot {
   hoveredBody: InteractiveCelestialBodyId | null;
   activatedBody: InteractiveCelestialBodyId | null;
@@ -38,6 +45,15 @@ export interface PlanetActivationSnapshot {
   hoverPointKind: HandInteractionPointKind | null;
   activatedOriginalOrbit: CelestialOriginalOrbitTransform | null;
   trackingLossMs: number;
+  activationMotionPhase: PlanetActivationMotionPhase;
+  handAnchorScreen: { x: number; y: number } | null;
+  handDisplacement: number | null;
+  handLockRadius: number;
+  handSpeed: number | null;
+  settleSpeedThreshold: number;
+  settleFrameCount: number;
+  settleRequiredFrames: number;
+  settleTarget: PlanetActivationSettleTarget;
   doubleCloseCount: number;
   doubleCloseValleyRatio: number | null;
   doubleClosePeakRatio: number | null;
@@ -65,6 +81,7 @@ interface Candidate {
   hand: TrackedHand;
   handKey: string;
   handPixel: { x: number; y: number };
+  wristPixel: { x: number; y: number };
   handPointKind: HandInteractionPointKind;
   distancePx: number;
   normalizedDistance: number;
@@ -122,9 +139,28 @@ const DOUBLE_CLOSE_IGNORE_AFTER_ACTIVATION_MS = 180;
 // Focus entry is rate-limited after a completed double-close release.
 const DOUBLE_CLOSE_ENTER_FOCUS_COOLDOWN_MS = 900;
 const HOVER_EXIT_RADIUS_MULTIPLIER = 1.32;
-const ACTIVATION_EXIT_HOLD_MS = 1000;
 const HOVER_SWITCH_MARGIN = 0.24;
 const ACTIVATION_TRACKING_LOSS_HOLD_MS = 360;
+// Wrist translation, unlike fingertip interaction points, stays nearly fixed through a deliberate
+// DoubleClose. This radius leaves room for ordinary wrist correction while remaining well below
+// the travel used to choose a neighbouring body.
+const ACTIVATION_HAND_LOCK_RADIUS = 0.07;
+// A single wrist sample outside the lock radius may be tracking jitter. Require a second fresh
+// observation before suppressing DoubleClose and starting landing detection.
+const ACTIVATION_LOCK_EXIT_MIN_FRAMES = 2;
+// Settle speed measures when translational intent has ended, in preview-short-sides per second;
+// it admits natural hold correction while rejecting a hand that is still traversing the system.
+const ACTIVATION_SETTLE_MAX_SPEED = 0.18;
+// Three consecutive fresh detections make landing a multi-frame observation at webcam frame rates.
+const ACTIVATION_SETTLE_MIN_FRAMES = 3;
+// A short dwell confirms that an empty landing remains outside every body's exit hysteresis.
+const ACTIVATION_EXIT_HOLD_MS = 150;
+// This ratio represents an explicitly opened thumb/index pair for the stationary release fallback
+// while remaining above the 0.50 DoubleClose reopen band.
+const ACTIVATION_OPEN_RELEASE_MIN_RATIO = 0.58;
+// The longer stationary-open hold distinguishes an intentional abandon from the reopen that starts
+// an ordinary DoubleClose sequence.
+const ACTIVATION_OPEN_RELEASE_HOLD_MS = 480;
 
 export const EMPTY_PLANET_ACTIVATION_SNAPSHOT: PlanetActivationSnapshot = {
   hoveredBody: null,
@@ -142,6 +178,15 @@ export const EMPTY_PLANET_ACTIVATION_SNAPSHOT: PlanetActivationSnapshot = {
   hoverPointKind: null,
   activatedOriginalOrbit: null,
   trackingLossMs: 0,
+  activationMotionPhase: 'Inactive',
+  handAnchorScreen: null,
+  handDisplacement: null,
+  handLockRadius: ACTIVATION_HAND_LOCK_RADIUS,
+  handSpeed: null,
+  settleSpeedThreshold: ACTIVATION_SETTLE_MAX_SPEED,
+  settleFrameCount: 0,
+  settleRequiredFrames: ACTIVATION_SETTLE_MIN_FRAMES,
+  settleTarget: null,
   doubleCloseCount: 0,
   doubleCloseValleyRatio: null,
   doubleClosePeakRatio: null,
@@ -163,7 +208,15 @@ export class PlanetActivationController {
   private trackingLostSince: number | null = null;
   private activationExitStartedAt: number | null = null;
   private lockedHoverPointKind: HandInteractionPointKind | null = null;
-  private switchArmedBody: InteractiveCelestialBodyId | null = null;
+  private activationMotionPhase: PlanetActivationMotionPhase = 'Inactive';
+  private handAnchorScreen: { x: number; y: number } | null = null;
+  private previousHandScreen: { x: number; y: number } | null = null;
+  private previousHandTimestamp: number | null = null;
+  private handDisplacement: number | null = null;
+  private handSpeed: number | null = null;
+  private lockExitFrameCount = 0;
+  private settleFrameCount = 0;
+  private settleTarget: PlanetActivationSettleTarget = null;
   private doubleCloseCount = 0;
   private doubleClosePhase: DoubleClosePhase = 'wait-initial-open';
   private firstValleyAt: number | null = null;
@@ -208,7 +261,6 @@ export class PlanetActivationController {
       };
     }
 
-    this.releaseInteractionPointLockIfFullyOpen(input);
     const candidates = this.createCandidates(input);
     const hoverCandidate = this.selectHoverCandidate(candidates);
 
@@ -276,7 +328,7 @@ export class PlanetActivationController {
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
     this.lockedHoverPointKind = null;
-    this.switchArmedBody = null;
+    this.resetActivationMotion();
     this.resetDoubleClose();
     this.snapshot = EMPTY_PLANET_ACTIVATION_SNAPSHOT;
   }
@@ -300,12 +352,10 @@ export class PlanetActivationController {
     }
 
     const activeCandidate =
-      this.findActiveHandCandidate(candidates, activeBody) ??
-      this.findCandidateByBody(candidates, activeBody);
+      this.findActiveHandCandidate(candidates, activeBody);
 
     if (!activeCandidate) {
       this.interruptDoubleCloseObservation();
-      this.switchArmedBody = null;
       this.trackingLostSince ??= input.timestamp;
       const trackingLossMs = input.timestamp - this.trackingLostSince;
       const snapshot = this.createSnapshot({
@@ -335,84 +385,132 @@ export class PlanetActivationController {
       };
     }
 
+    const resumedAfterTrackingLoss = this.trackingLostSince !== null;
     this.trackingLostSince = null;
     const pinchMetrics = computePinchMetrics(activeCandidate.hand, input.layout);
-    const sameHandHover =
-      hoverCandidate?.handKey === activeCandidate.handKey
-        ? hoverCandidate
-        : null;
-    const fullyOpen = pinchMetrics.ratio >= PINCH_END_RATIO;
-    let switchArmedThisFrame = false;
+    const activeHandCandidates = candidates.filter(
+      (candidate) => candidate.handKey === activeCandidate.handKey,
+    );
+    const hasFreshVelocity = this.updateActivationMotion(
+      activeCandidate.wristPixel,
+      input.layout,
+      input.timestamp,
+      resumedAfterTrackingLoss,
+    );
 
-    if (fullyOpen) {
-      this.lockedHoverPointKind = null;
-      if (sameHandHover && sameHandHover.target.id !== activeBody) {
-        this.switchArmedBody = sameHandHover.target.id;
-        this.hoveredBody = sameHandHover.target.id;
-        switchArmedThisFrame = true;
+    this.hoveredBody = activeBody;
+
+    if (this.activationMotionPhase === 'Seeking') {
+      const landingCandidate =
+        this.selectActivationLandingCandidate(activeHandCandidates);
+      const outsideEveryHitZone =
+        activeHandCandidates.length > 0 &&
+        activeHandCandidates.every(
+          (candidate) =>
+            candidate.normalizedDistance > HOVER_EXIT_RADIUS_MULTIPLIER,
+        );
+      const isSettling =
+        hasFreshVelocity &&
+        this.handSpeed !== null &&
+        this.handSpeed <= ACTIVATION_SETTLE_MAX_SPEED;
+
+      if (isSettling) {
+        const nextSettleTarget = landingCandidate?.target.id ??
+          (outsideEveryHitZone ? 'empty' : null);
+        this.settleFrameCount =
+          nextSettleTarget === this.settleTarget
+            ? this.settleFrameCount + 1
+            : 1;
+        if (nextSettleTarget !== this.settleTarget) {
+          this.activationExitStartedAt = null;
+        }
+        this.settleTarget = nextSettleTarget;
       } else {
-        this.switchArmedBody = null;
-        this.hoveredBody = activeBody;
+        this.settleFrameCount = 0;
+        this.settleTarget = null;
+        this.activationExitStartedAt = null;
+      }
+
+      if (this.settleFrameCount >= ACTIVATION_SETTLE_MIN_FRAMES) {
+        if (landingCandidate) {
+          if (landingCandidate.target.id !== activeBody) {
+            this.activateBody(landingCandidate, input.timestamp);
+            this.settleTarget = landingCandidate.target.id;
+            const snapshot = this.createSnapshot({
+              hoverCandidate: landingCandidate,
+              pinchMetrics,
+              pinchState: this.getPinchState(pinchMetrics),
+              reason: 'activation-switched-body-after-hand-settle',
+            });
+            this.snapshot = snapshot;
+            return { snapshot, nextState: null };
+          }
+
+          this.reanchorActivationHand(
+            activeCandidate.wristPixel,
+            input.timestamp,
+            activeBody,
+          );
+          const snapshot = this.createSnapshot({
+            hoverCandidate: activeCandidate,
+            pinchMetrics,
+            pinchState: this.getPinchState(pinchMetrics),
+            reason: 'activation-reanchored-after-hand-settle',
+          });
+          this.snapshot = snapshot;
+          return { snapshot, nextState: null };
+        }
+
+        if (outsideEveryHitZone) {
+          this.activationExitStartedAt ??= input.timestamp;
+          if (
+            input.timestamp - this.activationExitStartedAt >=
+            ACTIVATION_EXIT_HOLD_MS
+          ) {
+            return this.endActivation({
+              hoverCandidate: null,
+              pinchMetrics,
+              reason: 'activation-cancelled-after-empty-settle',
+            });
+          }
+        } else {
+          this.activationExitStartedAt = null;
+        }
+      }
+
+      const snapshot = this.createSnapshot({
+        hoverCandidate: activeCandidate,
+        pinchMetrics,
+        pinchState: this.getPinchState(pinchMetrics),
+        reason: this.getSeekingReason(),
+      });
+      this.snapshot = snapshot;
+      return { snapshot, nextState: null };
+    }
+
+    this.settleFrameCount = 0;
+    this.settleTarget = null;
+    const stationaryOpenRelease =
+      this.doubleCloseCount === 0 &&
+      hasFreshVelocity &&
+      this.handSpeed !== null &&
+      this.handSpeed <= ACTIVATION_SETTLE_MAX_SPEED &&
+      pinchMetrics.ratio >= ACTIVATION_OPEN_RELEASE_MIN_RATIO;
+    if (stationaryOpenRelease) {
+      this.activationExitStartedAt ??= input.timestamp;
+      if (
+        input.timestamp - this.activationExitStartedAt >=
+        ACTIVATION_OPEN_RELEASE_HOLD_MS
+      ) {
+        return this.endActivation({
+          hoverCandidate:
+            this.selectActivationLandingCandidate(activeHandCandidates),
+          pinchMetrics,
+          reason: 'activation-cancelled-by-stationary-open-release',
+        });
       }
     } else {
-      const armedSwitchCandidate =
-        this.switchArmedBody &&
-        sameHandHover?.target.id === this.switchArmedBody
-          ? sameHandHover
-          : null;
-
-      // A body switch is legal only when the open hand first hovered that body. The subsequent
-      // close commits that already-armed intent; a closed hand drifting into a neighbour can never
-      // switch selection or clear the in-progress double-close sequence.
-      if (armedSwitchCandidate && isPinchStart(pinchMetrics)) {
-        this.activateBody(armedSwitchCandidate, input.timestamp);
-        this.trackingLostSince = null;
-        const snapshot = this.createSnapshot({
-          hoverCandidate: armedSwitchCandidate,
-          pinchMetrics,
-          pinchState: 'pinching',
-          reason: 'activation-switched-body-after-open-hover',
-        });
-        this.snapshot = snapshot;
-        return { snapshot, nextState: null };
-      }
-
-      if (pinchMetrics.ratio <= DOUBLE_CLOSE_VALLEY_MAX_RATIO) {
-        this.lockedHoverPointKind ??= activeCandidate.handPointKind;
-        this.switchArmedBody = null;
-      }
-      this.hoveredBody = activeBody;
-    }
-
-    const activeHandNearBody =
-      activeCandidate.normalizedDistance <= HOVER_EXIT_RADIUS_MULTIPLIER;
-    const pinchHeld = isPinchHeld(pinchMetrics);
-
-    if (pinchHeld || activeHandNearBody) {
       this.activationExitStartedAt = null;
-    }
-
-    if (!pinchHeld && !activeHandNearBody) {
-      this.activationExitStartedAt ??= input.timestamp;
-      const exitMs = input.timestamp - this.activationExitStartedAt;
-
-      if (exitMs >= ACTIVATION_EXIT_HOLD_MS) {
-        this.clearActivation();
-        const nextHover =
-          hoverCandidate?.target.id === activeBody ? hoverCandidate : null;
-        this.hoveredBody = nextHover?.target.id ?? null;
-        const snapshot = this.createSnapshot({
-          hoverCandidate: nextHover,
-          pinchMetrics,
-          pinchState: nextHover ? 'open' : 'idle',
-          reason: 'pinch-ended',
-        });
-        this.snapshot = snapshot;
-        return {
-          snapshot,
-          nextState: nextHover ? 'BodyHover' : this.fallbackSolarState,
-        };
-      }
     }
 
     const doubleClose = this.updateDoubleClose(
@@ -423,7 +521,6 @@ export class PlanetActivationController {
 
     const lockedHover =
       this.findActiveHandCandidate(candidates, activeBody) ??
-      this.findCandidateByBody(candidates, activeBody) ??
       hoverCandidate;
 
     if (doubleClose === 'focus-entry') {
@@ -438,14 +535,12 @@ export class PlanetActivationController {
     }
 
     const snapshot = this.createSnapshot({
-      hoverCandidate: switchArmedThisFrame ? sameHandHover : lockedHover,
+      hoverCandidate: lockedHover,
       pinchMetrics,
       pinchState: this.getPinchState(pinchMetrics),
-      reason: this.getActivatedReason(
-        doubleClose,
-        switchArmedThisFrame,
-        pinchMetrics,
-      ),
+      reason: stationaryOpenRelease
+        ? 'activation-stationary-open-release-pending'
+        : this.getActivatedReason(doubleClose, pinchMetrics),
     });
     this.snapshot = snapshot;
     return { snapshot, nextState: null };
@@ -457,6 +552,7 @@ export class PlanetActivationController {
     input.tracking.hands.hands.forEach((hand, handIndex) => {
       const handKey = createHandKey(hand, handIndex);
       const handPoints = createHandInteractionPoints(hand, input.layout);
+      const wristPixel = mapNormalizedToStagePixel(hand.wrist, input.layout);
       const lockedPointKind =
         handKey === this.activeHandKey ? this.lockedHoverPointKind : null;
 
@@ -478,6 +574,7 @@ export class PlanetActivationController {
           hand,
           handKey,
           handPixel: nearestPoint.pixel,
+          wristPixel,
           handPointKind: nearestPoint.kind,
           distancePx,
           normalizedDistance: distancePx / target.hitRadiusPx,
@@ -512,6 +609,38 @@ export class PlanetActivationController {
     }
 
     return best ?? null;
+  }
+
+  private selectActivationLandingCandidate(
+    activeHandCandidates: Candidate[],
+  ): Candidate | null {
+    const best = activeHandCandidates.find(
+      (candidate) => candidate.normalizedDistance <= 1,
+    );
+    if (!best) {
+      return null;
+    }
+
+    const hysteresisBody =
+      this.settleTarget && this.settleTarget !== 'empty'
+        ? this.settleTarget
+        : this.activatedBody;
+    const current = hysteresisBody
+      ? activeHandCandidates.find(
+          (candidate) => candidate.target.id === hysteresisBody,
+        ) ?? null
+      : null;
+    if (
+      current &&
+      current.normalizedDistance <= 1 &&
+      best.target.id !== current.target.id &&
+      best.normalizedDistance + HOVER_SWITCH_MARGIN >=
+        current.normalizedDistance
+    ) {
+      return current;
+    }
+
+    return best;
   }
 
   private findActiveHandCandidate(
@@ -572,6 +701,15 @@ export class PlanetActivationController {
       hoverPointKind: input.hoverCandidate?.handPointKind ?? null,
       activatedOriginalOrbit,
       trackingLossMs: input.trackingLossMs ?? 0,
+      activationMotionPhase: this.activationMotionPhase,
+      handAnchorScreen: this.handAnchorScreen,
+      handDisplacement: this.handDisplacement,
+      handLockRadius: ACTIVATION_HAND_LOCK_RADIUS,
+      handSpeed: this.handSpeed,
+      settleSpeedThreshold: ACTIVATION_SETTLE_MAX_SPEED,
+      settleFrameCount: this.settleFrameCount,
+      settleRequiredFrames: ACTIVATION_SETTLE_MIN_FRAMES,
+      settleTarget: this.settleTarget,
       doubleCloseCount: this.doubleCloseCount,
       doubleCloseValleyRatio:
         this.candidateValleyRatio ?? this.firstValleyRatio,
@@ -585,12 +723,21 @@ export class PlanetActivationController {
 
   private activateBody(candidate: Candidate, timestamp: number): void {
     this.activatedBody = candidate.target.id;
+    this.hoveredBody = candidate.target.id;
     this.activeHandKey = candidate.handKey;
     this.activatedAtMs = timestamp;
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
     this.lockedHoverPointKind = candidate.handPointKind;
-    this.switchArmedBody = null;
+    this.activationMotionPhase = 'Locked';
+    this.handAnchorScreen = { ...candidate.wristPixel };
+    this.previousHandScreen = { ...candidate.wristPixel };
+    this.previousHandTimestamp = timestamp;
+    this.handDisplacement = 0;
+    this.handSpeed = 0;
+    this.lockExitFrameCount = 0;
+    this.settleFrameCount = 0;
+    this.settleTarget = null;
     this.resetDoubleClose();
   }
 
@@ -601,28 +748,133 @@ export class PlanetActivationController {
     this.trackingLostSince = null;
     this.activationExitStartedAt = null;
     this.lockedHoverPointKind = null;
-    this.switchArmedBody = null;
+    this.resetActivationMotion();
     this.resetDoubleClose();
   }
 
-  private releaseInteractionPointLockIfFullyOpen(
-    input: PlanetActivationUpdateInput,
-  ): void {
-    if (!this.activeHandKey || !this.lockedHoverPointKind) {
-      return;
-    }
-
-    const hands = input.tracking.hands.hands;
-    const exactHand = hands.find(
-      (hand, index) => createHandKey(hand, index) === this.activeHandKey,
+  private updateActivationMotion(
+    handScreen: { x: number; y: number },
+    layout: PreviewLayout,
+    timestamp: number,
+    resumedAfterTrackingLoss: boolean,
+  ): boolean {
+    const shortSide = Math.max(
+      1,
+      Math.min(layout.stageWidth, layout.stageHeight),
     );
-    const activeSide = this.activeHandKey.split(':')[0];
-    const activeHand =
-      exactHand ?? hands.find((hand) => hand.side === activeSide) ?? null;
+    this.handAnchorScreen ??= { ...handScreen };
+    this.handDisplacement =
+      distancePixels(handScreen, this.handAnchorScreen) / shortSide;
 
-    if (activeHand && computePinchRatio(activeHand) >= PINCH_END_RATIO) {
-      this.lockedHoverPointKind = null;
+    const previousScreen = this.previousHandScreen;
+    const previousTimestamp = this.previousHandTimestamp;
+    const deltaMs =
+      previousTimestamp === null ? 0 : timestamp - previousTimestamp;
+    const hasFreshVelocity =
+      !resumedAfterTrackingLoss &&
+      previousScreen !== null &&
+      deltaMs > 0;
+
+    this.handSpeed = hasFreshVelocity
+      ? (distancePixels(handScreen, previousScreen) / shortSide) /
+        (deltaMs / 1000)
+      : 0;
+    this.previousHandScreen = { ...handScreen };
+    this.previousHandTimestamp = timestamp;
+
+    if (this.activationMotionPhase === 'Locked') {
+      if (resumedAfterTrackingLoss) {
+        this.lockExitFrameCount = 0;
+      }
+      this.lockExitFrameCount =
+        this.handDisplacement > ACTIVATION_HAND_LOCK_RADIUS
+          ? this.lockExitFrameCount + 1
+          : 0;
+
+      if (this.lockExitFrameCount >= ACTIVATION_LOCK_EXIT_MIN_FRAMES) {
+        this.activationMotionPhase = 'Seeking';
+        this.lockExitFrameCount = 0;
+        this.settleFrameCount = 0;
+        this.settleTarget = null;
+        this.activationExitStartedAt = null;
+      }
+    } else {
+      this.lockExitFrameCount = 0;
     }
+
+    return hasFreshVelocity;
+  }
+
+  private reanchorActivationHand(
+    handScreen: { x: number; y: number },
+    timestamp: number,
+    target: InteractiveCelestialBodyId,
+  ): void {
+    this.activationMotionPhase = 'Locked';
+    this.handAnchorScreen = { ...handScreen };
+    this.previousHandScreen = { ...handScreen };
+    this.previousHandTimestamp = timestamp;
+    this.handDisplacement = 0;
+    this.handSpeed = 0;
+    this.lockExitFrameCount = 0;
+    this.settleFrameCount = 0;
+    this.settleTarget = target;
+    this.activationExitStartedAt = null;
+  }
+
+  private resetActivationMotion(): void {
+    this.activationMotionPhase = 'Inactive';
+    this.handAnchorScreen = null;
+    this.previousHandScreen = null;
+    this.previousHandTimestamp = null;
+    this.handDisplacement = null;
+    this.handSpeed = null;
+    this.lockExitFrameCount = 0;
+    this.settleFrameCount = 0;
+    this.settleTarget = null;
+  }
+
+  private endActivation(input: {
+    hoverCandidate: Candidate | null;
+    pinchMetrics: PinchMetrics;
+    reason: string;
+  }): PlanetActivationUpdate {
+    const transitionSnapshot = this.createSnapshot({
+      hoverCandidate: input.hoverCandidate,
+      pinchMetrics: input.pinchMetrics,
+      pinchState: input.hoverCandidate ? 'open' : 'idle',
+      reason: input.reason,
+    });
+    this.clearActivation();
+    this.hoveredBody = input.hoverCandidate?.target.id ?? null;
+    const snapshot: PlanetActivationSnapshot = {
+      ...transitionSnapshot,
+      hoveredBody: this.hoveredBody,
+      activatedBody: null,
+      activeHandKey: null,
+      pinchState: input.hoverCandidate ? 'open' : 'idle',
+      transitionReason: input.reason,
+    };
+    this.snapshot = snapshot;
+    return {
+      snapshot,
+      nextState: input.hoverCandidate ? 'BodyHover' : this.fallbackSolarState,
+    };
+  }
+
+  private getSeekingReason(): string {
+    if (this.settleFrameCount < ACTIVATION_SETTLE_MIN_FRAMES) {
+      return this.settleFrameCount > 0
+        ? 'activation-seeking-settling'
+        : 'activation-seeking-moving';
+    }
+    if (this.settleTarget === 'empty') {
+      return 'activation-seeking-empty-dwell';
+    }
+    if (this.settleTarget) {
+      return 'activation-seeking-body-dwell';
+    }
+    return 'activation-seeking-exit-hysteresis';
   }
 
   private getPinchState(metrics: PinchMetrics): PlanetActivationPinchState {
@@ -647,7 +899,6 @@ export class PlanetActivationController {
 
   private getActivatedReason(
     doubleClose: DoubleCloseUpdate,
-    switchArmedThisFrame: boolean,
     metrics: PinchMetrics,
   ): string {
     if (doubleClose === 'first-close') {
@@ -668,16 +919,13 @@ export class PlanetActivationController {
     if (this.doubleCloseFailureReason) {
       return this.doubleCloseFailureReason;
     }
-    if (switchArmedThisFrame) {
-      return 'activation-switch-armed-open-hover';
-    }
     if (this.doubleClosePhase === 'wait-first-valley') {
       return 'double-close-open-ready';
     }
     if (this.doubleClosePhase === 'wait-peak') {
       return 'double-close-first-close-waiting-for-peak';
     }
-    return isPinchHeld(metrics) ? 'activation-held' : 'activation-held-open';
+    return isPinchHeld(metrics) ? 'activation-locked' : 'activation-locked-open';
   }
 
   private updateDoubleClose(
@@ -965,13 +1213,6 @@ function computePinchMetrics(
   const ratio = distance / Math.max(hand.palmScale, 0.001);
 
   return { distance, distancePx, ratio };
-}
-
-function computePinchRatio(hand: TrackedHand): number {
-  return (
-    distance2d(hand.thumbTip, hand.indexFingerTip) /
-    Math.max(hand.palmScale, 0.001)
-  );
 }
 
 function isPinchStart(metrics: PinchMetrics): boolean {
