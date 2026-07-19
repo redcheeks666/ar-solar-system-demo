@@ -14,6 +14,10 @@ npm run preview -- --host 127.0.0.1
 VITE_BASE_PATH=/ar-solar-system/ npm run build
 ```
 
+## 公众入口
+
+对外海报、二维码和分享链接直接指向部署地址的 `?demo=1`，例如 `https://example.com/?demo=1`。该路由隐藏 Debug、录制控件和底部说明，但不改变手势行为；不带参数的默认地址继续保留完整调试 UI。
+
 ## 托管要求
 
 - 公网环境必须使用 HTTPS；浏览器只在安全上下文（或本机 `localhost`）开放摄像头。
