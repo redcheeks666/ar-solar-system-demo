@@ -9,6 +9,7 @@ import type { Object3D } from 'three';
 import type { RenderFrameSnapshot } from '../utils/types';
 import { BACKGROUND_RENDER_LAYER, MAIN_RENDER_LAYER } from './renderLayers';
 import { SelectiveBloomPipeline } from './selectiveBloom';
+import { WebGLContextLifecycle } from './webglContextLifecycle';
 
 const MAX_DEVICE_PIXEL_RATIO = 1.5;
 const MIN_DEVICE_PIXEL_RATIO_OVERRIDE = 1;
@@ -21,6 +22,12 @@ export const CAMERA_Z = 6;
 export const INTERACTION_PLANE_Z = 0;
 const FPS_SMOOTHING = 0.12;
 
+export interface RendererContextHandlers {
+  readonly onContextLost?: () => void;
+  readonly onContextRestored?: () => void;
+  readonly onContextRestoreFailed?: (error: unknown) => void;
+}
+
 export class TransparentSceneRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly scene = new Scene();
@@ -31,9 +38,16 @@ export class TransparentSceneRenderer {
     CAMERA_FAR,
   );
   private readonly renderer: WebGLRenderer;
-  private readonly bloom = new SelectiveBloomPipeline();
+  private bloom = new SelectiveBloomPipeline();
   private readonly maxDevicePixelRatio: number;
+  private readonly contextHandlers: RendererContextHandlers;
+  private readonly contextLifecycle: WebGLContextLifecycle;
   private animationFrameId: number | null = null;
+  private frameCallback: ((snapshot: RenderFrameSnapshot) => void) | null = null;
+  private renderLoopStarted = false;
+  private contextLost = false;
+  private disposed = false;
+  private bloomActive = true;
   private lastFrameTime = 0;
   private lastRenderMs: number | null = null;
   private sceneContentVisible = false;
@@ -43,12 +57,88 @@ export class TransparentSceneRenderer {
   private readonly drawingBufferSize = new Vector2();
   private readonly resizeObserver: ResizeObserver | null = null;
   private readonly handleResize = (): void => this.resize();
+  private readonly tick = (time: number): void => {
+    this.animationFrameId = null;
+    const onFrame = this.frameCallback;
+
+    if (
+      !this.renderLoopStarted ||
+      this.contextLost ||
+      this.disposed ||
+      !onFrame
+    ) {
+      return;
+    }
+
+    const deltaMs = this.lastFrameTime > 0 ? time - this.lastFrameTime : 16.67;
+    this.lastFrameTime = time;
+
+    const instantFps = deltaMs > 0 ? 1000 / deltaMs : 0;
+    this.smoothedFps =
+      this.smoothedFps > 0
+        ? this.smoothedFps + (instantFps - this.smoothedFps) * FPS_SMOOTHING
+        : instantFps;
+
+    onFrame({
+      fps: this.smoothedFps,
+      canvasSize: this.getCanvasSize(),
+      deltaMs,
+      deltaSeconds: deltaMs / 1000,
+      renderMs: this.lastRenderMs,
+      timestampMs: time,
+    });
+    if (this.sceneContentVisible) {
+      const renderStartedAt = performance.now();
+      this.renderScene();
+      this.lastRenderMs = performance.now() - renderStartedAt;
+      this.renderedSceneContent = true;
+    } else if (this.renderedSceneContent) {
+      const renderStartedAt = performance.now();
+      this.renderer.clear(true, true, true);
+      this.lastRenderMs = performance.now() - renderStartedAt;
+      this.renderedSceneContent = false;
+    } else {
+      this.lastRenderMs = 0;
+    }
+
+    this.requestNextFrame();
+  };
+  private readonly handleContextLost = (): void => {
+    if (this.contextLost || this.disposed) {
+      return;
+    }
+
+    this.contextLost = true;
+    this.pauseAnimationLoop();
+    this.contextHandlers.onContextLost?.();
+  };
+  private readonly handleContextRestored = (): void => {
+    if (!this.contextLost || this.disposed) {
+      return;
+    }
+
+    try {
+      this.bloom.dispose();
+      this.bloom = new SelectiveBloomPipeline();
+      this.bloom.setActive(this.bloomActive);
+      this.contextLost = false;
+      this.lastFrameTime = 0;
+      this.resize();
+      this.contextHandlers.onContextRestored?.();
+      this.requestNextFrame();
+    } catch (error) {
+      this.contextLost = true;
+      this.contextHandlers.onContextRestoreFailed?.(error);
+    }
+  };
 
   constructor(
     canvas: HTMLCanvasElement,
     maxDevicePixelRatio = MAX_DEVICE_PIXEL_RATIO,
+    contextHandlers: RendererContextHandlers = {},
   ) {
     this.canvas = canvas;
+    this.contextHandlers = contextHandlers;
     this.maxDevicePixelRatio = Math.min(
       MAX_DEVICE_PIXEL_RATIO_OVERRIDE,
       Math.max(MIN_DEVICE_PIXEL_RATIO_OVERRIDE, maxDevicePixelRatio),
@@ -64,6 +154,10 @@ export class TransparentSceneRenderer {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.autoClear = false;
     this.camera.position.set(0, 0, CAMERA_Z);
+    this.contextLifecycle = new WebGLContextLifecycle(canvas, {
+      onLost: this.handleContextLost,
+      onRestored: this.handleContextRestored,
+    });
 
     if ('ResizeObserver' in window) {
       this.resizeObserver = new ResizeObserver(this.handleResize);
@@ -75,54 +169,26 @@ export class TransparentSceneRenderer {
   }
 
   start(onFrame: (snapshot: RenderFrameSnapshot) => void): void {
-    if (this.animationFrameId !== null) {
+    this.frameCallback = onFrame;
+    if (this.renderLoopStarted || this.disposed) {
       return;
     }
 
-    const tick = (time: number): void => {
-      const deltaMs = this.lastFrameTime > 0 ? time - this.lastFrameTime : 16.67;
-      this.lastFrameTime = time;
-
-      const instantFps = deltaMs > 0 ? 1000 / deltaMs : 0;
-      this.smoothedFps =
-        this.smoothedFps > 0
-          ? this.smoothedFps + (instantFps - this.smoothedFps) * FPS_SMOOTHING
-          : instantFps;
-
-      onFrame({
-        fps: this.smoothedFps,
-        canvasSize: this.getCanvasSize(),
-        deltaMs,
-        deltaSeconds: deltaMs / 1000,
-        renderMs: this.lastRenderMs,
-        timestampMs: time,
-      });
-      if (this.sceneContentVisible) {
-        const renderStartedAt = performance.now();
-        this.renderScene();
-        this.lastRenderMs = performance.now() - renderStartedAt;
-        this.renderedSceneContent = true;
-      } else if (this.renderedSceneContent) {
-        const renderStartedAt = performance.now();
-        this.renderer.clear(true, true, true);
-        this.lastRenderMs = performance.now() - renderStartedAt;
-        this.renderedSceneContent = false;
-      } else {
-        this.lastRenderMs = 0;
-      }
-
-      this.animationFrameId = window.requestAnimationFrame(tick);
-    };
-
-    this.animationFrameId = window.requestAnimationFrame(tick);
+    this.renderLoopStarted = true;
+    this.lastFrameTime = 0;
+    this.requestNextFrame();
   }
 
   dispose(): void {
-    if (this.animationFrameId !== null) {
-      window.cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = null;
+    if (this.disposed) {
+      return;
     }
 
+    this.disposed = true;
+    this.renderLoopStarted = false;
+    this.frameCallback = null;
+    this.pauseAnimationLoop();
+    this.contextLifecycle.dispose();
     window.removeEventListener('resize', this.handleResize);
     this.resizeObserver?.disconnect();
     this.bloom.dispose();
@@ -134,6 +200,7 @@ export class TransparentSceneRenderer {
    * (e.g. empty idle before the solar system opens).
    */
   setBloomActive(active: boolean): void {
+    this.bloomActive = active;
     this.bloom.setActive(active);
   }
 
@@ -185,7 +252,33 @@ export class TransparentSceneRenderer {
     this.bloom.composite(this.renderer);
   }
 
+  private requestNextFrame(): void {
+    if (
+      this.animationFrameId !== null ||
+      !this.renderLoopStarted ||
+      this.contextLost ||
+      this.disposed
+    ) {
+      return;
+    }
+
+    this.animationFrameId = window.requestAnimationFrame(this.tick);
+  }
+
+  private pauseAnimationLoop(): void {
+    if (this.animationFrameId === null) {
+      return;
+    }
+
+    window.cancelAnimationFrame(this.animationFrameId);
+    this.animationFrameId = null;
+  }
+
   private resize(): void {
+    if (this.contextLost || this.disposed) {
+      return;
+    }
+
     const bounds = this.canvas.getBoundingClientRect();
     const width = Math.max(1, Math.round(bounds.width));
     const height = Math.max(1, Math.round(bounds.height));

@@ -38,6 +38,11 @@ import {
   type UiButtonStageRect,
 } from './interaction/indexFingerUiHold';
 import { DebugOverlay } from './rendering/debugOverlay';
+import {
+  hideRenderingInterruptionOverlay,
+  showFatalErrorOverlay,
+  showRenderingInterruptionOverlay,
+} from './rendering/fatalErrorOverlay';
 import { InteractionStatusSummary } from './rendering/interactionStatusSummary';
 import { LandmarkOverlay } from './rendering/landmarkOverlay';
 import { INTERACTION_PLANE_Z, TransparentSceneRenderer } from './rendering/scene';
@@ -105,6 +110,17 @@ const urlParams = new URLSearchParams(window.location.search);
 const renderer = new TransparentSceneRenderer(
   canvasElement,
   parseDevicePixelRatioOverride(urlParams.get('dpr')),
+  {
+    onContextLost: showRenderingInterruptionOverlay,
+    onContextRestored: hideRenderingInterruptionOverlay,
+    onContextRestoreFailed: (error) => {
+      console.error('[AR Solar System] WebGL 上下文恢复失败。', error);
+      showFatalErrorOverlay({
+        title: '渲染无法恢复',
+        message: '画面渲染已中断，请刷新页面后重试。',
+      });
+    },
+  },
 );
 const solarPreviewEnabled = urlParams.get('solarPreview') === '1';
 // 演示模式：隐藏 Debug/底部说明，保留精简操作 HUD，并提供骨架显示开关。

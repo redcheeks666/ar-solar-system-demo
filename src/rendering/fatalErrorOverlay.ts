@@ -1,4 +1,5 @@
 const FATAL_ERROR_OVERLAY_ID = 'fatal-error-overlay';
+const RENDER_INTERRUPTION_OVERLAY_ID = 'render-interruption-overlay';
 
 export interface FatalErrorOverlayContent {
   readonly title: string;
@@ -14,17 +15,40 @@ export function showFatalErrorOverlay(
     startButton.hidden = true;
   }
 
-  const existingOverlay = document.getElementById(FATAL_ERROR_OVERLAY_ID);
+  showOverlay(FATAL_ERROR_OVERLAY_ID, content, 'assertive');
+}
+
+export function showRenderingInterruptionOverlay(): void {
+  showOverlay(
+    RENDER_INTERRUPTION_OVERLAY_ID,
+    {
+      title: '渲染暂时中断',
+      message: '正在尝试恢复画面，请稍候。',
+    },
+    'polite',
+  );
+}
+
+export function hideRenderingInterruptionOverlay(): void {
+  document.getElementById(RENDER_INTERRUPTION_OVERLAY_ID)?.remove();
+}
+
+function showOverlay(
+  id: string,
+  content: FatalErrorOverlayContent,
+  liveMode: 'assertive' | 'polite',
+): void {
+  const existingOverlay = document.getElementById(id);
   if (existingOverlay) {
     updateOverlayCopy(existingOverlay, content);
     return;
   }
 
   const overlay = document.createElement('section');
-  overlay.id = FATAL_ERROR_OVERLAY_ID;
+  overlay.id = id;
   overlay.className = 'public-fallback-overlay';
   overlay.setAttribute('role', 'alert');
-  overlay.setAttribute('aria-live', 'assertive');
+  overlay.setAttribute('aria-live', liveMode);
 
   const panel = document.createElement('div');
   panel.className = 'intro-panel public-fallback-panel';
