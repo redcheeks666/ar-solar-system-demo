@@ -1,8 +1,11 @@
 import './styles.css';
 import { showFatalErrorOverlay } from './rendering/fatalErrorOverlay';
+import { installGlobalErrorFallback } from './rendering/globalErrorFallback';
 import { isWebGL2Available } from './rendering/webglSupport';
 
 function bootstrap(): void {
+  installGlobalErrorFallback();
+
   if (!isWebGL2Available()) {
     showFatalErrorOverlay({
       title: '当前设备无法运行此体验',
