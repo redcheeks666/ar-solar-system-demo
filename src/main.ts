@@ -1,4 +1,9 @@
 import './styles.css';
+import {
+  getCurrentDeviceGateFacts,
+  shouldShowDeviceGate,
+  showDeviceGate,
+} from './rendering/deviceGate';
 import { showFatalErrorOverlay } from './rendering/fatalErrorOverlay';
 import { installGlobalErrorFallback } from './rendering/globalErrorFallback';
 import { isWebGL2Available } from './rendering/webglSupport';
@@ -15,6 +20,15 @@ function bootstrap(): void {
     return;
   }
 
+  if (shouldShowDeviceGate(getCurrentDeviceGateFacts())) {
+    showDeviceGate(startExperience);
+    return;
+  }
+
+  startExperience();
+}
+
+function startExperience(): void {
   void import('./app');
 }
 
