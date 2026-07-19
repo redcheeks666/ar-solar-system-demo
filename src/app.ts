@@ -77,6 +77,10 @@ const previewOverlay = getElement<HTMLElement>('preview-overlay');
 const startButton = getElement<HTMLButtonElement>('start-camera');
 const statusText = getElement<HTMLElement>('status-text');
 const introPanel = getElement<HTMLElement>('intro-panel');
+const loadingPanel = getElement<HTMLElement>('loading-panel');
+const loadingStage = getElement<HTMLElement>('loading-stage');
+const loadingProgress = getElement<HTMLElement>('loading-progress');
+const loadingDetail = getElement<HTMLElement>('loading-detail');
 const guidance = getElement<HTMLElement>('guidance');
 const interactionSummary = getElement<HTMLElement>('interaction-summary');
 const debugPanel = getElement<HTMLElement>('debug-panel');
@@ -424,8 +428,8 @@ async function handleCameraStart(): Promise<void> {
   activeStream = result.stream;
   interaction.transition('EmptyIdle');
   introPanel.hidden = true;
-  guidance.hidden = demoModeEnabled;
-  guidance.textContent = '正在加载姿态与手部识别模型...';
+  guidance.hidden = true;
+  showTrackingLoading();
   void initializeTracking();
 }
 
@@ -825,12 +829,43 @@ async function initializeTracking(): Promise<void> {
   try {
     await tracking.initialize();
     latestTracking = tracking.getSnapshot();
+    hideTrackingLoading();
+    guidance.hidden = demoModeEnabled;
     updateGuidanceForState(interaction.state);
   } catch (error) {
     console.error(error);
     latestTracking = tracking.getSnapshot();
-    guidance.textContent = '摄像头已开启，姿态与手部识别模型加载失败，请检查网络后刷新。';
+    const message =
+      '摄像头已开启，姿态与手部识别模型加载失败，请检查网络后刷新。';
+    showTrackingLoadingError(message);
+    guidance.hidden = demoModeEnabled;
+    guidance.textContent = message;
   }
+}
+
+function showTrackingLoading(): void {
+  loadingPanel.hidden = false;
+  loadingPanel.classList.remove('is-error');
+  loadingPanel.setAttribute('aria-busy', 'true');
+  loadingStage.textContent = '阶段 2 / 2 · 正在加载手势识别';
+  loadingDetail.textContent =
+    '摄像头已就绪。首次访问需要下载识别组件，请保持页面开启。';
+  loadingProgress.setAttribute('aria-valuetext', '正在加载手势识别模型');
+}
+
+function hideTrackingLoading(): void {
+  loadingPanel.hidden = true;
+  loadingPanel.classList.remove('is-error');
+  loadingPanel.setAttribute('aria-busy', 'false');
+}
+
+function showTrackingLoadingError(message: string): void {
+  loadingPanel.hidden = false;
+  loadingPanel.classList.add('is-error');
+  loadingPanel.setAttribute('aria-busy', 'false');
+  loadingStage.textContent = '手势识别加载失败';
+  loadingDetail.textContent = message;
+  loadingProgress.setAttribute('aria-valuetext', '加载失败');
 }
 
 function updateTrackingDebugMetrics(snapshot: TrackingSnapshot): void {

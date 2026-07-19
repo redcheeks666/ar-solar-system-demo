@@ -48,6 +48,35 @@
             </button>
           </section>
 
+          <section
+            id="loading-panel"
+            class="intro-panel loading-panel"
+            aria-live="polite"
+            aria-busy="false"
+            hidden
+          >
+            <p class="eyebrow">正在准备体验</p>
+            <h2 id="loading-stage" class="loading-stage">
+              正在加载手势识别
+            </h2>
+            <div class="loading-stage-list" aria-hidden="true">
+              <span class="loading-stage-complete">✓ 摄像头已就绪</span>
+              <span class="loading-stage-active">手势识别模型加载中</span>
+            </div>
+            <div
+              id="loading-progress"
+              class="loading-progress"
+              role="progressbar"
+              aria-label="手势识别模型加载进度"
+              aria-valuetext="正在加载"
+            >
+              <span class="loading-progress-bar"></span>
+            </div>
+            <p id="loading-detail" class="status-text loading-detail">
+              首次访问需要下载识别组件，请保持页面开启。
+            </p>
+          </section>
+
           <p id="guidance" class="guidance" hidden>
             双手在画面任意位置合拢，再向两侧拉开
           </p>

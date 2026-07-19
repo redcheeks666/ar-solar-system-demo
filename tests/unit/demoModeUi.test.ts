@@ -80,7 +80,7 @@ describe('demo-mode operation HUD', () => {
 
   it('anchors the operation and hand-model cards to the same preview overlay', () => {
     const overlayStart = INDEX_HTML.indexOf('id="preview-overlay"');
-    const overlayEnd = INDEX_HTML.indexOf('</div>', overlayStart);
+    const overlayEnd = INDEX_HTML.indexOf('id="debug-toggle"', overlayStart);
     const overlayMarkup = INDEX_HTML.slice(overlayStart, overlayEnd);
 
     expect(overlayMarkup).toContain('id="interaction-summary"');
