@@ -13,6 +13,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html,
 body,
 #app {
@@ -32,6 +36,36 @@ button {
   place-items: center;
   overflow: hidden;
   background: #050607;
+}
+
+.experience-return {
+  position: fixed;
+  z-index: 20;
+  top: max(14px, env(safe-area-inset-top));
+  left: max(14px, env(safe-area-inset-left));
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(127, 216, 255, 0.24);
+  border-radius: 999px;
+  color: rgba(246, 247, 249, 0.68);
+  background: rgba(5, 8, 10, 0.56);
+  backdrop-filter: blur(10px);
+  font-size: 0.76rem;
+  text-decoration: none;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.experience-return:hover,
+.experience-return:focus-visible {
+  border-color: rgba(127, 216, 255, 0.56);
+  color: #ffffff;
+  background: rgba(7, 14, 18, 0.8);
 }
 
 .preview-stage {

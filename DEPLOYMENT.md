@@ -16,7 +16,16 @@ VITE_BASE_PATH=/ar-solar-system/ npm run build
 
 ## 公众入口
 
-对外海报、二维码和分享链接直接指向部署地址的 `?demo=1`，例如 `https://example.com/?demo=1`。该路由隐藏 Debug、录制控件和底部说明，但不改变手势行为；不带参数的默认地址继续保留完整调试 UI。
+对外海报、二维码和分享链接指向部署地址根路径，例如 `https://example.com/`。公众入口先显示响应式落地页，用户点击“开启体验”后进入 `?demo=1`。落地页在手机、触摸设备和无 WebGL2 的浏览器中仍可阅读，只把装饰太阳系降级为静态背景；进入相机体验仍要求带摄像头、支持 WebGL2 的桌面浏览器。
+
+路由均相对 `VITE_BASE_PATH` 解析：
+
+- `<base>/`：公众落地页。
+- `<base>/debug`：完整 Debug 相机应用。
+- `<base>/?demo=1`：直达全屏演示体验。
+- `<base>/?solarPreview=1`：开发用太阳系预览。
+
+`/debug` 依赖静态托管的 SPA fallback。演示页和调试页中的“返回”链接导航回 `<base>/`。
 
 ## 托管要求
 

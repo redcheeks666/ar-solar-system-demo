@@ -22,14 +22,18 @@ npm test
 
 URL routes on the dev server:
 
-- `/` — full app with debug UI (Debug toggle, status summary, gesture guidance).
+- `/` — responsive public landing page with the experience intro, gesture guide, and Douyin follow card.
+- `/debug` — full camera app with Debug toggle, status summary, gesture guidance, and recorder.
 - `/?demo=1` — presentation mode: same interactions, a title-only current-operation HUD, no full debug UI or bottom guidance, plus a 0.5s index-fingertip hold card that toggles the hand skeleton.
 - `/?solarPreview=1` — dev-only static solar-system visual preview (no camera/gestures).
 
+The landing page remains readable on touch/small-screen devices and without WebGL2 by using a static decorative backdrop. `开启体验` requires a WebGL2-capable desktop browser with a camera. For a subpath build, every route and asset URL is resolved relative to `VITE_BASE_PATH`.
+
 ## Manual Camera Check
 
-1. Open the local dev URL shown by Vite, click `开启摄像头`, and grant camera permission.
-2. Confirm the webcam appears as a complete mirrored 16:9 preview with no visible 3D content.
-3. Bring both hands together anywhere in frame, then pull them apart — the solar system should open between the hands.
-4. Toggle `Debug` to inspect tracking state, interaction state, and performance values.
-5. Open `/?demo=1`: confirm the compact HUD shows only the current operation, then hold an index fingertip on the hand-model card for 0.5s to show/hide the hand skeleton.
+1. Open `/`, confirm the landing page scrolls through Hero, all 10 gesture cards, and the Douyin card, then click `开启体验` on a desktop browser.
+2. On `/?demo=1`, click `开启摄像头` and grant camera permission.
+3. Confirm the webcam appears as a complete mirrored 16:9 preview with no visible 3D content.
+4. Bring both hands together anywhere in frame, then pull them apart — the solar system should open between the hands.
+5. Open `/debug` and toggle `Debug` to inspect tracking state, interaction state, and performance values.
+6. In `/?demo=1`, confirm the compact HUD shows only the current operation, then hold an index fingertip on the hand-model card for 0.5s to show/hide the hand skeleton.

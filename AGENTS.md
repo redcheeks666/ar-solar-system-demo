@@ -39,6 +39,8 @@ Web Demo only. Do not introduce Electron, Tauri, TouchDesigner, Unity, Unreal, X
 
 The user explicitly authorized on 2026-07-19 the public-site robustness fallbacks, unsuitable-device guidance (not mobile adaptation), and in-repository build/deployment documentation needed for a public launch. Analytics, full mobile gesture adaptation, backend/auth/database work, CI/CD, and hosted deployment infrastructure remain prohibited unless separately authorized.
 
+The user explicitly authorized on 2026-07-19 a responsive public landing page at the base URL, moving the complete Debug experience to `/debug`, retaining `?demo=1` and `?solarPreview=1`, and reusing the existing renderer/solar system as a landing-only decorative background. This authorization covers the 2D public shell and its responsive presentation, not mobile gesture adaptation or any change to camera/gesture behavior.
+
 ## Tech Stack
 
 - Vite + TypeScript, Three.js for 3D, MediaPipe Tasks Vision for hand/pose landmarks, browser MediaDevices for webcam, a dedicated Web Worker for hand inference, requestAnimationFrame render loop, lightweight CSS for UI/debug panels.
@@ -47,7 +49,7 @@ The user explicitly authorized on 2026-07-19 the public-site robustness fallback
 
 ## Repository Shape
 
-Keep camera (`src/camera/`), tracking (`src/tracking/`), interaction (`src/interaction/`), solar-system simulation (`src/solar/`), and rendering (`src/rendering/`) separated. Shared math and types live in `src/utils/`. Tests live under `tests/` (unit / gesture / helpers), outside `src`. Avoid putting the whole app in one large file.
+Keep the public shell (`src/landing/`), camera (`src/camera/`), tracking (`src/tracking/`), interaction (`src/interaction/`), solar-system simulation (`src/solar/`), and rendering (`src/rendering/`) separated. Shared math and types live in `src/utils/`. Tests live under `tests/` (unit / gesture / helpers), outside `src`. Avoid putting the whole app in one large file.
 
 ## Product Invariants
 
@@ -55,7 +57,9 @@ These rules must not be broken without explicit user approval and doc updates.
 
 ### Initial Empty Scene
 
-At startup and before pull-open: webcam video, minimal 2D instruction text, and hand landmarks only when explicitly enabled (the default-route Debug toggle or the demo-route hand-model hold card). No 3D sun, planet, orbit, nebula, star dust, singularity, or decorative object. The dev-only `?solarPreview=1` route may show placeholder visuals for testing but must not change the normal startup path.
+Inside the camera experience, at startup and before pull-open: webcam video, minimal 2D instruction text, and hand landmarks only when explicitly enabled (the `/debug` Debug toggle or the demo-route hand-model hold card). No 3D sun, planet, orbit, nebula, star dust, singularity, or decorative object. The dev-only `?solarPreview=1` route may show placeholder visuals for testing but must not change the normal camera startup path.
+
+The base-URL landing page is outside the camera experience and may show an autoplaying, non-interactive decorative solar-system backdrop. It must exist only on the landing route, degrade to a static/CSS backdrop on unsuitable devices or without WebGL2, and be disposed/unloaded before the camera experience begins. It never relaxes the camera experience's initial-empty-scene invariant.
 
 ### Hand-Only Startup
 
@@ -137,11 +141,13 @@ Debug labels distinguish `Startup state` (closed-to-pull startup) from `Whole co
 
 ## Debug and Recording
 
+The base URL `/` is the responsive, scrollable public landing page. `/debug` is the complete camera app with the Debug toggle, full Chinese status summary, bottom guidance, and recorder. `?demo=1` enters the full-screen presentation experience directly, while `?solarPreview=1` remains the dev-only solar preview. Route resolution is based on `location.pathname` plus query parameters relative to `import.meta.env.BASE_URL`. Debug and demo provide a low-profile return link to the base-URL landing page.
+
 Keep a debug panel behind a toggle: FPS, camera/tracking status, interaction state, hand positions/distance/velocity, whole-system protocol state and confidences, endpoints and match state, calibration thresholds, pinch state, hovered/activated/focused body, focus-controller snapshot (control mode, heat-zone distances, dwell timers, PinchTap state), return-wave state/spatial hand/frames/peak speed/net displacement/upper-corner components/start and end body distance/recent distance trend/hit radius/open-hand sanity/scale/reason, display/canvas dimensions, and performance costs. Include a concise Chinese status summary stating the current interpreted intent, reason, and key parameters.
 
 The debug gesture recorder exports structured landmarks, primitives, calibration values, intent scores, states, and transition reasons as JSON (including the `planetFocus` snapshot in focus flows). Never record raw webcam video or upload data. Each recording start opens a fresh session.
 
-Demo mode (`?demo=1`) is the presentation route: it hides the top-right Debug toggle, the full Chinese status summary, and the bottom gesture guidance text without changing interaction behavior. It replaces the full summary with a compact cyan operation HUD that shows only the current operation title (no state description, reason, parameters, or endpoint diagnostics). `PlanetActivated`, `PlanetFocusControlled`, and `PlanetFocusFloating` show the current body's Chinese name plus their state (`{中文名}已激活`, `正在控制{中文名}`, `{中文名}悬浮中`); the focused body takes precedence over the activated body so Earth/Moon switching stays in sync. In `PlanetFocusView` the title remains the current bilingual body name (`中文（English）`, including live Earth/Moon switching). A separate cyan card toggles the hand-landmark skeleton after a stable 0.5s index-fingertip hold; the skeleton starts hidden, renders hands only, and requires the fingertip to leave before another toggle. The two 344px desktop cards share one right edge and spacing reference inside the 16:9 preview rather than the browser viewport, with a single-column narrow-screen fallback. The operation card, hand-model card, and Earth-Moon switch card share cyan border/corner/text/reactor glow; UI-hold charging intensifies the glow and scan without applying a filter or dimming layer to the camera feed. The default route keeps the full debug UI and does not show this demo-only card.
+Demo mode (`?demo=1`) is the presentation route: it hides the top-right Debug toggle, the full Chinese status summary, and the bottom gesture guidance text without changing interaction behavior. It replaces the full summary with a compact cyan operation HUD that shows only the current operation title (no state description, reason, parameters, or endpoint diagnostics). `PlanetActivated`, `PlanetFocusControlled`, and `PlanetFocusFloating` show the current body's Chinese name plus their state (`{中文名}已激活`, `正在控制{中文名}`, `{中文名}悬浮中`); the focused body takes precedence over the activated body so Earth/Moon switching stays in sync. In `PlanetFocusView` the title remains the current bilingual body name (`中文（English）`, including live Earth/Moon switching). A separate cyan card toggles the hand-landmark skeleton after a stable 0.5s index-fingertip hold; the skeleton starts hidden, renders hands only, and requires the fingertip to leave before another toggle. The two 344px desktop cards share one right edge and spacing reference inside the 16:9 preview rather than the browser viewport, with a single-column narrow-screen fallback. The operation card, hand-model card, and Earth-Moon switch card share cyan border/corner/text/reactor glow; UI-hold charging intensifies the glow and scan without applying a filter or dimming layer to the camera feed. The `/debug` route keeps the full debug UI and does not show this demo-only card.
 
 ## Development Workflow
 
