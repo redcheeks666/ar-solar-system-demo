@@ -1,4 +1,6 @@
-export type TextureAssetPath = `/${string}`;
+import { withPublicBasePath } from '../utils/publicAssetPath';
+
+export type TextureAssetPath = string;
 
 export interface AvailableTextureAsset {
   readonly status: 'available';
@@ -14,9 +16,10 @@ export interface MissingTextureAsset {
 export type TextureAsset = AvailableTextureAsset | MissingTextureAsset;
 
 const NASA_RUNTIME_QUALITY = 'medium';
-const NASA_RUNTIME_BASE =
-  `/assets/solar/nasa/runtime/${NASA_RUNTIME_QUALITY}` as const;
-const FX_BASE = '/assets/solar/fx' as const;
+const NASA_RUNTIME_BASE = withPublicBasePath(
+  `/assets/solar/nasa/runtime/${NASA_RUNTIME_QUALITY}`,
+);
+const FX_BASE = withPublicBasePath('/assets/solar/fx');
 
 function texture(path: TextureAssetPath): AvailableTextureAsset {
   return {

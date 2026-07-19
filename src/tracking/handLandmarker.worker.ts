@@ -32,11 +32,19 @@ interface WorkerScope {
 }
 
 const workerScope = globalThis as unknown as WorkerScope;
-const ALLOWED_WASM_LOADER_PATHS = new Set([
-  '/mediapipe/wasm/vision_wasm_internal.js',
-  '/mediapipe/wasm/vision_wasm_module_internal.js',
-  '/mediapipe/wasm/vision_wasm_nosimd_internal.js',
-]);
+const ALLOWED_WASM_LOADER_PATHS = new Set(
+  [
+    'vision_wasm_internal.js',
+    'vision_wasm_module_internal.js',
+    'vision_wasm_nosimd_internal.js',
+  ].map(
+    (filename) =>
+      new URL(
+        `${MEDIAPIPE_WASM_URL}/${filename}`,
+        globalThis.location.href,
+      ).pathname,
+  ),
+);
 const WASM_FACTORY_BODY_START = 'return async function(moduleArg = {}) {';
 const MODULE_SAFE_DEBUG_SHIM =
   'return async function(moduleArg = {}) {\n    var custom_dbg = (...args) => console.warn(...args);';
