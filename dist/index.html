@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="打开摄像头，用双手合拢、拉开和挥动，在现实画面中召唤并操控一座 3D 太阳系。"
+    />
+    <meta name="theme-color" content="#050607" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="zh_CN" />
+    <meta property="og:site_name" content="AR Solar System" />
+    <meta property="og:title" content="AR 太阳系｜摄像头手势互动体验" />
+    <meta
+      property="og:description"
+      content="打开摄像头，用双手在现实画面中召唤、操控并探索 3D 太阳系。"
+    />
+    <!-- TODO: og:image 待用户提供分享图 -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="AR 太阳系｜摄像头手势互动体验" />
+    <meta
+      name="twitter:description"
+      content="打开摄像头，用双手在现实画面中召唤、操控并探索 3D 太阳系。"
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>AR 太阳系｜摄像头手势互动体验</title>
+    <script type="module" crossorigin src="/assets/index-CGyXafyJ.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BDVMqXKx.css">
+  </head>
+  <body>
+    <div id="landing-root" class="landing-page">
+      <header id="landing-hero" class="landing-hero" aria-labelledby="landing-title">
+        <canvas
+          id="landing-solar-canvas"
+          class="landing-solar-canvas"
+          aria-hidden="true"
+        ></canvas>
+        <div class="landing-hero-stars" aria-hidden="true"></div>
+
+        <nav class="landing-nav" aria-label="落地页导航">
+          <a class="landing-brand" href="#landing-hero" aria-label="AR 太阳系首页">
+            <span class="landing-brand-mark" aria-hidden="true"></span>
+            <span>AR SOLAR SYSTEM</span>
+          </a>
+          <div class="landing-nav-links">
+            <a href="#landing-hero">体验</a>
+            <a href="#gestures">手势玩法</a>
+            <a href="#follow">关注</a>
+          </div>
+        </nav>
+
+        <div class="landing-hero-content" data-reveal>
+          <!-- 占位文案：用户后续可在此处统一替换 Hero 文案。 -->
+          <p class="landing-eyebrow">WEB AR · 摄像头手势互动</p>
+          <h1 id="landing-title">抬起双手，<br />展开一座太阳系</h1>
+          <p class="landing-hero-summary">
+            打开摄像头，用双手在真实画面中召唤、操控并逐颗探索太阳系。无需下载、无需外设，一个浏览器就够。
+          </p>
+          <div class="landing-hero-actions">
+            <button
+              id="landing-experience-button"
+              class="landing-primary-action"
+              type="button"
+            >
+              <span>开启体验</span>
+              <span aria-hidden="true">↗</span>
+            </button>
+            <p
+              id="landing-gate-message"
+              class="landing-gate-message"
+              role="status"
+              tabindex="-1"
+              hidden
+            ></p>
+          </div>
+        </div>
+
+        <a class="landing-scroll-cue" href="#gestures">
+          <span class="landing-scroll-line" aria-hidden="true"></span>
+          <span>向下滑动 · 看手势玩法</span>
+        </a>
+        <p class="landing-hero-index" aria-hidden="true">01 / EXPERIENCE</p>
+      </header>
+
+      <main id="gestures" class="landing-gestures">
+        <div class="landing-section-heading" data-reveal>
+          <div>
+            <p class="landing-section-kicker">GESTURE MANUAL · 01—10</p>
+            <h2>手势玩法</h2>
+          </div>
+          <!-- 占位文案：用户后续可在此处替换手势区副标题。 -->
+          <p>全部用双手完成，按核心度从上到下。</p>
+        </div>
+
+        <section class="gesture-tier gesture-tier-core" aria-labelledby="gesture-core-title">
+          <div class="gesture-tier-heading" data-reveal>
+            <p>CORE LOOP</p>
+            <h3 id="gesture-core-title">核心 · 主线闭环</h3>
+            <span>01—04</span>
+          </div>
+          <div class="gesture-grid gesture-grid-core">
+            <article class="gesture-card gesture-card-featured" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">01</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>召唤太阳系</h4>
+              <p>双手先在镜头前靠拢合并，再向两侧缓缓拉开，太阳系在两手之间展开。</p>
+              <p class="gesture-warning"><strong>注意</strong>要「先合再拉」，单纯张开双手不算；拉多开就展多大，手停进度也停。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">02</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>激活一颗星球</h4>
+              <p>手悬停到某颗星球上，拇指食指轻轻一捏，它被选中（停公转、保留自转），其他照常。</p>
+              <p class="gesture-warning"><strong>注意</strong>一次只能选一颗；点月球=选「地月组」；改选别的，上一颗立刻恢复公转。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">03</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>进入星球特写</h4>
+              <p>选中后，用同一只手拇指食指连续捏放两次，镜头拉近进入该星球专属视角。</p>
+              <p class="gesture-warning"><strong>注意</strong>选中时那次捏合不算；两次要在约 4 秒内；一直捏着不放不算两次。</p>
+            </article>
+            <article class="gesture-card gesture-card-featured" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">04</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>送星球回轨道</h4>
+              <p>特写里让手从星球外向任意方向快速、干脆地甩离，星球会被引力捕获并飞回轨道。</p>
+              <p class="gesture-warning"><strong>注意</strong>动作要足够快且末段明确远离星球；普通张手、慢伸手或朝星球移动都不触发。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="gesture-tier" aria-labelledby="gesture-advanced-title">
+          <div class="gesture-tier-heading" data-reveal>
+            <p>ADVANCED CONTROL</p>
+            <h3 id="gesture-advanced-title">进阶 · 展开后操作</h3>
+            <span>05—08</span>
+          </div>
+          <div class="gesture-grid">
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">05</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>平移 / 缩放整个太阳系</h4>
+              <p>双手分别握住系统左右两侧控制点（停约半秒握住），移动双手整体搬动，改变间距缩放。</p>
+              <p class="gesture-warning"><strong>注意</strong>是「靠近控制点」握住，与手势形状无关；松开控制点不等于放下。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">06</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>让星球跟着手走</h4>
+              <p>特写里手进入星球周围感应区停约 1 秒，星球跟手移动；双手都进则由间距决定大小。</p>
+              <p class="gesture-warning"><strong>注意</strong>刚进特写要先离开感应区再进来才生效；单手带走时另一只手在区外出现不打断。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">07</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>把星球放下悬浮</h4>
+              <p>跟随时拇指碰一下任意指尖再松开（轻点），星球停在原地悬浮。</p>
+              <p class="gesture-warning"><strong>注意</strong>放下后所有手要先离开感应区才能重选；悬浮星球不会自己飞回。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">08</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>收起 / 摆放太阳系</h4>
+              <p>握控制点时双手一起握拳再张开可定位；双手向内合拢反向收起，完全合上回空场景。</p>
+              <p class="gesture-warning"><strong>注意</strong>握拳会先冻结位置，太久没动作会自动恢复跟随。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="gesture-tier gesture-tier-auxiliary" aria-labelledby="gesture-auxiliary-title">
+          <div class="gesture-tier-heading" data-reveal>
+            <p>EXTRA &amp; DEMO</p>
+            <h3 id="gesture-auxiliary-title">辅助 · 特殊与演示</h3>
+            <span>09—10</span>
+          </div>
+          <div class="gesture-grid gesture-grid-auxiliary">
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">09</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>地球 / 月球切换</h4>
+              <p>地月特写时画面出现卡片，食指尖长按约半秒切换地球/月球视角。</p>
+              <p class="gesture-warning"><strong>注意</strong>只有地月特写有此卡；切换后食指要离开卡片才能再触发；默认先看地球。</p>
+            </article>
+            <article class="gesture-card" data-reveal>
+              <div class="gesture-card-topline">
+                <span class="gesture-number">10</span>
+                <span class="gesture-signal" aria-hidden="true"></span>
+              </div>
+              <h4>显示手部骨架</h4>
+              <p>长按「显示手部模型」卡约半秒开 / 关骨架显示，方便观众看清识别。</p>
+              <p class="gesture-warning"><strong>注意</strong>纯辅助显示，不影响操作；切换后食指要离开卡片才能再切。</p>
+            </article>
+          </div>
+        </section>
+      </main>
+
+      <footer id="follow" class="landing-follow">
+        <div class="landing-follow-orbit" aria-hidden="true"></div>
+        <div class="landing-follow-card" data-reveal>
+          <figure class="landing-qr-frame">
+            <img
+              src="/assets/social/douyin-qr.png"
+              alt="@<douyin-handle>的抖音二维码"
+              width="1125"
+              height="1680"
+            />
+            <figcaption>扫码打开抖音 · 搜索页扫一扫</figcaption>
+          </figure>
+          <div class="landing-follow-copy">
+            <p class="landing-section-kicker">STAY IN ORBIT</p>
+            <!-- 占位文案：用户后续可在此处替换关注区标题与说明。 -->
+            <h2>关注我的抖音</h2>
+            <p class="landing-follow-summary">更多 AI 作品与幕后，欢迎来到我的频道。</p>
+            <dl class="landing-social-meta">
+              <div>
+                <dt>昵称</dt>
+                <dd>@<douyin-handle></dd>
+              </div>
+              <div>
+                <dt>抖音号</dt>
+                <dd><douyin-id></dd>
+              </div>
+              <div>
+                <dt>频道</dt>
+                <dd>欢迎来到我的 AI 频道 🎉</dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+        <div class="landing-footer-line">
+          <span>AR SOLAR SYSTEM · WEB CAMERA EXPERIENCE</span>
+          <a href="#landing-hero">回到顶部 ↑</a>
+        </div>
+      </footer>
+    </div>
+
+    <main id="app" class="app-shell" hidden>
+      <a
+        id="experience-return"
+        class="experience-return"
+        href="/"
+        aria-label="返回体验落地页"
+        hidden
+      >
+        <span aria-hidden="true">←</span> 返回
+      </a>
+      <section id="preview-stage" class="preview-stage" aria-label="摄像头预览">
+        <video
+          id="camera-video"
+          class="camera-video"
+          playsinline
+          muted
+          aria-label="摄像头画面"
+        ></video>
+
+        <div id="sun-room-glow" class="sun-room-glow" aria-hidden="true"></div>
+
+        <canvas
+          id="webgl-canvas"
+          class="webgl-canvas"
+          aria-label="AR 叠加层"
+        ></canvas>
+
+        <canvas
+          id="landmark-canvas"
+          class="landmark-canvas"
+          aria-label="调试关键点叠加层"
+          hidden
+        ></canvas>
+
+        <div id="preview-overlay" class="preview-overlay">
+          <section id="intro-panel" class="intro-panel" aria-live="polite">
+            <p class="eyebrow">Web Demo</p>
+            <h1>AR Solar System</h1>
+            <p id="status-text" class="status-text">
+              开启摄像头后，让双手保持在画面中清晰可见。
+            </p>
+            <p class="camera-privacy-note">
+              摄像头画面仅用于本地实时手势识别，不会上传、保存或分享。关闭页面或撤销浏览器摄像头权限后，识别即停止。
+            </p>
+            <button id="start-camera" class="primary-action" type="button">
+              开启摄像头
+            </button>
+          </section>
+
+          <section
+            id="loading-panel"
+            class="intro-panel loading-panel"
+            aria-live="polite"
+            aria-busy="false"
+            hidden
+          >
+            <p class="eyebrow">正在准备体验</p>
+            <h2 id="loading-stage" class="loading-stage">
+              正在加载手势识别
+            </h2>
+            <div class="loading-stage-list" aria-hidden="true">
+              <span class="loading-stage-complete">✓ 摄像头已就绪</span>
+              <span class="loading-stage-active">手势识别模型加载中</span>
+            </div>
+            <div
+              id="loading-progress"
+              class="loading-progress"
+              role="progressbar"
+              aria-label="手势识别模型加载进度"
+              aria-valuetext="正在加载"
+            >
+              <span class="loading-progress-bar"></span>
+            </div>
+            <p id="loading-detail" class="status-text loading-detail">
+              首次访问需要下载识别组件，请保持页面开启。
+            </p>
+          </section>
+
+          <p id="guidance" class="guidance" hidden>
+            双手在画面任意位置合拢，再向两侧拉开
+          </p>
+
+          <section
+            id="planet-focus-controls"
+            class="planet-focus-controls"
+            aria-label="星球视角控制"
+            hidden
+          >
+            <p
+              id="planet-focus-hud-tag"
+              class="planet-focus-hud-tag"
+              aria-hidden="true"
+            >
+              FOCUS CONTROL // EARTH
+            </p>
+
+            <button
+              id="planet-focus-switch-button"
+              class="planet-focus-action-card planet-focus-switch-button"
+              type="button"
+              aria-label="长按切换月球视角"
+              tabindex="-1"
+              hidden
+            >
+              <span class="planet-focus-action-card-corners" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-edge" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-fill" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-scan" aria-hidden="true"></span>
+              <span class="planet-focus-action-card-reactor" aria-hidden="true">
+                <span class="planet-focus-action-card-ring"></span>
+                <span class="planet-focus-action-card-ring-progress"></span>
+                <svg
+                  class="planet-focus-action-card-icon"
+                  viewBox="0 0 32 32"
+                  focusable="false"
+                >
+                  <path d="M21 17.2A7.4 7.4 0 1 1 13.2 7 5.9 5.9 0 0 0 21 17.2z"></path>
+                </svg>
+              </span>
+              <span class="planet-focus-action-card-copy">
+                <span
+                  id="planet-focus-switch-label"
+                  class="planet-focus-action-card-label"
+                >
+                  长按切换月球视角
+                </span>
+                <span
+                  id="planet-focus-switch-context"
+                  class="planet-focus-action-card-hint"
+                >
+                  VIEW · EARTH → MOON
+                </span>
+              </span>
+              <span class="planet-focus-action-card-readout" aria-hidden="true">
+                <span class="planet-focus-action-card-duration">T-0.5s</span>
+                <span class="planet-focus-action-card-state">
+                  <span class="planet-focus-action-card-state-ready">READY</span>
+                  <span class="planet-focus-action-card-state-charging">CHARGING</span>
+                </span>
+              </span>
+            </button>
+          </section>
+
+          <aside
+            id="interaction-summary"
+            class="interaction-summary"
+            aria-label="当前交互状态说明"
+            aria-live="polite"
+          ></aside>
+
+          <button
+            id="demo-hand-model-button"
+            class="planet-focus-action-card demo-hand-model-button"
+            type="button"
+            aria-label="长按显示手部模型"
+            aria-pressed="false"
+            tabindex="-1"
+            hidden
+          >
+            <span class="planet-focus-action-card-corners" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-edge" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-fill" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-scan" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-reactor" aria-hidden="true">
+              <span class="planet-focus-action-card-ring"></span>
+              <span class="planet-focus-action-card-ring-progress"></span>
+              <svg
+                class="planet-focus-action-card-icon"
+                viewBox="0 0 32 32"
+                focusable="false"
+              >
+                <path d="M16 24V9"></path>
+                <path d="m16 14-5-6"></path>
+                <path d="m16 14 5-7"></path>
+                <path d="m16 17-8-3"></path>
+                <path d="m16 18 8-2"></path>
+                <circle cx="16" cy="25" r="2.5"></circle>
+              </svg>
+            </span>
+            <span class="planet-focus-action-card-copy">
+              <span
+                id="demo-hand-model-label"
+                class="planet-focus-action-card-label"
+              >
+                长按显示手部模型
+              </span>
+              <span
+                id="demo-hand-model-context"
+                class="planet-focus-action-card-hint"
+              >
+                HAND SKELETON · OFF
+              </span>
+            </span>
+            <span class="planet-focus-action-card-readout" aria-hidden="true">
+              <span class="planet-focus-action-card-duration">T-0.5s</span>
+              <span class="planet-focus-action-card-state">
+                <span class="planet-focus-action-card-state-ready">READY</span>
+                <span class="planet-focus-action-card-state-charging">CHARGING</span>
+              </span>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <button
+        id="debug-toggle"
+        class="debug-toggle"
+        type="button"
+        aria-controls="debug-panel"
+        aria-pressed="false"
+      >
+        Debug
+      </button>
+
+      <div id="debug-recorder" class="debug-recorder" hidden>
+        <button id="debug-record-toggle" type="button">Record</button>
+        <button id="debug-record-export" type="button">Export JSON</button>
+        <button id="debug-record-clear" type="button">Clear</button>
+      </div>
+
+      <aside id="debug-panel" class="debug-panel" hidden></aside>
+    </main>
+
+  </body>
+</html>

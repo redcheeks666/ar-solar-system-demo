@@ -1,0 +1,9 @@
+{
+  "name": "ar-solar-system-demo",
+  "installCommand": "",
+  "buildCommand": "",
+  "assets": {
+    "directory": "./dist",
+    "notFoundStrategy": "singlePageApplication"
+  }
+}

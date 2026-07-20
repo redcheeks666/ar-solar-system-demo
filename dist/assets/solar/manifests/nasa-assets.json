@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "root": "素材/NASA素材",
+  "generatedAt": "2026-06-25",
+  "pipeline": "sources/download_and_process_assets.sh",
+  "assets": {
+    "earth": {
+      "day": {
+        "medium": "runtime/medium/earth/earth_day_2k.jpg",
+        "high": "runtime/high/earth/earth_day_4k.jpg",
+        "master": "masters/earth/earth_day_master.tif",
+        "source": "https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/",
+        "sourceFile": "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57752/land_shallow_topo_21600.tif",
+        "credit": "NASA Goddard Space Flight Center / NASA Earth Observatory; Reto Stockli and Robert Simmon",
+        "masterResolution": "21600x10800",
+        "runtimeResolution": {
+          "medium": "2048x1024",
+          "high": "4096x2048"
+        }
+      },
+      "clouds": {
+        "medium": "runtime/medium/earth/earth_clouds_2k.jpg",
+        "high": "runtime/high/earth/earth_clouds_4k.jpg",
+        "master": "masters/earth/earth_clouds_master.tif",
+        "source": "https://science.nasa.gov/earth/earth-observatory/the-blue-marble-true-color-global-imagery-at-1km-resolution/",
+        "sourceFile": "https://eoimages.gsfc.nasa.gov/images/imagerecords/57000/57747/cloud_combined_8192.tif",
+        "credit": "NASA Goddard Space Flight Center / NASA Earth Observatory; Reto Stockli and Robert Simmon",
+        "masterResolution": "8192x4096",
+        "runtimeResolution": {
+          "medium": "2048x1024",
+          "high": "4096x2048"
+        },
+        "notes": "Official cloud layer found here is opaque, not transparent. Runtime output is JPG."
+      },
+      "nightLights": {
+        "medium": "runtime/medium/earth/earth_night_lights_2k.jpg",
+        "high": "runtime/high/earth/earth_night_lights_4k.jpg",
+        "master": "masters/earth/earth_night_lights_master.jpg",
+        "source": "https://science.nasa.gov/earth/earth-observatory/earth-at-night/maps/",
+        "sourceFile": "https://assets.science.nasa.gov/content/dam/science/esd/eo/images/imagerecords/144000/144898/BlackMarble_2016_3km.jpg",
+        "credit": "NASA Earth Observatory / Black Marble",
+        "masterResolution": "13500x6750",
+        "runtimeResolution": {
+          "medium": "2048x1024",
+          "high": "4096x2048"
+        }
+      }
+    },
+    "planets": {
+      "mercury": {
+        "medium": "runtime/medium/planets/mercury_albedo_2k.jpg",
+        "high": "runtime/high/planets/mercury_albedo_4k.jpg",
+        "master": "masters/planets/mercury_albedo_master.jpg",
+        "source": "User-provided NASA source file in inbox/mercury_albedo_source.jpg",
+        "sourceFile": "inbox/mercury_albedo_source.jpg",
+        "credit": "NASA source asset provided by user",
+        "masterResolution": "8192x4096",
+        "runtimeResolution": {
+          "medium": "2048x1024",
+          "high": "4096x2048"
+        }
+      },
+      "venus": {
+        "medium": "runtime/medium/planets/venus_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/venus/venus_albedo_master.tif",
+        "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/Images%20and%20Textures/Venus",
+        "sourceFile": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Venus/Venus.tif",
+        "credit": "NASA/JPL/Solar System Simulator via NASA 3D Resources",
+        "masterResolution": "1440x720",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "2K runtime is standardized from a lower-resolution official master; no native 4K generated."
+      },
+      "moon": {
+        "medium": "runtime/medium/planets/moon_albedo_2k.jpg",
+        "high": "runtime/high/planets/moon_albedo_4k.jpg",
+        "master": "masters/moon/moon_albedo_master.tif",
+        "source": "https://svs.gsfc.nasa.gov/4720/",
+        "sourceFile": "https://svs.gsfc.nasa.gov/vis/a000000/a004700/a004720/lroc_color_16bit_srgb_8k.tif",
+        "credit": "NASA Scientific Visualization Studio; LRO/LROC color data; visualizer Ernie Wright",
+        "masterResolution": "8192x4096",
+        "runtimeResolution": {
+          "medium": "2048x1024",
+          "high": "4096x2048"
+        }
+      },
+      "mars": {
+        "medium": "runtime/medium/planets/mars_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/mars/mars_albedo_master.tif",
+        "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/Images%20and%20Textures/Mars",
+        "sourceFile": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Mars/Mars.tif",
+        "credit": "NASA/JPL/Solar System Simulator via NASA 3D Resources",
+        "masterResolution": "1440x720",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "2K runtime is standardized from a lower-resolution official master; no native 4K generated."
+      },
+      "jupiter": {
+        "medium": "runtime/medium/planets/jupiter_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/jupiter/jupiter_albedo_master.tif",
+        "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/Images%20and%20Textures/Jupiter",
+        "sourceFile": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Jupiter/Jupiter.tif",
+        "credit": "NASA/JPL/Solar System Simulator via NASA 3D Resources",
+        "masterResolution": "720x360",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "2K runtime is standardized from a lower-resolution official master; no native 4K generated."
+      },
+      "saturn": {
+        "medium": "runtime/medium/planets/saturn_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/saturn/saturn_albedo_master.tif",
+        "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/Images%20and%20Textures/Saturn",
+        "sourceFile": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Saturn/Saturn.tif",
+        "credit": "NASA/JPL/Solar System Simulator via NASA 3D Resources",
+        "masterResolution": "720x360",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "2K runtime is standardized from a lower-resolution official master; no native 4K generated."
+      },
+      "uranus": {
+        "medium": "runtime/medium/planets/uranus_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/planets/uranus_albedo_master.jpg",
+        "source": "User-provided NASA source file in inbox/uranus_albedo_source.jpg",
+        "sourceFile": "inbox/uranus_albedo_source.jpg",
+        "credit": "NASA source asset provided by user",
+        "masterResolution": "2048x1024",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "Source file is 2048x1024, so no 4K runtime was generated to avoid upscaling."
+      },
+      "neptune": {
+        "medium": "runtime/medium/planets/neptune_albedo_2k.jpg",
+        "high": null,
+        "master": "masters/neptune/neptune_albedo_master.tif",
+        "source": "https://github.com/nasa/NASA-3D-Resources/tree/master/Images%20and%20Textures/Neptune",
+        "sourceFile": "https://raw.githubusercontent.com/nasa/NASA-3D-Resources/master/Images%20and%20Textures/Neptune/Neptune.tif",
+        "credit": "NASA/JPL/Solar System Simulator via NASA 3D Resources",
+        "masterResolution": "720x360",
+        "runtimeResolution": {
+          "medium": "2048x1024"
+        },
+        "notes": "2K runtime is standardized from a lower-resolution official master; no native 4K generated."
+      }
+    },
+    "rings": {
+      "saturn": {
+        "medium": "runtime/medium/rings/saturn_ring_2k.png",
+        "high": "runtime/high/rings/saturn_ring_4k.png",
+        "master": "masters/rings/saturn_ring_master.png",
+        "source": "User-provided NASA source file in inbox/saturn_ring_source.png",
+        "sourceFile": "inbox/saturn_ring_source.png",
+        "credit": "NASA source asset provided by user",
+        "masterResolution": "8192x500",
+        "runtimeResolution": {
+          "medium": "2048x125",
+          "high": "4096x250"
+        },
+        "notes": "Runtime ring textures are downsampled by width and preserve the source strip aspect ratio."
+      }
+    },
+    "starfield": {
+      "medium": "runtime/medium/starfield/starfield_deep_star_map_4k.jpg",
+      "high": "runtime/high/starfield/starfield_deep_star_map_8k.jpg",
+      "master": "masters/starfield/starfield_deep_star_map_master.exr",
+      "source": "https://svs.gsfc.nasa.gov/4851/",
+      "sourceFile": "https://svs.gsfc.nasa.gov/vis/a000000/a004800/a004851/starmap_2020_8k.exr",
+      "credit": "NASA/Goddard Space Flight Center Scientific Visualization Studio; Gaia DR2 ESA/Gaia/DPAC",
+      "masterResolution": "8192x4096",
+      "runtimeResolution": {
+        "medium": "4096x2048",
+        "high": "8192x4096"
+      },
+      "notes": "16K, 32K, and 64K files were intentionally not downloaded. Runtime JPGs are tone-mapped from the official EXR master with ffmpeg so stars are visible in browser materials; the EXR master is unchanged."
+    }
+  },
+  "missingAssets": {
+    "earthBumpNormal": "No dedicated official NASA Earth bump/normal texture confirmed; none generated."
+  }
+}
