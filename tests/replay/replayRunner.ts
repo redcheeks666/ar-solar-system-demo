@@ -310,7 +310,7 @@ export function replayPlanetFocusController(
   return results;
 }
 
-/** Replays the passive-focus upper-corner throw detector from recorded frames. */
+/** Replays the passive-focus fast-away throw detector from recorded frames. */
 export function replayPlanetReturnWave(
   recording: GestureDebugExport,
 ): PlanetReturnWaveReplayFrameResult[] {

@@ -229,7 +229,7 @@ export class CodePlaceholderSolarSystem {
   private readonly riftBackdrop = new UniverseRiftBackdrop();
   private readonly particleField = new SolarParticleField(CELESTIAL_BODY_DEFINITIONS);
   private readonly asteroidBelt = new AsteroidBelt();
-  private readonly cometFlyby = new CometFlyby();
+  private readonly cometFlyby: CometFlyby;
   private readonly tearArcs = new TearArcField();
   private sunLight: PointLight | null = null;
   private readonly endpointGeometries: BufferGeometry[] = [];
@@ -241,6 +241,7 @@ export class CodePlaceholderSolarSystem {
   private focusedBody: InteractiveCelestialBodyId | null = null;
 
   constructor() {
+    this.cometFlyby = new CometFlyby();
     this.group.name = 'code-placeholder-solar-system';
     this.group.visible = false;
     this.group.rotation.set(

@@ -150,6 +150,8 @@ function debugSnapshot(): DebugSnapshot {
       displacement: 0.18,
       medianSpeed: 1.1,
       coherence: 0.96,
+      cornerDirection: 'lower-right',
+      directionAngleDeg: 32,
       openHandScore: 0.68,
       palmScaleRatio: 1.08,
       score: 0.9,
@@ -211,6 +213,8 @@ describe('GestureDebugRecorder', () => {
         displacement: 0.18,
         medianSpeed: 1.1,
         coherence: 0.96,
+        cornerDirection: 'lower-right',
+        directionAngleDeg: 32,
       },
       replay: {
         solar: {

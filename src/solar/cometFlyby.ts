@@ -43,7 +43,6 @@ const COMET_OPENING_START = 0.35;
 const COMET_OPENING_FULL = 0.8;
 const HEAD_PEAK_OPACITY = 0.92;
 const TAIL_PEAK_OPACITY = 0.75;
-
 interface CometState {
   readonly visibleRequested: boolean;
   readonly openingProgress: number;
@@ -70,7 +69,6 @@ export class CometFlyby {
   private baseOpacity = 0;
   private dimTarget = 1;
   private dimCurrent = 1;
-
   constructor() {
     this.root.name = 'comet-flyby-root';
     this.root.visible = false;

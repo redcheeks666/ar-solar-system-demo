@@ -56,10 +56,19 @@ if (!hasValidModel) {
     writeFileSync(modelTargetPath, Buffer.from(await response.arrayBuffer()));
     console.log('[mediapipe-sync] hand_landmarker.task 下载完成。');
   } catch (error) {
-    // Keep dev/build usable; hand tracking just won't initialize until the
-    // model file exists.
-    console.warn(
+    console.error(
       `[mediapipe-sync] 手部模型下载失败(${error})。请在有网络时重跑,或手动下载\n  ${HAND_LANDMARKER_MODEL_URL}\n到 ${modelTargetPath}`,
     );
+    process.exit(1);
   }
+}
+
+if (
+  !existsSync(modelTargetPath) ||
+  statSync(modelTargetPath).size < MIN_VALID_MODEL_BYTES
+) {
+  console.error(
+    `[mediapipe-sync] 手部模型缺失或不完整，构建已停止：${modelTargetPath}`,
+  );
+  process.exit(1);
 }

@@ -94,6 +94,9 @@ describe('demo-mode operation HUD', () => {
     expect(STYLES).toMatch(
       /\.demo-hand-model-button\s*\{[\s\S]*?right: var\(--demo-hud-inline-inset\);[\s\S]*?width: var\(--demo-hud-card-width\)/,
     );
+    expect(STYLES).toMatch(
+      /\.planet-focus-return-button\s*\{[\s\S]*?right: var\(--demo-hud-inline-inset\);[\s\S]*?width: var\(--demo-hud-card-width\)/,
+    );
   });
 });
 

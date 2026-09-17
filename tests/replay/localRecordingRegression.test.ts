@@ -21,6 +21,138 @@ const doubleCloseRetryRecordingPath =
   process.env.GESTURE_REPLAY_DOUBLE_CLOSE_RETRY;
 const activationWristAnchorRecordingPath =
   process.env.GESTURE_REPLAY_ACTIVATION_WRIST_ANCHOR;
+const returnWaveDropoutRecordingPath =
+  process.env.GESTURE_REPLAY_RETURN_WAVE_DROPOUT;
+const anyDirectionReturnWaveRecordingPath =
+  process.env.GESTURE_REPLAY_RETURN_WAVE_ANY_DIRECTION;
+
+if (!anyDirectionReturnWaveRecordingPath) {
+  describe('local any-direction return-wave regression', () => {
+    it('stays opt-in when the diagnosed recording path is not supplied', () => {
+      expect(anyDirectionReturnWaveRecordingPath).toBeUndefined();
+    });
+  });
+} else {
+  describe('local any-direction return-wave regression', () => {
+    it('keeps the original success and accepts both diagnosed downward-outward attempts', () => {
+      const recording = parseGestureDebugExport(
+        readFileSync(anyDirectionReturnWaveRecordingPath, 'utf8'),
+      );
+      const attemptWindows = [
+        {
+          label: 'original-success',
+          sliceStart: 140,
+          sliceEnd: 151,
+          motionStart: 149,
+          motionEnd: 151,
+        },
+        {
+          label: 'downward-outward-a',
+          sliceStart: 379,
+          sliceEnd: 390,
+          motionStart: 386,
+          motionEnd: 390,
+        },
+        {
+          label: 'downward-outward-b',
+          sliceStart: 536,
+          sliceEnd: 546,
+          motionStart: 538,
+          motionEnd: 546,
+        },
+      ];
+
+      attemptWindows.forEach((window) => {
+        const frames = recording.frames.slice(
+          window.sliceStart,
+          window.sliceEnd + 1,
+        );
+        const replay = replayPlanetReturnWave({
+          ...recording,
+          frames,
+          frameCount: frames.length,
+        });
+        const triggered = replay.find((frame) => frame.triggered);
+        const recordingIndex = triggered
+          ? recording.frames.findIndex((frame) => frame.t === triggered.t)
+          : -1;
+
+        console.info(
+          JSON.stringify({
+            scenario: window.label,
+            recordingIndex,
+            reason: triggered?.snapshot.reason ?? null,
+            peakSpeed: triggered?.snapshot.peakSpeed ?? null,
+            displacement: triggered?.snapshot.displacement ?? null,
+            directionAngleDeg:
+              triggered?.snapshot.directionAngleDeg ?? null,
+            bodyDistanceTrend:
+              triggered?.snapshot.bodyDistanceTrend ?? null,
+          }),
+        );
+        expect(triggered).toBeDefined();
+        expect(recordingIndex).toBeGreaterThanOrEqual(window.motionStart);
+        expect(recordingIndex).toBeLessThanOrEqual(window.motionEnd);
+      });
+    });
+  });
+}
+
+if (!returnWaveDropoutRecordingPath) {
+  describe('local fast-return dropout regression', () => {
+    it('stays opt-in when the diagnosed recording path is not supplied', () => {
+      expect(returnWaveDropoutRecordingPath).toBeUndefined();
+    });
+  });
+} else {
+  describe('local fast-return dropout regression', () => {
+    it('preserves and completes one of the diagnosed high-impulse attempts', () => {
+      const recording = parseGestureDebugExport(
+        readFileSync(returnWaveDropoutRecordingPath, 'utf8'),
+      );
+      const attemptWindows = [
+        { sliceStart: 232, sliceEnd: 251, motionStart: 242, motionEnd: 248 },
+        { sliceStart: 624, sliceEnd: 643, motionStart: 633, motionEnd: 641 },
+      ];
+      const triggers = attemptWindows.flatMap((window) => {
+        const frames = recording.frames.slice(
+          window.sliceStart,
+          window.sliceEnd + 1,
+        );
+        const replay = replayPlanetReturnWave({
+          ...recording,
+          frames,
+          frameCount: frames.length,
+        });
+        const triggered = replay.find((frame) => frame.triggered);
+        if (!triggered) {
+          return [];
+        }
+        const recordingIndex = recording.frames.findIndex(
+          (frame) => frame.t === triggered.t,
+        );
+        return recordingIndex >= window.motionStart &&
+          recordingIndex <= window.motionEnd
+          ? [{ recordingIndex, triggered }]
+          : [];
+      });
+
+      console.info(
+        JSON.stringify({
+          scenario: 'fast-return-dropout',
+          triggers: triggers.map(({ recordingIndex, triggered }) => ({
+            recordingIndex,
+            reason: triggered.snapshot.reason,
+            stableFrames: triggered.snapshot.stableFrames,
+            peakSpeed: triggered.snapshot.peakSpeed,
+            displacement: triggered.snapshot.displacement,
+          })),
+        }),
+      );
+      expect(triggers.length).toBeGreaterThan(0);
+    });
+  });
+}
 
 if (!activationWristAnchorRecordingPath) {
   describe('local activation wrist-anchor regression', () => {

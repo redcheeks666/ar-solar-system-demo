@@ -284,7 +284,7 @@ export class DebugOverlay {
       ],
       [
         'Return wave direction',
-        `${snapshot.planetReturnWave.cornerDirection ?? 'none'} x=${formatNullable(snapshot.planetReturnWave.horizontalDisplacement)} up=${formatNullable(snapshot.planetReturnWave.upwardDisplacement)}`,
+        `${snapshot.planetReturnWave.cornerDirection ?? 'none'} angle=${formatNullable(snapshot.planetReturnWave.directionAngleDeg ?? null)}deg x=${formatNullable(snapshot.planetReturnWave.horizontalDisplacement)} up=${formatNullable(snapshot.planetReturnWave.upwardDisplacement)}`,
       ],
       [
         'Return wave/body',

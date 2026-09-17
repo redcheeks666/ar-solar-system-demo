@@ -26,7 +26,10 @@ export function createFocusedBodyReturnMotionFromWave(
   }
 
   const horizontalSign =
-    snapshot.cornerDirection === 'upper-left' ? -1 : 1;
+    snapshot.cornerDirection === 'left' ||
+    snapshot.cornerDirection.endsWith('-left')
+      ? -1
+      : 1;
   const x = horizontalSign * snapshot.horizontalDisplacement;
   // The detector exposes a positive upward component even though display-space
   // y grows downward, so it maps directly to positive world y.

@@ -302,6 +302,14 @@ button {
   font-size: 1rem;
 }
 
+.camera-privacy-note {
+  max-width: 36rem;
+  margin: -6px 0 16px;
+  color: rgba(246, 247, 249, 0.66);
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
 .primary-action,
 .debug-toggle {
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -430,7 +438,8 @@ button {
 }
 
 .planet-focus-switch-button,
-.demo-hand-model-button {
+.demo-hand-model-button,
+.planet-focus-return-button {
   --hud-accent: 127, 216, 255;
   --hud-accent-alt: 255, 212, 124;
   grid-template-areas:
@@ -444,20 +453,23 @@ button {
 }
 
 .planet-focus-switch-button .planet-focus-action-card-reactor,
-.demo-hand-model-button .planet-focus-action-card-reactor {
+.demo-hand-model-button .planet-focus-action-card-reactor,
+.planet-focus-return-button .planet-focus-action-card-reactor {
   grid-area: reactor;
   width: 42px;
   height: 42px;
 }
 
 .planet-focus-switch-button .planet-focus-action-card-copy,
-.demo-hand-model-button .planet-focus-action-card-copy {
+.demo-hand-model-button .planet-focus-action-card-copy,
+.planet-focus-return-button .planet-focus-action-card-copy {
   grid-area: copy;
   align-self: end;
 }
 
 .planet-focus-switch-button .planet-focus-action-card-readout,
-.demo-hand-model-button .planet-focus-action-card-readout {
+.demo-hand-model-button .planet-focus-action-card-readout,
+.planet-focus-return-button .planet-focus-action-card-readout {
   grid-area: readout;
   display: flex;
   align-items: center;
@@ -467,7 +479,8 @@ button {
 }
 
 .planet-focus-switch-button .planet-focus-action-card-state,
-.demo-hand-model-button .planet-focus-action-card-state {
+.demo-hand-model-button .planet-focus-action-card-state,
+.planet-focus-return-button .planet-focus-action-card-state {
   display: inline-block;
   margin: 0;
 }
@@ -476,6 +489,14 @@ button {
   position: absolute;
   z-index: 4;
   top: 156px;
+  right: var(--demo-hud-inline-inset);
+  width: var(--demo-hud-card-width);
+}
+
+.planet-focus-return-button {
+  position: absolute;
+  z-index: 4;
+  top: 260px;
   right: var(--demo-hud-inline-inset);
   width: var(--demo-hud-card-width);
 }
@@ -1028,6 +1049,11 @@ button {
   .app-shell:has(.planet-focus-controls:not([hidden])) .demo-hand-model-button {
     top: 354px;
   }
+
+  .app-shell:has(.planet-focus-controls:not([hidden]))
+    .planet-focus-return-button {
+    top: 458px;
+  }
 }
 
 @media (max-width: 520px) {
@@ -1080,5 +1106,10 @@ button {
   .app-shell:has(.planet-focus-controls:not([hidden]))
     .demo-hand-model-button {
     top: 294px;
+  }
+
+  .app-shell:has(.planet-focus-controls:not([hidden]))
+    .planet-focus-return-button {
+    top: 398px;
   }
 }

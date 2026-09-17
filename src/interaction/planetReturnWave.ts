@@ -1,3 +1,8 @@
+/**
+ * Return-wave constants model separate physical properties: visible motion, detector sampling,
+ * spatial hand identity, body-relative clearance, and hand-shape diagnostics. Identity search is
+ * capped to a fraction of the preview short side and must never be interpreted as a trigger gate.
+ */
 import {
   mapNormalizedToStagePixel,
   type PreviewLayout,
@@ -46,6 +51,9 @@ interface SweepCandidate {
   startPoint: StagePoint;
   lastPoint: StagePoint;
   pathLength: number;
+  lastStepDisplacement: number;
+  lastStepSpeed: number;
+  lastStepVector: StagePoint;
   stableFrames: number;
   peakSpeed: number;
   openScoreTotal: number;
@@ -54,7 +62,7 @@ interface SweepCandidate {
   palmScaleMax: number;
   startDistanceToBody: number;
   endDistanceToBody: number;
-  recentBodyDistances: number[];
+  bodyPoint: StagePoint;
   bodyHitRadius: number;
 }
 
@@ -88,9 +96,8 @@ interface CandidateMetrics {
   coherence: number;
   horizontalDisplacement: number;
   upwardDisplacement: number;
-  horizontalDirectionRatio: number;
-  upwardDirectionRatio: number;
   cornerDirection: PlanetReturnWaveCornerDirection | null;
+  directionAngleDeg: number;
   openHandScore: number;
   palmScaleRatio: number;
   startDistanceToBody: number;
@@ -102,29 +109,32 @@ interface CandidateMetrics {
 
 type EligibleFocusState = 'PlanetFocusView' | 'PlanetFocusFloating';
 
-// Measures post-place-down inertia: only PlanetFocusFloating waits before return detection.
+// Time property: filters the short residual release motion after a PinchTap place-down.
 export const RETURN_WAVE_ARM_DELAY_MS = 250;
-// Measures multi-frame evidence: a decision needs at least three spatially continuous observations.
+// Sampling property: an ordinary throw needs three spatially continuous observations.
 export const RETURN_WAVE_MIN_EVIDENCE_FRAMES = 3;
-// Measures throw impulse: ordinary reaches stay well below 3 preview-short-sides per second.
+// Motion property: ordinary reaches stay well below this throw-impulse speed.
 export const RETURN_WAVE_MIN_PEAK_SPEED = 3;
-// Measures throw travel: 0.35 short-side is a deliberate arm sweep rather than a partial reach.
+// Sparse-sampling property: a two-observation terminal impulse must be at least twice the
+// ordinary throw floor, so detector dropout cannot turn a slow reach into a return.
+export const RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED = 6;
+// Travel property: this much net motion is a deliberate arm sweep rather than a partial reach.
 export const RETURN_WAVE_MIN_DISPLACEMENT = 0.35;
-// Measures diagonal intent: both upward and horizontal components must contribute meaningfully.
-export const RETURN_WAVE_MIN_CORNER_COMPONENT_RATIO = 0.32;
-// Measures separation from the body: the throw must start beyond 1.2 times its hit radius.
+// Body-relative property: a throw starts beyond the body's immediate interaction clearance.
 export const RETURN_WAVE_START_CLEARANCE = 1.2;
-// Measures hand-shape sanity only: it rejects a clear pinch/fist without ranking valid throws.
-export const RETURN_WAVE_MIN_OPEN_HAND_SCORE = 0.5;
-// Measures tolerated detector dropout: about three to four camera frames may be bridged.
+// Tracking-time property: about three to four 30fps detector frames may be bridged.
 export const RETURN_WAVE_TRACKING_GAP_HOLD_MS = 150;
-// Measures spatial identity uncertainty before elapsed-time motion allowance is added.
+// Tracking-space property: base identity uncertainty before motion allowance is added.
 export const RETURN_WAVE_REACQUIRE_BASE_RADIUS = 0.15;
-// Measures the largest physically plausible hand travel used by adaptive gap reacquisition.
-export const RETURN_WAVE_MAX_PLAUSIBLE_HAND_SPEED = 12;
-// Measures identity scale stability: reciprocal bounds tolerate roughly 0.60-1.67 palm scale.
+// Tracking-motion property: one preview short side per 30fps frame is a deliberately wide
+// human fast-sweep envelope. It preserves the strongest samples; it is not a trigger threshold.
+export const RETURN_WAVE_MAX_PLAUSIBLE_HAND_SPEED = 30;
+// Tracking-space property: even across the full gap hold, one hand cannot plausibly traverse
+// more than most of the preview short side without losing reliable spatial identity.
+export const RETURN_WAVE_MAX_REACQUIRE_RADIUS = 0.8;
+// Identity property: reciprocal bounds tolerate roughly 0.60-1.67 palm scale.
 export const RETURN_WAVE_REACQUIRE_MAX_PALM_SCALE_RATIO = 1.67;
-// Measures reliable candidate origin: only the start, never the endpoint, needs an 8% inset.
+// Origin-quality property: only a candidate start, never its endpoint, needs this inset.
 export const RETURN_WAVE_START_EDGE_INSET = 0.08;
 
 export const EMPTY_PLANET_RETURN_WAVE_SNAPSHOT: PlanetReturnWaveSnapshot = {
@@ -141,6 +151,7 @@ export const EMPTY_PLANET_RETURN_WAVE_SNAPSHOT: PlanetReturnWaveSnapshot = {
   horizontalDisplacement: null,
   upwardDisplacement: null,
   cornerDirection: null,
+  directionAngleDeg: null,
   openHandScore: null,
   palmScaleRatio: null,
   triggerMode: null,
@@ -155,10 +166,10 @@ export const EMPTY_PLANET_RETURN_WAVE_SNAPSHOT: PlanetReturnWaveSnapshot = {
 };
 
 /**
- * Detects one directional open-hand throw toward either upper display corner in the passive
- * focus states. Peak speed captures the throw impulse, while body-relative start/end geometry
- * separates a return throw from reaching in to grab the focused body. Tracking gaps remain part
- * of the same trajectory when adaptive spatial, palm-scale, and direction checks agree.
+ * Detects one coherent fast throw away from the focused body in either passive focus state.
+ * Peak speed captures the throw impulse, while body-relative start/end geometry separates a
+ * return throw from reaching in to grab the focused body. Tracking gaps remain part of the same
+ * trajectory only when capped spatial, palm-scale, and direction checks agree.
  */
 export class PlanetReturnWaveController {
   private activeState: EligibleFocusState | null = null;
@@ -229,6 +240,37 @@ export class PlanetReturnWaveController {
       return { snapshot, triggered: false, handKey: null };
     }
 
+    const dropoutCompletion = getBestDropoutCompletionCandidate(
+      this.tracks,
+      input.timestamp,
+    );
+    if (dropoutCompletion?.candidate) {
+      const metrics = computeDropoutCandidateMetrics(
+        dropoutCompletion,
+        dropoutCompletion.candidate,
+        input.timestamp,
+      );
+      const failureReason = getDropoutCompletionFailureReason(
+        dropoutCompletion.candidate,
+        metrics,
+      );
+      if (failureReason === null) {
+        const snapshot = createCandidateSnapshot(
+          dropoutCompletion,
+          metrics,
+          true,
+          'fast-away-from-body-throw-ended-on-tracking-loss',
+        );
+        this.snapshot = snapshot;
+        this.triggeredLatch = true;
+        return {
+          snapshot,
+          triggered: true,
+          handKey: dropoutCompletion.handKey,
+        };
+      }
+    }
+
     const active = getBestCandidate(this.tracks, input.timestamp);
     if (!active?.candidate) {
       const held = getBestCandidate(this.tracks);
@@ -254,7 +296,7 @@ export class PlanetReturnWaveController {
         reason:
           input.tracking.hands.hands.length === 0
             ? 'waiting-for-hand'
-            : (observed?.lastReason ?? 'waiting-for-fast-upper-corner-throw'),
+            : (observed?.lastReason ?? 'waiting-for-fast-away-throw'),
       };
       this.snapshot = snapshot;
       return { snapshot, triggered: false, handKey: null };
@@ -267,7 +309,7 @@ export class PlanetReturnWaveController {
       active,
       metrics,
       triggered,
-      triggered ? 'fast-upper-corner-throw-return' : failureReason,
+      triggered ? 'fast-away-from-body-throw-return' : failureReason,
     );
     this.snapshot = snapshot;
     if (triggered) {
@@ -364,7 +406,7 @@ export class PlanetReturnWaveController {
         missingSince: null,
         candidate: null,
         strokeBlocked: false,
-        lastReason: 'waiting-for-fast-upper-corner-throw',
+        lastReason: 'waiting-for-fast-away-throw',
       };
       this.nextTrackId += 1;
       this.tracks.push(track);
@@ -414,11 +456,11 @@ export class PlanetReturnWaveController {
         : 'focused-body-target-unavailable';
     } else {
       const motionOnsetSpeed = RETURN_WAVE_MIN_PEAK_SPEED / 3;
-      if (
+      const directionReversed =
         track.candidate &&
         speed >= motionOnsetSpeed &&
-        hasDirectionReversed(track.candidate, sample.point)
-      ) {
+        hasDirectionReversed(track.candidate, sample.point);
+      if (directionReversed) {
         track.candidate = null;
         track.strokeBlocked = false;
         track.lastReason = 'sweep-direction-reversed';
@@ -431,6 +473,7 @@ export class PlanetReturnWaveController {
       if (
         !track.candidate &&
         !track.strokeBlocked &&
+        !directionReversed &&
         speed >= motionOnsetSpeed
       ) {
         const startDistanceToBody = stageDistance(
@@ -438,7 +481,6 @@ export class PlanetReturnWaveController {
           bodyTarget.point,
         );
         if (!isSafeCandidateStart(track.lastCenter)) {
-          track.strokeBlocked = true;
           track.lastReason = 'sweep-start-too-close-to-frame-edge';
         } else if (
           startDistanceToBody <=
@@ -460,6 +502,7 @@ export class PlanetReturnWaveController {
             palmScale: sample.hand.palmScale,
             startDistanceToBody,
             endDistanceToBody: stageDistance(sample.point, bodyTarget.point),
+            bodyPoint: bodyTarget.point,
             bodyHitRadius: bodyTarget.hitRadius,
           });
           track.lastReason = 'collecting-motion-evidence';
@@ -476,7 +519,7 @@ export class PlanetReturnWaveController {
           endDistanceToBody: stageDistance(sample.point, bodyTarget.point),
         });
       } else if (speed < motionOnsetSpeed) {
-        track.lastReason = 'waiting-for-fast-upper-corner-throw';
+        track.lastReason = 'waiting-for-fast-away-throw';
       }
     }
 
@@ -500,6 +543,8 @@ function createSpatialMatches(
   const matches: Array<{
     track: WaveHandTrack;
     sampleIndex: number;
+    identityRank: number;
+    continuityRank: number;
     score: number;
   }> = [];
 
@@ -511,18 +556,29 @@ function createSpatialMatches(
     samples.forEach((sample, sampleIndex) => {
       const elapsedSeconds = Math.max(0, timestamp - track.lastAt) / 1000;
       const distance = stageDistance(track.lastPoint, sample.point);
-      const reacquireRadius =
-        RETURN_WAVE_REACQUIRE_BASE_RADIUS +
-        RETURN_WAVE_MAX_PLAUSIBLE_HAND_SPEED * elapsedSeconds;
+      const reacquireRadius = getReturnWaveReacquireRadius(
+        timestamp - track.lastAt,
+      );
       if (distance > reacquireRadius) {
         return;
       }
 
-      if (track.missingSince !== null) {
-        if (!hasStablePalmScale(track.lastPalmScale, sample.hand.palmScale)) {
+      const stepSpeed =
+        elapsedSeconds > 0 ? distance / elapsedSeconds : 0;
+      const palmScaleStable = hasStablePalmScale(
+        track.lastPalmScale,
+        sample.hand.palmScale,
+      );
+      const directionContinuity = getDirectionContinuity(track, sample.point);
+      const needsIdentityValidation =
+        track.missingSince !== null ||
+        distance >= RETURN_WAVE_MIN_DISPLACEMENT ||
+        stepSpeed >= RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED;
+      if (needsIdentityValidation) {
+        if (!palmScaleStable) {
           return;
         }
-        if (!hasConsistentGapDirection(track, sample.point)) {
+        if (directionContinuity === 'inconsistent') {
           return;
         }
       }
@@ -537,13 +593,35 @@ function createSpatialMatches(
       matches.push({
         track,
         sampleIndex,
+        identityRank:
+          palmScaleStable && directionContinuity === 'consistent'
+            ? 0
+            : palmScaleStable && directionContinuity === 'unknown'
+              ? 1
+              : 2,
+        continuityRank: track.candidate ? 0 : 1,
         score: stageDistance(predictedPoint, sample.point),
       });
     });
   });
 
-  matches.sort((left, right) => left.score - right.score);
+  matches.sort(
+    (left, right) =>
+      left.identityRank - right.identityRank ||
+      left.continuityRank - right.continuityRank ||
+      left.score - right.score,
+  );
   return matches;
+}
+
+/** Returns the capped short-side-normalized identity search radius for an elapsed gap. */
+export function getReturnWaveReacquireRadius(elapsedMs: number): number {
+  return Math.min(
+    RETURN_WAVE_MAX_REACQUIRE_RADIUS,
+    RETURN_WAVE_REACQUIRE_BASE_RADIUS +
+      RETURN_WAVE_MAX_PLAUSIBLE_HAND_SPEED *
+        (Math.max(0, elapsedMs) / 1000),
+  );
 }
 
 function createSweepCandidate(input: {
@@ -559,6 +637,7 @@ function createSweepCandidate(input: {
   palmScale: number;
   startDistanceToBody: number;
   endDistanceToBody: number;
+  bodyPoint: StagePoint;
   bodyHitRadius: number;
 }): SweepCandidate {
   return {
@@ -567,6 +646,12 @@ function createSweepCandidate(input: {
     startPoint: input.startPoint,
     lastPoint: input.point,
     pathLength: input.stepLength,
+    lastStepDisplacement: input.stepLength,
+    lastStepSpeed: input.speed,
+    lastStepVector: {
+      x: input.point.x - input.startPoint.x,
+      y: input.point.y - input.startPoint.y,
+    },
     stableFrames: 2,
     peakSpeed: input.speed,
     openScoreTotal: input.previousOpenScore + input.openScore,
@@ -575,10 +660,7 @@ function createSweepCandidate(input: {
     palmScaleMax: Math.max(input.previousPalmScale, input.palmScale),
     startDistanceToBody: input.startDistanceToBody,
     endDistanceToBody: input.endDistanceToBody,
-    recentBodyDistances: [
-      input.startDistanceToBody,
-      input.endDistanceToBody,
-    ],
+    bodyPoint: input.bodyPoint,
     bodyHitRadius: input.bodyHitRadius,
   };
 }
@@ -593,9 +675,16 @@ function appendCandidateSample(input: {
   palmScale: number;
   endDistanceToBody: number;
 }): void {
+  const previousPoint = input.candidate.lastPoint;
   input.candidate.lastPoint = input.point;
   input.candidate.lastAt = input.timestamp;
   input.candidate.pathLength += input.stepLength;
+  input.candidate.lastStepDisplacement = input.stepLength;
+  input.candidate.lastStepSpeed = input.speed;
+  input.candidate.lastStepVector = {
+    x: input.point.x - previousPoint.x,
+    y: input.point.y - previousPoint.y,
+  };
   input.candidate.stableFrames += 1;
   input.candidate.peakSpeed = Math.max(
     input.candidate.peakSpeed,
@@ -612,13 +701,6 @@ function appendCandidateSample(input: {
     input.palmScale,
   );
   input.candidate.endDistanceToBody = input.endDistanceToBody;
-  input.candidate.recentBodyDistances.push(input.endDistanceToBody);
-  if (
-    input.candidate.recentBodyDistances.length >
-    RETURN_WAVE_MIN_EVIDENCE_FRAMES
-  ) {
-    input.candidate.recentBodyDistances.shift();
-  }
 }
 
 function computeCandidateMetrics(candidate: SweepCandidate): CandidateMetrics {
@@ -631,10 +713,8 @@ function computeCandidateMetrics(candidate: SweepCandidate): CandidateMetrics {
     candidate.pathLength > 0 ? displacement / candidate.pathLength : 0;
   const horizontalDisplacement = Math.abs(deltaX);
   const upwardDisplacement = Math.max(0, -deltaY);
-  const horizontalDirectionRatio =
-    displacement > 0 ? horizontalDisplacement / displacement : 0;
-  const upwardDirectionRatio = displacement > 0 ? -deltaY / displacement : 0;
   const cornerDirection = getCornerDirection(deltaX, deltaY);
+  const directionAngleDeg = getDirectionAngleDeg(deltaX, deltaY);
   const openHandScore =
     candidate.openScoreCount > 0
       ? candidate.openScoreTotal / candidate.openScoreCount
@@ -643,11 +723,19 @@ function computeCandidateMetrics(candidate: SweepCandidate): CandidateMetrics {
     candidate.palmScaleMin > 0
       ? candidate.palmScaleMax / candidate.palmScaleMin
       : Number.POSITIVE_INFINITY;
+  const bodyOffsetX = candidate.lastPoint.x - candidate.bodyPoint.x;
+  const bodyOffsetY = candidate.lastPoint.y - candidate.bodyPoint.y;
+  const bodyOffsetLength = Math.hypot(bodyOffsetX, bodyOffsetY);
+  const lastStepLength = Math.hypot(
+    candidate.lastStepVector.x,
+    candidate.lastStepVector.y,
+  );
   const bodyDistanceTrend =
-    candidate.recentBodyDistances[
-      candidate.recentBodyDistances.length - 1
-    ] -
-    candidate.recentBodyDistances[0];
+    bodyOffsetLength > Number.EPSILON && lastStepLength > Number.EPSILON
+      ? (candidate.lastStepVector.x * bodyOffsetX +
+          candidate.lastStepVector.y * bodyOffsetY) /
+        (lastStepLength * bodyOffsetLength)
+      : 0;
   return {
     elapsedMs,
     displacement,
@@ -656,9 +744,8 @@ function computeCandidateMetrics(candidate: SweepCandidate): CandidateMetrics {
     coherence,
     horizontalDisplacement,
     upwardDisplacement,
-    horizontalDirectionRatio,
-    upwardDirectionRatio,
     cornerDirection,
+    directionAngleDeg,
     openHandScore,
     palmScaleRatio,
     startDistanceToBody: candidate.startDistanceToBody,
@@ -666,21 +753,51 @@ function computeCandidateMetrics(candidate: SweepCandidate): CandidateMetrics {
     bodyDistanceTrend,
     bodyHitRadius: candidate.bodyHitRadius,
     score: Math.min(
-      clamp01(candidate.stableFrames / RETURN_WAVE_MIN_EVIDENCE_FRAMES),
+      hasTerminalImpulseEvidence(candidate, {
+        displacement,
+        peakSpeed: candidate.peakSpeed,
+      })
+        ? 1
+        : clamp01(candidate.stableFrames / RETURN_WAVE_MIN_EVIDENCE_FRAMES),
       clamp01(candidate.peakSpeed / RETURN_WAVE_MIN_PEAK_SPEED),
       clamp01(displacement / RETURN_WAVE_MIN_DISPLACEMENT),
-      clamp01(
-        Math.min(horizontalDirectionRatio, upwardDirectionRatio) /
-          RETURN_WAVE_MIN_CORNER_COMPONENT_RATIO,
-      ),
+      clamp01(coherence),
       clamp01(
         candidate.startDistanceToBody /
           (candidate.bodyHitRadius * RETURN_WAVE_START_CLEARANCE),
       ),
       bodyDistanceTrend > 0 ? 1 : 0,
-      clamp01(openHandScore / RETURN_WAVE_MIN_OPEN_HAND_SCORE),
     ),
   };
+}
+
+function computeDropoutCandidateMetrics(
+  track: WaveHandTrack,
+  candidate: SweepCandidate,
+  timestamp: number,
+): CandidateMetrics {
+  const elapsedSeconds = Math.max(0, timestamp - track.lastAt) / 1000;
+  const projectedStep = {
+    x: track.lastVelocity.x * elapsedSeconds,
+    y: track.lastVelocity.y * elapsedSeconds,
+  };
+  const projectedStepLength = Math.hypot(projectedStep.x, projectedStep.y);
+  if (projectedStepLength <= Number.EPSILON) {
+    return computeCandidateMetrics(candidate);
+  }
+
+  const projectedPoint = {
+    x: candidate.lastPoint.x + projectedStep.x,
+    y: candidate.lastPoint.y + projectedStep.y,
+  };
+  return computeCandidateMetrics({
+    ...candidate,
+    lastAt: timestamp,
+    lastPoint: projectedPoint,
+    pathLength: candidate.pathLength + projectedStepLength,
+    lastStepVector: projectedStep,
+    endDistanceToBody: stageDistance(projectedPoint, candidate.bodyPoint),
+  });
 }
 
 function getCandidateFailureReason(
@@ -696,8 +813,27 @@ function getCandidateFailureReason(
   if (metrics.displacement < RETURN_WAVE_MIN_DISPLACEMENT) {
     return 'sweep-displacement-too-small';
   }
-  if (!hasUpperCornerDirection(metrics)) {
-    return 'sweep-not-toward-upper-corner';
+  if (
+    metrics.startDistanceToBody <=
+    metrics.bodyHitRadius * RETURN_WAVE_START_CLEARANCE
+  ) {
+    return 'sweep-start-inside-body-clearance';
+  }
+  if (metrics.bodyDistanceTrend <= 0) {
+    return 'sweep-ending-toward-body';
+  }
+  if (metrics.endDistanceToBody <= metrics.bodyHitRadius) {
+    return 'sweep-ending-inside-body-hit-zone';
+  }
+  return null;
+}
+
+function getDropoutCompletionFailureReason(
+  candidate: SweepCandidate,
+  metrics: CandidateMetrics,
+): string | null {
+  if (!hasTerminalImpulseEvidence(candidate, metrics)) {
+    return 'collecting-terminal-impulse-evidence';
   }
   if (
     metrics.startDistanceToBody <=
@@ -711,8 +847,11 @@ function getCandidateFailureReason(
   if (metrics.endDistanceToBody <= metrics.bodyHitRadius) {
     return 'sweep-ending-inside-body-hit-zone';
   }
-  if (metrics.openHandScore < RETURN_WAVE_MIN_OPEN_HAND_SCORE) {
-    return 'hand-looks-pinched-or-closed';
+  if (
+    metrics.palmScaleRatio >
+    RETURN_WAVE_REACQUIRE_MAX_PALM_SCALE_RATIO
+  ) {
+    return 'terminal-impulse-palm-scale-changed';
   }
   return null;
 }
@@ -727,9 +866,10 @@ function createCandidateSnapshot(
     state: triggered ? 'Triggered' : 'Sweeping',
     handKey: track.handKey,
     handVisibleMs: track.visibleDurationMs,
-    handReady:
-      (track.candidate?.stableFrames ?? 0) >=
-      RETURN_WAVE_MIN_EVIDENCE_FRAMES,
+    handReady: track.candidate
+      ? track.candidate.stableFrames >= RETURN_WAVE_MIN_EVIDENCE_FRAMES ||
+        hasTerminalImpulseEvidence(track.candidate, metrics)
+      : false,
     elapsedMs: metrics.elapsedMs,
     stableFrames: track.candidate?.stableFrames ?? 0,
     displacement: metrics.displacement,
@@ -739,10 +879,11 @@ function createCandidateSnapshot(
     horizontalDisplacement: metrics.horizontalDisplacement,
     upwardDisplacement: metrics.upwardDisplacement,
     cornerDirection: metrics.cornerDirection,
+    directionAngleDeg: metrics.directionAngleDeg,
     openHandScore: metrics.openHandScore,
     palmScaleRatio: metrics.palmScaleRatio,
     triggerMode: null,
-    score: metrics.score,
+    score: triggered ? 1 : metrics.score,
     triggered,
     reason,
     peakSpeed: metrics.peakSpeed,
@@ -756,13 +897,18 @@ function createCandidateSnapshot(
 function getBestCandidate(
   tracks: WaveHandTrack[],
   updatedAt?: number,
+  missingSince?: number,
 ): WaveHandTrack | null {
   let best: WaveHandTrack | null = null;
   let bestPeakSpeed = Number.NEGATIVE_INFINITY;
   let bestDisplacement = Number.NEGATIVE_INFINITY;
 
   tracks.forEach((track) => {
-    if (!track.candidate || (updatedAt !== undefined && track.lastAt !== updatedAt)) {
+    if (
+      !track.candidate ||
+      (updatedAt !== undefined && track.lastAt !== updatedAt) ||
+      (missingSince !== undefined && track.missingSince !== missingSince)
+    ) {
       return;
     }
 
@@ -782,6 +928,26 @@ function getBestCandidate(
   });
 
   return best;
+}
+
+function getBestDropoutCompletionCandidate(
+  tracks: WaveHandTrack[],
+  timestamp: number,
+): WaveHandTrack | null {
+  return getBestCandidate(tracks, undefined, timestamp);
+}
+
+function hasTerminalImpulseEvidence(
+  candidate: SweepCandidate,
+  metrics: Pick<CandidateMetrics, 'displacement' | 'peakSpeed'>,
+): boolean {
+  return (
+    candidate.stableFrames >= 2 &&
+    candidate.lastStepDisplacement >= RETURN_WAVE_MIN_DISPLACEMENT &&
+    candidate.lastStepSpeed >= RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED &&
+    metrics.displacement >= RETURN_WAVE_MIN_DISPLACEMENT &&
+    metrics.peakSpeed >= RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED
+  );
 }
 
 function getObservedTrack(tracks: WaveHandTrack[]): WaveHandTrack | null {
@@ -808,10 +974,12 @@ function hasStablePalmScale(previous: number, next: number): boolean {
   return ratio <= RETURN_WAVE_REACQUIRE_MAX_PALM_SCALE_RATIO;
 }
 
-function hasConsistentGapDirection(
+type DirectionContinuity = 'consistent' | 'unknown' | 'inconsistent';
+
+function getDirectionContinuity(
   track: WaveHandTrack,
   point: StagePoint,
-): boolean {
+): DirectionContinuity {
   const stepX = point.x - track.lastPoint.x;
   const stepY = point.y - track.lastPoint.y;
   const candidate = track.candidate;
@@ -825,9 +993,11 @@ function hasConsistentGapDirection(
   const referenceLength = Math.hypot(referenceX, referenceY);
 
   if (stepLength <= Number.EPSILON || referenceLength <= Number.EPSILON) {
-    return true;
+    return 'unknown';
   }
-  return stepX * referenceX + stepY * referenceY > 0;
+  return stepX * referenceX + stepY * referenceY > 0
+    ? 'consistent'
+    : 'inconsistent';
 }
 
 function hasDirectionReversed(
@@ -841,21 +1011,31 @@ function hasDirectionReversed(
   return netX * stepX + netY * stepY < 0;
 }
 
-function hasUpperCornerDirection(metrics: CandidateMetrics): boolean {
-  return (
-    metrics.upwardDirectionRatio >= RETURN_WAVE_MIN_CORNER_COMPONENT_RATIO &&
-    metrics.horizontalDirectionRatio >= RETURN_WAVE_MIN_CORNER_COMPONENT_RATIO
-  );
-}
-
 function getCornerDirection(
   deltaX: number,
   deltaY: number,
 ): PlanetReturnWaveCornerDirection | null {
-  if (deltaY >= 0 || deltaX === 0) {
-    return null;
+  if (Math.abs(deltaX) <= Number.EPSILON) {
+    if (Math.abs(deltaY) <= Number.EPSILON) {
+      return null;
+    }
+    return deltaY < 0 ? 'up' : 'down';
   }
-  return deltaX < 0 ? 'upper-left' : 'upper-right';
+  if (Math.abs(deltaY) <= Number.EPSILON) {
+    return deltaX < 0 ? 'left' : 'right';
+  }
+  if (deltaY < 0) {
+    return deltaX < 0 ? 'upper-left' : 'upper-right';
+  }
+  return deltaX < 0 ? 'lower-left' : 'lower-right';
+}
+
+function getDirectionAngleDeg(deltaX: number, deltaY: number): number {
+  if (Math.abs(deltaX) <= Number.EPSILON && Math.abs(deltaY) <= Number.EPSILON) {
+    return 0;
+  }
+  const degrees = (Math.atan2(deltaY, deltaX) * 180) / Math.PI;
+  return degrees < 0 ? degrees + 360 : degrees;
 }
 
 function isSafeCandidateStart(point: NormalizedPoint): boolean {

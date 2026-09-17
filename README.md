@@ -10,6 +10,16 @@ Docs:
 
 ## Local Commands
 
+The edited videos in `0723剪辑/` use Git LFS. Install `git-lfs` before working with these files, then configure this checkout:
+
+```bash
+git config core.hooksPath .githooks
+git lfs install --local --skip-repo
+git lfs pull
+```
+
+The checked-in `pre-push` hook uploads LFS objects; `post-commit` continues to sync the agent companion repository. These videos are source material and are not part of the web build.
+
 ```bash
 npm install
 npm run dev

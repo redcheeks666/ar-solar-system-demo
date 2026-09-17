@@ -23,15 +23,17 @@ describe('InteractionStateMachine', () => {
     expect(fromFreeHover.state).toBe('PlanetActivated');
   });
 
-  it('allows return only from passive focus states, never while following', () => {
+  it('allows an explicit return from passive or controlled focus states', () => {
     const focusView = createFocusViewStateMachine();
     expect(() => focusView.transition('BodyReturning')).not.toThrow();
 
     const controlled = createFocusViewStateMachine();
     controlled.transition('PlanetFocusControlled');
-    expect(() => controlled.transition('BodyReturning')).toThrow(
-      /Invalid interaction transition/,
-    );
+    expect(() => controlled.transition('BodyReturning')).not.toThrow();
+
+    const floating = createFocusViewStateMachine();
+    floating.transition('PlanetFocusFloating');
+    expect(() => floating.transition('BodyReturning')).not.toThrow();
   });
 });
 

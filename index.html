@@ -131,8 +131,8 @@
                 <span class="gesture-signal" aria-hidden="true"></span>
               </div>
               <h4>送星球回轨道</h4>
-              <p>特写里朝画面左上或右上角快速干脆地张手一抛，星球顺方向飞回轨道。</p>
-              <p class="gesture-warning"><strong>注意</strong>只有「快速上抛」能归位；普通张手、慢伸手、往下/水平挥都不触发。</p>
+              <p>特写里让手从星球外向任意方向快速、干脆地甩离，或用食指在右侧“返回太阳系”卡停留半秒，星球会被引力捕获并飞回轨道。</p>
+              <p class="gesture-warning"><strong>注意</strong>动作要足够快且末段明确远离星球；普通张手、慢伸手或朝星球移动都不触发。</p>
             </article>
           </div>
         </section>
@@ -293,6 +293,9 @@
             <p id="status-text" class="status-text">
               开启摄像头后，让双手保持在画面中清晰可见。
             </p>
+            <p class="camera-privacy-note">
+              摄像头画面仅用于本地实时手势识别，不会上传、保存或分享。关闭页面或撤销浏览器摄像头权限后，识别即停止。
+            </p>
             <button id="start-camera" class="primary-action" type="button">
               开启摄像头
             </button>
@@ -440,6 +443,45 @@
                 class="planet-focus-action-card-hint"
               >
                 HAND SKELETON · OFF
+              </span>
+            </span>
+            <span class="planet-focus-action-card-readout" aria-hidden="true">
+              <span class="planet-focus-action-card-duration">T-0.5s</span>
+              <span class="planet-focus-action-card-state">
+                <span class="planet-focus-action-card-state-ready">READY</span>
+                <span class="planet-focus-action-card-state-charging">CHARGING</span>
+              </span>
+            </span>
+          </button>
+
+          <button
+            id="planet-focus-return-button"
+            class="planet-focus-action-card planet-focus-return-button"
+            type="button"
+            aria-label="长按返回太阳系"
+            tabindex="-1"
+            hidden
+          >
+            <span class="planet-focus-action-card-corners" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-edge" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-fill" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-scan" aria-hidden="true"></span>
+            <span class="planet-focus-action-card-reactor" aria-hidden="true">
+              <span class="planet-focus-action-card-ring"></span>
+              <span class="planet-focus-action-card-ring-progress"></span>
+              <svg
+                class="planet-focus-action-card-icon"
+                viewBox="0 0 32 32"
+                focusable="false"
+              >
+                <path d="M11 8 4 15l7 7"></path>
+                <path d="M5 15h13a9 9 0 0 1 9 9"></path>
+              </svg>
+            </span>
+            <span class="planet-focus-action-card-copy">
+              <span class="planet-focus-action-card-label">长按返回太阳系</span>
+              <span class="planet-focus-action-card-hint">
+                SOLAR SYSTEM · RETURN
               </span>
             </span>
             <span class="planet-focus-action-card-readout" aria-hidden="true">

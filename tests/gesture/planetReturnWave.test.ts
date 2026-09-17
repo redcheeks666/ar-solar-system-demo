@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getReturnWaveReacquireRadius,
   PlanetReturnWaveController,
   RETURN_WAVE_ARM_DELAY_MS,
+  RETURN_WAVE_MAX_REACQUIRE_RADIUS,
   RETURN_WAVE_MIN_DISPLACEMENT,
   RETURN_WAVE_MIN_PEAK_SPEED,
+  RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED,
 } from '../../src/interaction/planetReturnWave';
 import type { FocusedCelestialBodyScreenTarget } from '../../src/solar/solarSystem';
 import type {
@@ -102,7 +105,7 @@ function armFloating(
 }
 
 describe('PlanetReturnWaveController', () => {
-  it('accepts a high-impulse, large upper-corner throw that finishes away from the body', () => {
+  it('accepts a high-impulse upper-left throw that finishes away from the body', () => {
     const controller = new PlanetReturnWaveController();
     const outputs = runPath({
       controller,
@@ -113,7 +116,7 @@ describe('PlanetReturnWaveController', () => {
     expect(triggered?.snapshot).toMatchObject({
       state: 'Triggered',
       cornerDirection: 'upper-left',
-      reason: 'fast-upper-corner-throw-return',
+      reason: 'fast-away-from-body-throw-return',
       triggered: true,
     });
     expect(triggered?.snapshot.peakSpeed).toBeGreaterThanOrEqual(
@@ -133,7 +136,7 @@ describe('PlanetReturnWaveController', () => {
     expect(latched.snapshot.reason).toBe('return-already-triggered');
   });
 
-  it('accepts the mirrored throw toward the upper-right corner', () => {
+  it('accepts the mirrored upper-right throw without regressing its diagnostic sector', () => {
     const controller = new PlanetReturnWaveController();
     const outputs = runPath({
       controller,
@@ -149,6 +152,57 @@ describe('PlanetReturnWaveController', () => {
     expect(outputs.find((output) => output.triggered)?.snapshot.cornerDirection).toBe(
       'upper-right',
     );
+  });
+
+  it('accepts a fast lower-right throw that ends moving away from the body', () => {
+    const controller = new PlanetReturnWaveController();
+    const outputs = runPath({
+      controller,
+      centers: [
+        point(0.75, 0.25),
+        point(0.68, 0.35),
+        point(0.61, 0.45),
+        point(0.54, 0.55),
+        point(0.47, 0.65),
+        point(0.4, 0.75),
+      ],
+    });
+    const triggered = outputs.find((output) => output.triggered);
+
+    expect(triggered?.snapshot).toMatchObject({
+      cornerDirection: 'lower-right',
+      reason: 'fast-away-from-body-throw-return',
+      triggered: true,
+    });
+    expect(triggered?.snapshot.directionAngleDeg).toBeGreaterThan(0);
+    expect(triggered?.snapshot.directionAngleDeg).toBeLessThan(90);
+    expect(triggered?.snapshot.bodyDistanceTrend).toBeGreaterThan(0);
+  });
+
+  it('accepts coherent fast downward and horizontal throws when they finish away', () => {
+    const cases = [
+      {
+        direction: 'down',
+        centers: Array.from({ length: 6 }, (_, index) =>
+          point(0.35, 0.15 + index * 0.12),
+        ),
+      },
+      {
+        direction: 'right',
+        centers: Array.from({ length: 6 }, (_, index) =>
+          point(0.75 - index * 0.07, 0.8),
+        ),
+      },
+    ] as const;
+
+    cases.forEach(({ direction, centers }) => {
+      const controller = new PlanetReturnWaveController();
+      const outputs = runPath({ controller, centers: [...centers] });
+      const triggered = outputs.find((output) => output.triggered);
+
+      expect(triggered?.snapshot.cornerDirection).toBe(direction);
+      expect(triggered?.snapshot.bodyDistanceTrend).toBeGreaterThan(0);
+    });
   });
 
   it('runs in PlanetFocusView but remains disabled in PlanetFocusControlled', () => {
@@ -211,20 +265,123 @@ describe('PlanetReturnWaveController', () => {
     );
   });
 
-  it('rejects a slow diagonal reach even after it accumulates many frames and large travel', () => {
+  it('rejects a slow reach toward the body even after it accumulates large travel', () => {
     const controller = new PlanetReturnWaveController();
     const centers = Array.from({ length: 10 }, (_, index) =>
-      point(0.58 + index * 0.06, 0.82 - index * 0.06),
+      point(0.15 + index * 0.05, 0.9 - index * 0.05),
     );
     const outputs = runPath({
       controller,
       centers,
       intervalMs: 100,
     });
+    const lost = update(controller, {
+      timestamp: centers.length * 100,
+      hands: [],
+    });
+
+    expect([...outputs, lost].some((output) => output.triggered)).toBe(false);
+    expect(outputs.at(-1)?.snapshot.peakSpeed).toBeLessThanOrEqual(1.5);
+    expect(lost.snapshot.reason).toBe('tracking-gap-held-for-reacquire');
+  });
+
+  it('rejects slowly lowering an open hand toward the side of the body', () => {
+    const controller = new PlanetReturnWaveController();
+    const outputs = runPath({
+      controller,
+      centers: Array.from({ length: 9 }, (_, index) =>
+        point(0.35, 0.15 + index * 0.08),
+      ),
+      intervalMs: 100,
+    });
 
     expect(outputs.some((output) => output.triggered)).toBe(false);
     expect(outputs.at(-1)?.snapshot.peakSpeed).toBeLessThanOrEqual(1.5);
-    expect(outputs.at(-1)?.snapshot.reason).toBe('peak-speed-too-low');
+  });
+
+  it('completes a detector-sparse single-step throw when the hand disappears next', () => {
+    const controller = new PlanetReturnWaveController();
+    update(controller, {
+      timestamp: 0,
+      hands: [openHandAt(point(0.8, 0.85))],
+    });
+    const impulse = update(controller, {
+      timestamp: 33,
+      hands: [openHandAt(point(0.48, 0.48))],
+    });
+    const lost = update(controller, { timestamp: 66, hands: [] });
+
+    expect(impulse.triggered).toBe(false);
+    expect(impulse.snapshot).toMatchObject({
+      stableFrames: 2,
+      handReady: true,
+      reason: 'collecting-motion-evidence',
+    });
+    expect(impulse.snapshot.displacement).toBeGreaterThanOrEqual(0.5);
+    expect(impulse.snapshot.peakSpeed).toBeGreaterThanOrEqual(15);
+    expect(lost).toMatchObject({
+      triggered: true,
+      snapshot: {
+        state: 'Triggered',
+        stableFrames: 2,
+        reason: 'fast-away-from-body-throw-ended-on-tracking-loss',
+      },
+    });
+  });
+
+  it('completes a high-speed coherent burst lost in the middle of the frame', () => {
+    const controller = new PlanetReturnWaveController();
+    const middleEndpoint = point(0.45, 0.49);
+    update(controller, {
+      timestamp: 0,
+      hands: [openHandAt(point(0.75, 0.85))],
+    });
+    update(controller, {
+      timestamp: 33,
+      hands: [openHandAt(point(0.735, 0.805))],
+    });
+    const bridged = update(controller, {
+      timestamp: 66,
+      hands: [openHandAt(middleEndpoint)],
+    });
+    const lost = update(controller, { timestamp: 99, hands: [] });
+
+    expect(middleEndpoint.x).toBeGreaterThan(0.1);
+    expect(middleEndpoint.x).toBeLessThan(0.9);
+    expect(middleEndpoint.y).toBeGreaterThan(0.1);
+    expect(middleEndpoint.y).toBeLessThan(0.9);
+    expect(bridged.snapshot.stableFrames).toBe(3);
+    expect(bridged.snapshot.displacement).toBeGreaterThanOrEqual(0.5);
+    expect(bridged.snapshot.peakSpeed).toBeGreaterThanOrEqual(15);
+    expect(lost.triggered).toBe(true);
+    expect(lost.snapshot.reason).toBe(
+      'fast-away-from-body-throw-ended-on-tracking-loss',
+    );
+  });
+
+  it('rebuilds a candidate after an edge-origin stroke enters the safe frame interior', () => {
+    const controller = new PlanetReturnWaveController();
+    const outputs = runPath({
+      controller,
+      centers: [
+        point(0.97, 0.88),
+        point(0.94, 0.82),
+        point(0.9, 0.75),
+        point(0.78, 0.64),
+        point(0.62, 0.52),
+        point(0.46, 0.4),
+        point(0.3, 0.28),
+        point(0.14, 0.18),
+      ],
+    });
+
+    expect(
+      outputs.some(
+        (output) =>
+          output.snapshot.reason === 'sweep-start-too-close-to-frame-edge',
+      ),
+    ).toBe(true);
+    expect(outputs.some((output) => output.triggered)).toBe(true);
   });
 
   it('rejects a fast open-hand reach that keeps getting closer to the body', () => {
@@ -242,31 +399,30 @@ describe('PlanetReturnWaveController', () => {
     });
 
     expect(outputs.some((output) => output.triggered)).toBe(false);
-    expect(outputs.at(-1)?.snapshot.bodyDistanceTrend).toBeLessThan(0);
+    expect(outputs.at(-1)?.snapshot.bodyDistanceTrend).toBeLessThanOrEqual(0);
     expect(outputs.at(-1)?.snapshot.reason).toBe('sweep-ending-toward-body');
   });
 
-  it('rejects fast horizontal, vertical, and downward motion', () => {
-    const paths = [
-      Array.from({ length: 6 }, (_, index) =>
-        point(0.58 + index * 0.08, 0.82),
-      ),
-      Array.from({ length: 6 }, (_, index) =>
-        point(0.75, 0.82 - index * 0.12),
-      ),
-      Array.from({ length: 6 }, (_, index) =>
-        point(0.75 + index * 0.06, 0.35 + index * 0.08),
-      ),
-    ];
-
-    paths.forEach((centers) => {
-      const controller = new PlanetReturnWaveController();
-      const outputs = runPath({ controller, centers });
-      expect(outputs.some((output) => output.triggered)).toBe(false);
-      expect(outputs.at(-1)?.snapshot.reason).toBe(
-        'sweep-not-toward-upper-corner',
-      );
+  it('does not turn a terminal-impulse reach toward the body into a return on hand loss', () => {
+    const controller = new PlanetReturnWaveController();
+    update(controller, {
+      timestamp: 0,
+      hands: [openHandAt(point(0.1, 0.9))],
     });
+    const impulse = update(controller, {
+      timestamp: 33,
+      hands: [openHandAt(point(0.28, 0.75))],
+    });
+    const lost = update(controller, { timestamp: 66, hands: [] });
+
+    expect(impulse.snapshot.peakSpeed).toBeGreaterThanOrEqual(
+      RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED,
+    );
+    expect(impulse.snapshot.displacement).toBeGreaterThanOrEqual(
+      RETURN_WAVE_MIN_DISPLACEMENT,
+    );
+    expect(lost.triggered).toBe(false);
+    expect(lost.snapshot.reason).toBe('tracking-gap-held-for-reacquire');
   });
 
   it('bridges three lost frames, counts the cross-gap impulse, and accepts an off-screen endpoint', () => {
@@ -299,18 +455,147 @@ describe('PlanetReturnWaveController', () => {
     expect(reacquired.snapshot.displacement).toBeGreaterThanOrEqual(0.5);
   });
 
-  it('uses an open-hand score only as a broad pinch/fist sanity check', () => {
+  it('counts a validated visible-frame jump in displacement, peak speed, and stable frames', () => {
+    const controller = new PlanetReturnWaveController();
+    update(controller, {
+      timestamp: 0,
+      hands: [openHandAt(point(0.75, 0.85))],
+    });
+    update(controller, {
+      timestamp: 33,
+      hands: [openHandAt(point(0.735, 0.805))],
+    });
+    const bridged = update(controller, {
+      timestamp: 66,
+      hands: [openHandAt(point(0.45, 0.49))],
+    });
+
+    expect(bridged.snapshot.stableFrames).toBe(3);
+    expect(bridged.snapshot.displacement).toBeGreaterThanOrEqual(0.5);
+    expect(bridged.snapshot.peakSpeed).toBeGreaterThanOrEqual(15);
+    expect(bridged.snapshot.peakSpeed).toBeGreaterThanOrEqual(
+      RETURN_WAVE_MIN_TERMINAL_IMPULSE_SPEED,
+    );
+  });
+
+  it('rejects a large identity jump when palm scale changes abruptly', () => {
+    const controller = new PlanetReturnWaveController();
+    const start = openHandAt(point(0.8, 0.85));
+    const noisyEndpoint = openHandAt(point(0.48, 0.48));
+    noisyEndpoint.palmScale = start.palmScale * 2;
+
+    const outputs = [
+      update(controller, { timestamp: 0, hands: [start] }),
+      update(controller, { timestamp: 33, hands: [noisyEndpoint] }),
+      update(controller, { timestamp: 66, hands: [] }),
+    ];
+
+    expect(outputs.some((output) => output.triggered)).toBe(false);
+  });
+
+  it('rejects a large identity jump that reverses the established direction', () => {
+    const controller = new PlanetReturnWaveController();
+    const outputs = [
+      update(controller, {
+        timestamp: 0,
+        hands: [openHandAt(point(0.58, 0.82))],
+      }),
+      update(controller, {
+        timestamp: 33,
+        hands: [openHandAt(point(0.6, 0.84))],
+      }),
+      update(controller, {
+        timestamp: 66,
+        hands: [openHandAt(point(0.2, 0.3))],
+      }),
+      update(controller, { timestamp: 99, hands: [] }),
+    ];
+
+    expect(outputs.some((output) => output.triggered)).toBe(false);
+  });
+
+  it('rejects palm-scale and direction discontinuities across a tracking gap', () => {
+    const invalidReacquisitions = [
+      (hand: TrackedHand) => {
+        hand.palmScale *= 2;
+        return hand;
+      },
+      () => openHandAt(point(0.48, 0.94)),
+    ];
+
+    invalidReacquisitions.forEach((makeInvalidHand) => {
+      const controller = new PlanetReturnWaveController();
+      update(controller, {
+        timestamp: 0,
+        hands: [openHandAt(point(0.58, 0.82))],
+      });
+      update(controller, {
+        timestamp: 33,
+        hands: [openHandAt(point(0.65, 0.73))],
+      });
+      update(controller, { timestamp: 66, hands: [] });
+      const invalid = makeInvalidHand(openHandAt(point(0.85, 0.5)));
+      const reacquired = update(controller, {
+        timestamp: 99,
+        hands: [invalid],
+      });
+
+      expect(reacquired.triggered).toBe(false);
+      expect(reacquired.snapshot.stableFrames).toBeLessThan(3);
+    });
+  });
+
+  it('prefers the palm-scale and direction-continuous candidate over a closer duplicate', () => {
+    const controller = new PlanetReturnWaveController();
+    update(controller, {
+      timestamp: 0,
+      hands: [openHandAt(point(0.58, 0.82))],
+    });
+    update(controller, {
+      timestamp: 33,
+      hands: [openHandAt(point(0.65, 0.73))],
+    });
+    update(controller, { timestamp: 66, hands: [] });
+    const duplicate = openHandAt(point(0.66, 0.74));
+    duplicate.palmScale *= 2;
+    const reacquired = update(controller, {
+      timestamp: 99,
+      hands: [duplicate, openHandAt(point(0.85, 0.5))],
+    });
+
+    expect(reacquired.triggered).toBe(true);
+    expect(reacquired.snapshot.stableFrames).toBe(3);
+    expect(reacquired.snapshot.bodyDistanceTrend).toBeGreaterThan(0);
+  });
+
+  it('caps the 150ms spatial reacquisition radius below one preview short side', () => {
+    expect(getReturnWaveReacquireRadius(150)).toBe(
+      RETURN_WAVE_MAX_REACQUIRE_RADIUS,
+    );
+    expect(getReturnWaveReacquireRadius(150)).toBeLessThan(1);
+    expect(getReturnWaveReacquireRadius(10_000)).toBe(
+      RETURN_WAVE_MAX_REACQUIRE_RADIUS,
+    );
+  });
+
+  it('keeps hand shape diagnostic while body-relative geometry rejects a closed-hand reach', () => {
     const controller = new PlanetReturnWaveController();
     const outputs = runPath({
       controller,
-      centers: VALID_UPPER_LEFT_PATH,
+      centers: [
+        point(0.9, 0.85),
+        point(0.82, 0.78),
+        point(0.74, 0.71),
+        point(0.66, 0.64),
+        point(0.58, 0.57),
+        point(0.5, 0.5),
+      ],
       handAt: (center) => closedHandAt(center),
     });
 
     expect(outputs.some((output) => output.triggered)).toBe(false);
-    expect(outputs.at(-1)?.snapshot.reason).toBe(
-      'hand-looks-pinched-or-closed',
-    );
+    expect(outputs.at(-1)?.snapshot.openHandScore).toBeLessThan(0.5);
+    expect(outputs.at(-1)?.snapshot.reason).toBe('sweep-ending-toward-body');
   });
 
   it('tracks by spatial trajectory despite handedness flips, array reorder, and a static off-hand', () => {

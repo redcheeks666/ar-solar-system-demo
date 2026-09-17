@@ -1,4 +1,5 @@
 import { startCamera, stopCamera } from './camera/camera';
+import { InteractionAudioLayer } from './audio/interactionAudioDirector';
 import { GestureCalibrationController, getDefaultGestureCalibrationSnapshot } from './interaction/gestureCalibration';
 import {
   captureReplayCamera,
@@ -66,6 +67,7 @@ import {
 import type {
   CameraPermissionStatus,
   DebugSnapshot,
+  InteractionState,
   PlanetReturnWaveDebugSnapshot,
   TrackingSnapshot,
 } from './utils/types';
@@ -89,8 +91,12 @@ const debugRecorderControls = getElement<HTMLElement>('debug-recorder');
 const debugRecordToggle = getElement<HTMLButtonElement>('debug-record-toggle');
 const debugRecordExport = getElement<HTMLButtonElement>('debug-record-export');
 const debugRecordClear = getElement<HTMLButtonElement>('debug-record-clear');
+const experienceReturn = getElement<HTMLAnchorElement>('experience-return');
 const planetFocusControls = getElement<HTMLElement>('planet-focus-controls');
 const planetFocusHudTag = getElement<HTMLElement>('planet-focus-hud-tag');
+const planetFocusReturnButton = getElement<HTMLButtonElement>(
+  'planet-focus-return-button',
+);
 const planetFocusSwitchButton = getElement<HTMLButtonElement>(
   'planet-focus-switch-button',
 );
@@ -111,6 +117,9 @@ const sunRoomGlow = getElement<HTMLElement>('sun-room-glow');
 
 const interaction = new InteractionStateMachine();
 const urlParams = new URLSearchParams(window.location.search);
+const audioLayer = new InteractionAudioLayer({
+  muted: urlParams.get('mute') === '1',
+});
 const renderer = new TransparentSceneRenderer(
   canvasElement,
   parseDevicePixelRatioOverride(urlParams.get('dpr')),
@@ -149,6 +158,7 @@ const planetFocus = new PlanetFocusController();
 const planetReturnWave = new PlanetReturnWaveController();
 const EARTH_MOON_SWITCH_HOLD_MS = 500;
 const DEMO_HAND_MODEL_HOLD_MS = 500;
+const PLANET_FOCUS_RETURN_HOLD_MS = 500;
 const UI_BUTTON_FINGER_HIT_SLOP_PX = 12;
 type EarthMoonFocusBodyId = Extract<
   InteractiveCelestialBodyId,
@@ -169,6 +179,9 @@ let demoHandModelButtonHold: IndexFingerUiHoldState =
   EMPTY_INDEX_FINGER_UI_HOLD;
 let demoHandModelNeedsClear = false;
 let demoHandSkeletonVisible = false;
+let planetFocusReturnButtonHold: IndexFingerUiHoldState =
+  EMPTY_INDEX_FINGER_UI_HOLD;
+let planetFocusReturnNeedsClear = false;
 // Detection timestamp of the last tracking frame fed to the interaction controllers.
 let lastGestureInputAt: number | null = null;
 let perfFreshTrackingFrames = 0;
@@ -180,6 +193,7 @@ let lastRecorderControlsRecording: boolean | null = null;
 let lastRecorderControlsFrameCount: number | null = null;
 let lastPlanetFocusSwitchButtonProgress: string | null = null;
 let lastDemoHandModelButtonProgress: string | null = null;
+let lastPlanetFocusReturnButtonProgress: string | null = null;
 let lastPlanetFocusHudBody: InteractiveCelestialBodyId | null = null;
 let latestGestureReplayContext: GestureReplayFrameContext | null = null;
 
@@ -325,7 +339,7 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
   renderer.setSceneContentVisible(solarSystemVisible);
   renderer.setBloomActive(solarSystemVisible);
   updateSunRoomGlow(canvasSize, deltaSeconds);
-  completeBodyReturnIfReady();
+  completeBodyReturnIfReady(timestamp);
 
   debugSnapshot.fps = fps;
   debugSnapshot.cameraStatus = cameraStatus;
@@ -365,11 +379,30 @@ renderer.start(({ fps, canvasSize, deltaMs, deltaSeconds, renderMs, timestampMs 
   statusSummary.update(debugSnapshot);
   debugOverlay.update(debugSnapshot);
   updatePlanetFocusControlsVisibility();
+  updatePlanetFocusReturnButtonVisibility();
+  updateExperienceReturnVisibility();
   updatePlanetFocusSwitchButtonVisibility();
 });
 
 startButton.addEventListener('click', () => {
+  void audioLayer.initializeFromUserGesture();
   void handleCameraStart();
+});
+
+window.addEventListener('keydown', (event) => {
+  if (
+    event.key.toLowerCase() === 'm' &&
+    !event.repeat &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey
+  ) {
+    audioLayer.toggleMuted();
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  audioLayer.setPageHidden(document.hidden);
 });
 
 window.addEventListener('beforeunload', () => {
@@ -385,6 +418,8 @@ window.addEventListener('beforeunload', () => {
   planetReturnWave.reset();
   cancelEarthMoonSwitchHold();
   cancelDemoHandModelHold();
+  cancelPlanetFocusReturnHold();
+  audioLayer.dispose();
   renderer.removeObject3D(placeholderSolarSystem.group);
   placeholderSolarSystem.dispose();
   renderer.dispose();
@@ -426,7 +461,7 @@ async function handleCameraStart(): Promise<void> {
   }
 
   activeStream = result.stream;
-  interaction.transition('EmptyIdle');
+  transitionInteraction('EmptyIdle');
   introPanel.hidden = true;
   guidance.hidden = true;
   showTrackingLoading();
@@ -457,7 +492,7 @@ function updateGestureControllers(
   );
 
   if (startupUpdate.nextState) {
-    interaction.transition(startupUpdate.nextState);
+    transitionInteraction(startupUpdate.nextState, timestamp);
     updateGuidanceForState(interaction.state);
   }
 
@@ -510,7 +545,7 @@ function updateGestureControllers(
   };
 
   if (solarOpeningUpdate.nextState) {
-    interaction.transition(solarOpeningUpdate.nextState);
+    transitionInteraction(solarOpeningUpdate.nextState, timestamp);
     updateGuidanceForState(interaction.state);
   }
 
@@ -518,6 +553,7 @@ function updateGestureControllers(
 
   if (interaction.state === 'BodyReturning') {
     cancelEarthMoonSwitchHold();
+    cancelPlanetFocusReturnHold();
     planetReturnWave.reset();
     debugSnapshot.planetReturnWave = EMPTY_PLANET_RETURN_WAVE_SNAPSHOT;
     return;
@@ -536,7 +572,7 @@ function updateGestureControllers(
   });
 
   if (planetActivationUpdate.nextState) {
-    interaction.transition(planetActivationUpdate.nextState);
+    transitionInteraction(planetActivationUpdate.nextState, timestamp);
     updateGuidanceForState(interaction.state);
   }
 
@@ -566,7 +602,7 @@ function updateGestureControllers(
     });
 
     if (planetFocusUpdate.nextState) {
-      interaction.transition(planetFocusUpdate.nextState);
+      transitionInteraction(planetFocusUpdate.nextState, timestamp);
       if (planetFocusUpdate.nextState === 'BodyReturning') {
         startBodyReturn(planetFocusUpdate.snapshot.focusedBody);
       }
@@ -584,17 +620,28 @@ function updateGestureControllers(
     debugSnapshot.planetReturnWave = returnWaveUpdate.snapshot;
 
     if (returnWaveUpdate.triggered) {
-      triggerPlanetReturn(returnWaveUpdate.snapshot);
+      triggerPlanetReturn(returnWaveUpdate.snapshot, timestamp);
       return;
     }
 
     updatePlanetFocusControlsVisibility();
+    updatePlanetFocusReturnButtonVisibility();
+    if (
+      updatePlanetFocusReturnButtonHandHold(
+        tracking,
+        timestamp,
+        previewLayout,
+      )
+    ) {
+      return;
+    }
     updatePlanetFocusSwitchButtonVisibility();
     updateEarthMoonSwitchButtonHandHold(tracking, timestamp, previewLayout);
     return;
   }
 
   cancelEarthMoonSwitchHold();
+  cancelPlanetFocusReturnHold();
   resetEarthMoonFocusBody();
   planetFocus.reset();
   planetReturnWave.reset();
@@ -610,6 +657,18 @@ function getElement<T extends HTMLElement>(id: string): T {
   }
 
   return element as T;
+}
+
+function transitionInteraction(
+  nextState: InteractionState,
+  timestamp = performance.now(),
+): void {
+  const prevState = interaction.state;
+  interaction.transition(nextState);
+
+  if (prevState !== interaction.state) {
+    audioLayer.onStateChange(prevState, interaction.state, timestamp);
+  }
 }
 
 function parseDevicePixelRatioOverride(value: string | null): number | undefined {
@@ -964,17 +1023,17 @@ function updateGuidanceForState(state: string): void {
   }
 
   if (state === 'PlanetFocusView') {
-    guidance.textContent = '已进入单个星球界面，等居中后离开热区，再重新碰触星球停留 1 秒可跟手；地月界面可长按切换视角';
+    guidance.textContent = '已进入单个星球界面，等居中后离开热区，再重新碰触星球停留 1 秒可跟手；食指长按右侧按钮可返回太阳系';
     return;
   }
 
   if (state === 'PlanetFocusControlled') {
-    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；地月界面可长按切换视角';
+    guidance.textContent = '星球正在跟手；单手捏合后张开可放下，双手距离可调整大小；食指长按右侧按钮可返回太阳系';
     return;
   }
 
   if (state === 'PlanetFocusFloating') {
-    guidance.textContent = '星球已放下悬浮；朝左上角或右上角快速张手挥出可返回太阳系，或重新碰触停留 1 秒跟手；地月界面可长按切换视角';
+    guidance.textContent = '星球已放下悬浮；可从星球外快速甩离，或食指长按右侧按钮返回太阳系；重新碰触停留 1 秒可跟手';
     return;
   }
 
@@ -1053,6 +1112,7 @@ function updateDemoHandModelButtonHandHold(
   });
 
   demoHandModelButtonHold = holdUpdate.hold;
+  audioLayer.onUiHold('demo-hand-model', holdUpdate);
   setDemoHandModelButtonProgress(holdUpdate.progress);
   demoHandModelButton.classList.toggle(
     'is-charging',
@@ -1080,6 +1140,7 @@ function toggleDemoHandSkeleton(): void {
 function cancelDemoHandModelHold(
   options: { keepProgress?: boolean } = {},
 ): void {
+  audioLayer.cancelUiHold('demo-hand-model');
   demoHandModelButtonHold = EMPTY_INDEX_FINGER_UI_HOLD;
   demoHandModelButton.classList.remove('is-charging');
 
@@ -1117,6 +1178,91 @@ function updateDemoHandModelButtonLabel(): void {
 function syncLandmarkOverlayVisibility(): void {
   landmarkOverlay.setVisible(
     debugOverlay.isVisible || (demoModeEnabled && demoHandSkeletonVisible),
+  );
+}
+
+function updatePlanetFocusReturnButtonHandHold(
+  tracking: TrackingSnapshot,
+  timestamp: number,
+  layout: PreviewLayout,
+): boolean {
+  const active =
+    isPlanetFocusState(interaction.state) &&
+    getActiveFocusedBody() !== null &&
+    !planetFocusReturnButton.hidden;
+  const rect = getButtonStageRect(planetFocusReturnButton, layout);
+
+  if (planetFocusReturnNeedsClear) {
+    const clearProbe = updateIndexFingerUiHold({
+      active,
+      hands: tracking.hands.hands,
+      layout,
+      rect,
+      previous: EMPTY_INDEX_FINGER_UI_HOLD,
+      requiredMs: PLANET_FOCUS_RETURN_HOLD_MS,
+      timestamp,
+      hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
+    });
+
+    if (!active || clearProbe.hit === null) {
+      planetFocusReturnNeedsClear = false;
+    }
+
+    cancelPlanetFocusReturnHold();
+    return false;
+  }
+
+  const holdUpdate = updateIndexFingerUiHold({
+    active,
+    hands: tracking.hands.hands,
+    layout,
+    rect,
+    previous: planetFocusReturnButtonHold,
+    requiredMs: PLANET_FOCUS_RETURN_HOLD_MS,
+    timestamp,
+    hitSlopPx: UI_BUTTON_FINGER_HIT_SLOP_PX,
+  });
+
+  planetFocusReturnButtonHold = holdUpdate.hold;
+  audioLayer.onUiHold('planet-focus-return', holdUpdate);
+  setPlanetFocusReturnButtonProgress(holdUpdate.progress);
+  planetFocusReturnButton.classList.toggle(
+    'is-charging',
+    holdUpdate.hit !== null,
+  );
+
+  if (holdUpdate.triggered) {
+    planetFocusReturnNeedsClear = true;
+    triggerPlanetReturnFromUiHold(timestamp);
+    return true;
+  }
+
+  return false;
+}
+
+function cancelPlanetFocusReturnHold(
+  options: { keepProgress?: boolean } = {},
+): void {
+  audioLayer.cancelUiHold('planet-focus-return');
+  planetFocusReturnButtonHold = EMPTY_INDEX_FINGER_UI_HOLD;
+  planetFocusReturnButton.classList.remove('is-charging');
+
+  if (!options.keepProgress) {
+    setPlanetFocusReturnButtonProgress(0);
+  }
+}
+
+function setPlanetFocusReturnButtonProgress(progress: number): void {
+  const value = progress.toFixed(3);
+
+  if (value === lastPlanetFocusReturnButtonProgress) {
+    return;
+  }
+
+  lastPlanetFocusReturnButtonProgress = value;
+  planetFocusReturnButton.style.setProperty(
+    '--focus-action-progress',
+    value,
   );
 }
 
@@ -1160,6 +1306,7 @@ function updateEarthMoonSwitchButtonHandHold(
   });
 
   earthMoonSwitchButtonHold = holdUpdate.hold;
+  audioLayer.onUiHold('earth-moon-switch', holdUpdate);
   setPlanetFocusSwitchButtonProgress(holdUpdate.progress);
   planetFocusSwitchButton.classList.toggle(
     'is-charging',
@@ -1173,9 +1320,31 @@ function updateEarthMoonSwitchButtonHandHold(
 
 function triggerPlanetReturn(
   returnWaveSnapshot: PlanetReturnWaveDebugSnapshot | null = null,
+  timestamp = performance.now(),
+): void {
+  beginPlanetReturn(
+    'fast-away-from-body-throw-return',
+    createFocusedBodyReturnMotionFromWave(returnWaveSnapshot),
+    timestamp,
+  );
+}
+
+function triggerPlanetReturnFromUiHold(
+  timestamp = performance.now(),
+): void {
+  beginPlanetReturn('focus-return-ui-hold', null, timestamp);
+}
+
+function beginPlanetReturn(
+  transitionReason: string,
+  returnMotion: FocusedBodyReturnMotion | null,
+  timestamp: number,
 ): void {
   const focusedBody = getActiveFocusedBody();
   cancelEarthMoonSwitchHold();
+  cancelPlanetFocusReturnHold({
+    keepProgress: transitionReason === 'focus-return-ui-hold',
+  });
 
   if (!focusedBody || !isPlanetFocusState(interaction.state)) {
     return;
@@ -1185,15 +1354,14 @@ function triggerPlanetReturn(
   debugSnapshot.planetFocus = {
     ...debugSnapshot.planetFocus,
     focusedBody,
-    transitionReason: 'fast-upper-corner-throw-return',
+    transitionReason,
   };
-  interaction.transition('BodyReturning');
-  startBodyReturn(
-    focusedBody,
-    createFocusedBodyReturnMotionFromWave(returnWaveSnapshot),
-  );
+  transitionInteraction('BodyReturning', timestamp);
+  startBodyReturn(focusedBody, returnMotion);
   updateGuidanceForState(interaction.state);
   updatePlanetFocusControlsVisibility();
+  updatePlanetFocusReturnButtonVisibility();
+  updateExperienceReturnVisibility();
   updatePlanetFocusSwitchButtonVisibility();
 }
 
@@ -1205,6 +1373,19 @@ function updatePlanetFocusControlsVisibility(): void {
   if (planetFocusControls.hidden !== hidden) {
     planetFocusControls.hidden = hidden;
   }
+}
+
+function updatePlanetFocusReturnButtonVisibility(): void {
+  const visible =
+    isPlanetFocusState(interaction.state) && getActiveFocusedBody() !== null;
+
+  planetFocusReturnButton.hidden = !visible;
+  planetFocusReturnButton.disabled = !visible;
+}
+
+function updateExperienceReturnVisibility(): void {
+  experienceReturn.hidden =
+    solarPreviewEnabled || isFocusVisualState(interaction.state);
 }
 
 function triggerEarthMoonFocusSwitch(): void {
@@ -1228,6 +1409,7 @@ function triggerEarthMoonFocusSwitch(): void {
 function cancelEarthMoonSwitchHold(
   options: { keepProgress?: boolean } = {},
 ): void {
+  audioLayer.cancelUiHold('earth-moon-switch');
   earthMoonSwitchButtonHold = EMPTY_INDEX_FINGER_UI_HOLD;
   planetFocusSwitchButton.classList.remove('is-charging');
 
@@ -1371,7 +1553,7 @@ function startBodyReturn(
   }
 }
 
-function completeBodyReturnIfReady(): void {
+function completeBodyReturnIfReady(timestamp: number): void {
   if (
     interaction.state !== 'BodyReturning' ||
     !placeholderSolarSystem.isFocusedBodyReturnComplete(returningFocusedBody)
@@ -1379,12 +1561,12 @@ function completeBodyReturnIfReady(): void {
     return;
   }
 
-  finishBodyReturn();
+  finishBodyReturn(timestamp);
 }
 
-function finishBodyReturn(): void {
+function finishBodyReturn(timestamp = performance.now()): void {
   if (interaction.state === 'BodyReturning') {
-    interaction.transition('SolarFreeHover');
+    transitionInteraction('SolarFreeHover', timestamp);
   }
 
   returningFocusedBody = null;

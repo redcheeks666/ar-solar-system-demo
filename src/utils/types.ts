@@ -440,14 +440,20 @@ export type PlanetReturnWaveState =
 
 export type PlanetReturnWaveCornerDirection =
   | 'upper-left'
-  | 'upper-right';
+  | 'upper-right'
+  | 'lower-left'
+  | 'lower-right'
+  | 'left'
+  | 'right'
+  | 'up'
+  | 'down';
 
 export interface PlanetReturnWaveDebugSnapshot {
   state: PlanetReturnWaveState;
   handKey: string | null;
   /** Visible time for diagnostics only; it is not a return-intent gate. */
   handVisibleMs: number;
-  /** Whether the active candidate has the required multi-frame evidence. */
+  /** Whether the active candidate has ordinary multi-frame or terminal-impulse evidence. */
   handReady: boolean;
   elapsedMs: number;
   stableFrames: number;
@@ -463,8 +469,11 @@ export interface PlanetReturnWaveDebugSnapshot {
   horizontalDisplacement: number | null;
   /** Upward component of the net sweep, in preview-short-side units. */
   upwardDisplacement: number | null;
-  /** Display-space corner targeted by the net sweep. */
+  /** Display-space sector of the net sweep; diagnostic only, never a trigger gate. */
   cornerDirection: PlanetReturnWaveCornerDirection | null;
+  /** Clockwise display-space direction in degrees: 0 right, 90 down, 180 left, 270 up. */
+  directionAngleDeg?: number | null;
+  /** Hand-shape diagnostic only; fast-motion blur makes it unsuitable as a return gate. */
   openHandScore: number | null;
   palmScaleRatio: number | null;
   /** Legacy schema field; the return detector now has one physical throw path. */
@@ -478,7 +487,7 @@ export interface PlanetReturnWaveDebugSnapshot {
   startDistanceToBody?: number | null;
   /** Candidate-end distance to the focused body, in preview-short-side units. */
   endDistanceToBody?: number | null;
-  /** Recent end-of-stroke body-distance change; positive means the throw finishes moving away. */
+  /** Signed terminal radial direction; positive means the throw finishes moving away. */
   bodyDistanceTrend?: number | null;
   /** Focused-body hit radius, in preview-short-side units. */
   bodyHitRadius?: number | null;
