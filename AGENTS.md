@@ -27,17 +27,15 @@ camera on → initial empty AR scene
 
 When the user changes or clarifies a requirement, update the affected docs in the same change set. If code and docs disagree, the latest explicit user-approved requirement wins. Do not leave docs stale after a behavior change; the final response should state which docs were updated.
 
-## Agent Companion Repository
+## Optional Agent Notes Sync
 
-Private companion repo for agent-development memory: `<private-companion-repo>`, local sibling at `~/CodeXProject/agent-companion-repo`. It stores requirement interactions, workflow decisions, and doc snapshots — never product source code, secrets, or raw webcam captures.
-
-Commits in the main repo should refresh the companion repo via `.githooks/post-commit` (`core.hooksPath=.githooks`). If automatic sync fails, run `npm run sync:agent:push` manually and mention the failure.
+`scripts/sync-agent-repo.mjs` can snapshot agent docs into a separate local notes repository (set `AGENT_REPO_DIR`). It is opt-in (`git config core.hooksPath .githooks`) and does nothing when the notes repository is absent. Never store product source code, secrets, or raw webcam captures there.
 
 ## MVP Boundary
 
 Web Demo only. Do not introduce Electron, Tauri, TouchDesigner, Unity, Unreal, XR devices, mobile support, backend services, authentication, databases, analytics, or deployment infrastructure unless the user explicitly asks.
 
-The user explicitly authorized on 2026-07-19 the public-site robustness fallbacks, unsuitable-device guidance (not mobile adaptation), and in-repository build/deployment documentation needed for a public launch. Analytics, full mobile gesture adaptation, backend/auth/database work, CI/CD, and hosted deployment infrastructure remain prohibited unless separately authorized.
+The user explicitly authorized on 2026-07-19 the public-site robustness fallbacks, unsuitable-device guidance (not mobile adaptation), and in-repository build/deployment documentation needed for a public launch. Analytics, full mobile gesture adaptation, backend/auth/database work, CD, and hosted deployment infrastructure remain prohibited unless separately authorized. A GitHub Actions CI workflow (typecheck, test, build) was authorized on 2026-10-22 for the open-source release.
 
 The user explicitly authorized on 2026-07-19 a responsive public landing page at the base URL, moving the complete Debug experience to `/debug`, retaining `?demo=1` and `?solarPreview=1`, and reusing the existing renderer/solar system as a landing-only decorative background. This authorization covers the 2D public shell and its responsive presentation, not mobile gesture adaptation or any change to camera/gesture behavior.
 
@@ -159,7 +157,7 @@ Demo mode (`?demo=1`) is the presentation route: it hides the top-right Debug to
 
 ## Development Workflow
 
-Work milestone by milestone; make the smallest useful change; inspect existing files first; run available checks; update docs when behavior or scope changes; sync the companion repo; summarize changed files, validation results, and manual camera-test needs.
+Work milestone by milestone; make the smallest useful change; inspect existing files first; run available checks; update docs when behavior or scope changes; summarize changed files, validation results, and manual camera-test needs.
 
 ### Visual Effects Guardrail
 
