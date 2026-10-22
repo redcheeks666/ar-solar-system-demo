@@ -16,7 +16,7 @@ describe('public landing page shell', () => {
     expect(INDEX_HTML).toContain('id="follow"');
     expect(INDEX_HTML).toContain('抬起双手，');
     expect(INDEX_HTML).toContain('手势玩法');
-    expect(INDEX_HTML).toContain('关注我的抖音');
+    expect(INDEX_HTML).toContain('开源项目');
   });
 
   it('contains all ten gesture cards and their three tiers', () => {
@@ -28,13 +28,10 @@ describe('public landing page shell', () => {
     expect(INDEX_HTML).toContain('显示手部骨架');
   });
 
-  it('uses the supplied base-aware Douyin QR asset', () => {
-    expect(INDEX_HTML).toContain(
-      'src="%BASE_URL%assets/social/douyin-qr.png"',
-    );
-    expect(INDEX_HTML).toContain('@<douyin-handle>');
-    expect(INDEX_HTML).toContain('<douyin-id>');
-    expect(INDEX_HTML).not.toContain('替换为真实抖音二维码');
+  it('links the open-source repository instead of personal social accounts', () => {
+    expect(INDEX_HTML).toContain('https://github.com/redcheeks666/ar-solar-system-demo');
+    expect(INDEX_HTML).not.toContain('douyin-qr.png');
+    expect(INDEX_HTML).not.toContain('抖音号');
   });
 
   it('keeps the app shell separate and provides a return control', () => {

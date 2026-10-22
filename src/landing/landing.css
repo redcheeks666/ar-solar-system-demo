@@ -521,7 +521,7 @@ html {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(260px, 430px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: clamp(48px, 8vw, 120px);
   align-items: center;
   padding: clamp(24px, 4vw, 54px);
