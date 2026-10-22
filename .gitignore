@@ -22,3 +22,22 @@ pnpm-debug.log*
 scripts/after-effects/历史项目文件夹/
 scripts/after-effects/**/*.aep
 scripts/after-effects/**/*报告.txt
+
+# 日志、缓存与本地环境
+*.log
+coverage/
+.vite/
+*.local
+Thumbs.db
+desktop.ini
+
+# 原始录屏 / 摄像头录像（隐私，不入库）
+*.mov
+*.mp4
+*.webm
+
+# 第三方音效（授权不允许单独再分发，仅本地放置）
+public/assets/solar/sfx/*.mp3
+public/assets/solar/sfx/*.wav
+public/assets/solar/sfx/*.ogg
+assets-src/sfx/
